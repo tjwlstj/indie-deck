@@ -4,6 +4,8 @@ One launcher for a messy indie game folder: it classifies the engine, works out
 **which translator build actually fits that specific game**, installs it with the
 right mod loader, and manages mods per engine.
 
+![The IndieDeck launcher: engine sidebar, game list and the detail panel showing compatibility findings](docs/media/launcher.png)
+
 The hard part is not downloading XUnity.AutoTranslator. It is knowing that *this*
 game is IL2CPP so the Mono package will never load, that the BepInEx 6 build has
 to be a bleeding-edge one, that the ReiPatcher package disappeared from release
@@ -67,13 +69,25 @@ npm link --workspace packages/cli   # optional: puts `indiedeck` on PATH
 
 Without `npm link`, run it as `node packages/cli/dist/index.js <command>`.
 
+For the desktop launcher:
+
+```bash
+npm run desktop
+```
+
+The window is a thin shell over the same core the CLI uses - it renders the
+library, the compatibility findings for the selected game, and installs with one
+click. It runs with context isolation on and no node integration in the
+renderer; the only bridge is a fixed list of IPC channels in
+[`preload.cjs`](packages/desktop/preload.cjs).
+
 ## Use
 
 ```bash
 indiedeck root add "D:\"            # register a library root
 indiedeck scan                      # classify everything under it
 indiedeck list --engine unity --untranslated
-indiedeck info "Fox Sex Farm"       # engine, backend, versions, what's installed
+indiedeck info "Amber Lantern"      # engine, backend, versions, what's installed
 
 indiedeck plan "MyGame" --lang ko --from ja --endpoint DeepLTranslate
 indiedeck install "MyGame" --lang ko --from ja

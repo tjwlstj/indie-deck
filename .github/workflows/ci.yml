@@ -27,6 +27,23 @@ jobs:
       - name: Registry self-check
         run: node packages/cli/dist/index.js registry check
 
+      # Boots the Electron window against an empty library and checks the
+      # renderer actually painted. A renderer that throws on load would pass
+      # every unit test otherwise.
+      - name: Desktop smoke test (Linux)
+        if: runner.os == 'Linux'
+        env:
+          INDIEDECK_SMOKE: '1'
+          INDIEDECK_HOME: ${{ runner.temp }}/indiedeck-ci
+        run: xvfb-run --auto-servernum npx electron packages/desktop
+
+      - name: Desktop smoke test (Windows)
+        if: runner.os == 'Windows'
+        env:
+          INDIEDECK_SMOKE: '1'
+          INDIEDECK_HOME: ${{ runner.temp }}/indiedeck-ci
+        run: npx electron packages/desktop
+
   registry-freshness:
     # Advisory only: an upstream release does not break the build, it just means
     # the pinned version table needs a refresh.

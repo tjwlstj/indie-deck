@@ -5,15 +5,22 @@
   "description": "Unified launcher for Unity and other indie games: engine classification, per-engine translator auto-install with version compatibility management, and mod management.",
   "license": "MIT",
   "type": "module",
-  "engines": { "node": ">=22.6.0" },
-  "workspaces": ["packages/core", "packages/cli"],
+  "engines": {
+    "node": ">=22.6.0"
+  },
+  "workspaces": [
+    "packages/core",
+    "packages/cli",
+    "packages/desktop"
+  ],
   "scripts": {
     "build": "tsc --build",
     "clean": "tsc --build --clean",
     "typecheck": "tsc --build --dry 2>&1 || tsc --build",
     "test": "node --test --experimental-strip-types packages/core/test/*.test.ts",
     "registry:check": "node --experimental-strip-types packages/cli/src/index.ts registry check",
-    "indiedeck": "node --experimental-strip-types packages/cli/src/index.ts"
+    "indiedeck": "node --experimental-strip-types packages/cli/src/index.ts",
+    "desktop": "npm run build && electron packages/desktop"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

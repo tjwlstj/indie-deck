@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self';"
+    />
+    <title>IndieDeck</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="mark">▚</span>
+        <span>IndieDeck</span>
+      </div>
+
+      <div class="search">
+        <input id="search" type="search" placeholder="Search games…" autocomplete="off" spellcheck="false" />
+      </div>
+
+      <div class="topbar-actions">
+        <label class="lang">
+          <span>to</span>
+          <select id="targetLanguage">
+            <option value="ko">한국어</option>
+            <option value="en">English</option>
+            <option value="ja">日本語</option>
+            <option value="zh">中文</option>
+          </select>
+        </label>
+        <label class="lang">
+          <span>from</span>
+          <select id="sourceLanguage">
+            <option value="ja">日本語</option>
+            <option value="en">English</option>
+            <option value="zh">中文</option>
+            <option value="ko">한국어</option>
+          </select>
+        </label>
+        <select id="endpoint" class="endpoint" title="Translation endpoint"></select>
+        <button id="addRoot" class="ghost">Add folder</button>
+        <button id="scan" class="primary">Scan</button>
+      </div>
+    </header>
+
+    <main class="shell">
+      <nav class="sidebar">
+        <div class="sidebar-section">
+          <h2>Engines</h2>
+          <ul id="engineFilters" class="filters"></ul>
+        </div>
+        <div class="sidebar-section">
+          <h2>Status</h2>
+          <ul id="statusFilters" class="filters">
+            <li><button data-status="all" class="active">All games</button></li>
+            <li><button data-status="untranslated">No translator</button></li>
+            <li><button data-status="translated">Has translator</button></li>
+            <li><button data-status="issues">Needs attention <span id="issueCount" class="pill warn">0</span></button></li>
+          </ul>
+        </div>
+        <div class="sidebar-section roots">
+          <h2>Roots</h2>
+          <ul id="rootList" class="roots-list"></ul>
+        </div>
+      </nav>
+
+      <section class="list">
+        <div id="gameList" class="game-list"></div>
+      </section>
+
+      <section id="detail" class="detail">
+        <div class="empty">
+          <p class="empty-title">Pick a game</p>
+          <p>IndieDeck reads its engine, backend and version, then works out which translator build actually fits it.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="statusbar">
+      <span id="status">Loading library…</span>
+      <span id="counts" class="muted"></span>
+    </footer>
+
+    <script src="app.js"></script>
+  </body>
+</html>
