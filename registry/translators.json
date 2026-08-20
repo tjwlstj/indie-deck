@@ -1,0 +1,873 @@
+{
+  "$schema": "./schema/translators.schema.json",
+  "schemaVersion": 1,
+  "updated": "2026-08-21",
+  "notes": "A translator has `variants` (which build of it) and `versions` (which release). A resolver picks one (variant, version, loader version) triple that satisfies the detected game profile. `assetTemplate` is expanded with {version}; `tag` is the GitHub release tag, which does not always equal the asset version (e.g. tag v5.6 ships assets named 5.6.0).",
+  "translators": [
+    {
+      "id": "xunity-autotranslator",
+      "name": "XUnity.AutoTranslator",
+      "kind": "in-process-hook",
+      "homepage": "https://github.com/bbepis/XUnity.AutoTranslator",
+      "repo": "bbepis/XUnity.AutoTranslator",
+      "license": "MIT",
+      "engines": [
+        "unity"
+      ],
+      "summary": "Hooks Unity text components at runtime and substitutes machine or cached translations. The de-facto standard for Unity game translation.",
+      "endpoints": [
+        {
+          "id": "GoogleTranslate",
+          "needsKey": false
+        },
+        {
+          "id": "GoogleTranslateV2",
+          "needsKey": false
+        },
+        {
+          "id": "GoogleTranslateCompat",
+          "needsKey": false
+        },
+        {
+          "id": "GoogleTranslateLegitimate",
+          "needsKey": true
+        },
+        {
+          "id": "BingTranslate",
+          "needsKey": false
+        },
+        {
+          "id": "BingTranslateLegitimate",
+          "needsKey": true
+        },
+        {
+          "id": "DeepLTranslate",
+          "needsKey": false
+        },
+        {
+          "id": "DeepLTranslateLegitimate",
+          "needsKey": true
+        },
+        {
+          "id": "PapagoTranslate",
+          "needsKey": false
+        },
+        {
+          "id": "BaiduTranslate",
+          "needsKey": true
+        },
+        {
+          "id": "YandexTranslate",
+          "needsKey": true
+        },
+        {
+          "id": "WatsonTranslate",
+          "needsKey": true
+        },
+        {
+          "id": "LingoCloudTranslate",
+          "needsKey": true
+        },
+        {
+          "id": "ezTransXP",
+          "needsKey": false,
+          "note": "Local Korean MT engine; requires a local ezTrans XP installation."
+        },
+        {
+          "id": "LecPowerTranslator15",
+          "needsKey": false,
+          "note": "Local MT engine."
+        },
+        {
+          "id": "CustomTranslate",
+          "needsKey": false,
+          "note": "Points at any local HTTP endpoint - the usual way to wire in a self-hosted MT server."
+        }
+      ],
+      "variants": [
+        {
+          "id": "bepinex",
+          "name": "BepInEx (Mono)",
+          "assetTemplate": "XUnity.AutoTranslator-BepInEx-{version}.zip",
+          "requiresLoader": {
+            "capability": "bepinex",
+            "prefer": [
+              "bepinex5",
+              "bepinex6-mono"
+            ]
+          },
+          "constraints": {
+            "engine": [
+              "unity"
+            ],
+            "backend": [
+              "mono"
+            ]
+          },
+          "install": {
+            "kind": "extract-root"
+          },
+          "payloadPaths": [
+            "BepInEx/core/XUnity.Common.dll",
+            "BepInEx/plugins/XUnity.AutoTranslator"
+          ],
+          "configCandidates": [
+            "BepInEx/config/AutoTranslatorConfig.ini"
+          ],
+          "configConfidence": "verified",
+          "configNote": "Confirmed against real installs: BepInEx/config/AutoTranslatorConfig.ini, generated on first launch.",
+          "recommendedFor": "Default choice for any Mono Unity game.",
+          "rank": 100
+        },
+        {
+          "id": "bepinex-il2cpp",
+          "name": "BepInEx 6 (IL2CPP)",
+          "assetTemplate": "XUnity.AutoTranslator-BepInEx-IL2CPP-{version}.zip",
+          "requiresLoader": {
+            "capability": "bepinex6-il2cpp",
+            "prefer": [
+              "bepinex6-il2cpp"
+            ]
+          },
+          "constraints": {
+            "engine": [
+              "unity"
+            ],
+            "backend": [
+              "il2cpp"
+            ],
+            "unityVersion": {
+              "min": "2017.1.0",
+              "confidence": "verified",
+              "sources": [
+                "https://github.com/bbepis/XUnity.AutoTranslator/blob/master/CHANGELOG.md"
+              ],
+              "note": "CHANGELOG 5.3.0: 'Dropped support for pre-2017 Unity Engine versions for IL2CPP versions'."
+            }
+          },
+          "install": {
+            "kind": "extract-root"
+          },
+          "payloadPaths": [
+            "BepInEx/core/XUnity.Common.dll",
+            "BepInEx/plugins/XUnity.AutoTranslator"
+          ],
+          "configCandidates": [
+            "BepInEx/config/AutoTranslatorConfig.ini"
+          ],
+          "configConfidence": "verified",
+          "recommendedFor": "IL2CPP games. README: 'you must install BepInEx 6 for IL2CPP, which as of this writing are only available as bleeding edge builds'.",
+          "rank": 100
+        },
+        {
+          "id": "melonmod",
+          "name": "MelonLoader (Mono)",
+          "assetTemplate": "XUnity.AutoTranslator-MelonMod-{version}.zip",
+          "requiresLoader": {
+            "capability": "melonloader",
+            "prefer": [
+              "melonloader"
+            ]
+          },
+          "constraints": {
+            "engine": [
+              "unity"
+            ],
+            "backend": [
+              "mono"
+            ]
+          },
+          "install": {
+            "kind": "extract-root"
+          },
+          "payloadPaths": [
+            "Mods/XUnity.AutoTranslator.Plugin.MelonMod.dll",
+            "UserLibs/XUnity.Common.dll"
+          ],
+          "configCandidates": [
+            "UserData/AutoTranslatorConfig.ini"
+          ],
+          "configConfidence": "community",
+          "recommendedFor": "Games already running MelonLoader - do not stack it on top of BepInEx.",
+          "rank": 70
+        },
+        {
+          "id": "melonmod-il2cpp",
+          "name": "MelonLoader (IL2CPP)",
+          "assetTemplate": "XUnity.AutoTranslator-MelonMod-IL2CPP-{version}.zip",
+          "requiresLoader": {
+            "capability": "melonloader",
+            "prefer": [
+              "melonloader"
+            ]
+          },
+          "constraints": {
+            "engine": [
+              "unity"
+            ],
+            "backend": [
+              "il2cpp"
+            ],
+            "unityVersion": {
+              "min": "2017.1.0",
+              "confidence": "verified",
+              "sources": [
+                "https://github.com/bbepis/XUnity.AutoTranslator/blob/master/CHANGELOG.md"
+              ]
+            }
+          },
+          "install": {
+            "kind": "extract-root"
+          },
+          "payloadPaths": [
+            "Mods/XUnity.AutoTranslator.Plugin.MelonMod.dll",
+            "UserLibs/XUnity.Common.dll"
+          ],
+          "configCandidates": [
+            "UserData/AutoTranslatorConfig.ini"
+          ],
+          "configConfidence": "community",
+          "recommendedFor": "IL2CPP games where BepInEx 6 BE fails to boot.",
+          "rank": 70,
+          "payloadNote": "Both MelonMod packages ship the same DLL name; the installed variant is disambiguated by the game's scripting backend."
+        },
+        {
+          "id": "reipatcher",
+          "name": "ReiPatcher (standalone, no loader)",
+          "assetTemplate": "XUnity.AutoTranslator-ReiPatcher-{version}.zip",
+          "requiresLoader": {
+            "capability": "reipatcher",
+            "prefer": [
+              "reipatcher"
+            ],
+            "bundled": true
+          },
+          "constraints": {
+            "engine": [
+              "unity"
+            ],
+            "backend": [
+              "mono"
+            ],
+            "conflictsWithInstalled": [
+              "bepinex",
+              "melonloader",
+              "unityinjector",
+              "ipa"
+            ]
+          },
+          "install": {
+            "kind": "run-setup",
+            "setupExe": "SetupReiPatcherAndAutoTranslator.exe",
+            "launchShortcut": "{exeName} (Patch and Run).lnk"
+          },
+          "payloadPaths": [
+            "ReiPatcher/ReiPatcher.exe",
+            "SetupReiPatcherAndAutoTranslator.exe"
+          ],
+          "configCandidates": [
+            "AutoTranslator/Config.ini",
+            "Config.ini"
+          ],
+          "configConfidence": "community",
+          "recommendedFor": "Old Mono games and anyone who wants zero loader setup. README: 'REQUIRES: Nothing, ReiPatcher is provided by this download.'",
+          "warnings": [
+            "Patches game assemblies in place - IndieDeck always snapshots Managed/ before running the setup."
+          ],
+          "rank": 60
+        },
+        {
+          "id": "unityinjector",
+          "name": "UnityInjector (Sybaris)",
+          "assetTemplate": "XUnity.AutoTranslator-UnityInjector-{version}.zip",
+          "requiresLoader": {
+            "capability": "unityinjector",
+            "prefer": []
+          },
+          "constraints": {
+            "engine": [
+              "unity"
+            ],
+            "backend": [
+              "mono"
+            ]
+          },
+          "install": {
+            "kind": "extract-into",
+            "dest": "UnityInjector"
+          },
+          "configCandidates": [
+            "UnityInjector/Config/AutoTranslatorConfig.ini"
+          ],
+          "configConfidence": "community",
+          "warnings": [
+            "README: 'MonoMod hooks are not supported with this installation method because an outdated version of Mono.Cecil.dll is being used.'"
+          ],
+          "rank": 30,
+          "payloadPaths": [
+            "UnityInjector/XUnity.AutoTranslator.Plugin.Core.dll"
+          ]
+        },
+        {
+          "id": "ipa",
+          "name": "IPA",
+          "assetTemplate": "XUnity.AutoTranslator-IPA-{version}.zip",
+          "requiresLoader": {
+            "capability": "ipa",
+            "prefer": []
+          },
+          "constraints": {
+            "engine": [
+              "unity"
+            ],
+            "backend": [
+              "mono"
+            ]
+          },
+          "install": {
+            "kind": "extract-into",
+            "dest": "Plugins"
+          },
+          "configCandidates": [
+            "UserData/AutoTranslatorConfig.ini"
+          ],
+          "configConfidence": "community",
+          "recommendedFor": "Games already using the IPA plugin manager (Beat Saber lineage).",
+          "rank": 20,
+          "payloadPaths": [
+            "Plugins/XUnity.AutoTranslator.Plugin.Core.dll"
+          ]
+        }
+      ],
+      "versions": [
+        {
+          "version": "5.6.1",
+          "tag": "v5.6.1",
+          "channel": "stable",
+          "released": "2026-04-19",
+          "variants": [
+            "bepinex",
+            "bepinex-il2cpp",
+            "melonmod",
+            "melonmod-il2cpp",
+            "reipatcher",
+            "unityinjector",
+            "ipa"
+          ],
+          "notes": [
+            "IL2CPP fixes: font asset bundle loading, hotkey responsiveness, GUI unstripping."
+          ]
+        },
+        {
+          "version": "5.6.0",
+          "tag": "v5.6",
+          "channel": "stable",
+          "released": "2026-04-10",
+          "variants": [
+            "bepinex",
+            "bepinex-il2cpp",
+            "melonmod",
+            "melonmod-il2cpp",
+            "unityinjector",
+            "ipa"
+          ],
+          "notes": [
+            "Adds UIElements support.",
+            "This release ships NO ReiPatcher asset - if the ReiPatcher variant is required, use 5.6.1 or 5.5.2."
+          ]
+        },
+        {
+          "version": "5.5.2",
+          "tag": "v5.5.2",
+          "channel": "stable",
+          "released": "2026-03-06",
+          "variants": [
+            "bepinex",
+            "bepinex-il2cpp",
+            "melonmod",
+            "melonmod-il2cpp",
+            "reipatcher",
+            "unityinjector",
+            "ipa"
+          ],
+          "notes": [
+            "DeepL auth moved to the Authorization header - older versions break against the current DeepL API.",
+            "Fixes override font dying after a while under IL2CPP."
+          ]
+        },
+        {
+          "version": "5.5.1",
+          "tag": "v5.5.1",
+          "channel": "stable",
+          "released": "2026-01-28",
+          "variants": [
+            "bepinex",
+            "bepinex-il2cpp",
+            "melonmod",
+            "melonmod-il2cpp",
+            "reipatcher",
+            "unityinjector",
+            "ipa"
+          ],
+          "notes": [
+            "Switched to UnityInput to support both the legacy and the new Input System - the version to prefer when hotkeys do nothing in a new-Input-System game."
+          ]
+        },
+        {
+          "version": "5.5.0",
+          "tag": "v5.5.0",
+          "channel": "stable",
+          "released": "2025-10-27",
+          "variants": [
+            "bepinex",
+            "bepinex-il2cpp",
+            "melonmod",
+            "melonmod-il2cpp",
+            "reipatcher",
+            "unityinjector",
+            "ipa"
+          ],
+          "notes": [
+            "Adds XUAIGNORETREE, PluginInitialized event, Yandex API v2.",
+            "Release also carries TMP_Font_AssetBundles (see fonts.json)."
+          ]
+        },
+        {
+          "version": "5.4.6",
+          "tag": "v5.4.6",
+          "channel": "stable",
+          "released": "2025-09-28",
+          "variants": [
+            "bepinex",
+            "bepinex-il2cpp",
+            "melonmod",
+            "melonmod-il2cpp",
+            "reipatcher",
+            "unityinjector",
+            "ipa"
+          ],
+          "notes": [
+            "Culture-invariant string handling; ResizeUI nullref fix."
+          ]
+        },
+        {
+          "version": "5.4.5",
+          "tag": "v5.4.5",
+          "channel": "stable",
+          "released": "2025-08-05",
+          "variants": [
+            "bepinex",
+            "bepinex-il2cpp",
+            "melonmod",
+            "melonmod-il2cpp",
+            "reipatcher",
+            "unityinjector",
+            "ipa"
+          ],
+          "notes": [
+            "Basic NGUI resizer support."
+          ]
+        },
+        {
+          "version": "5.4.4",
+          "tag": "v5.4.4",
+          "channel": "stable",
+          "variants": [
+            "bepinex",
+            "bepinex-il2cpp",
+            "melonmod",
+            "melonmod-il2cpp",
+            "reipatcher",
+            "unityinjector",
+            "ipa"
+          ],
+          "notes": [
+            "NGUI support in TextGetterCompatibilityMode."
+          ]
+        }
+      ],
+      "companions": [
+        {
+          "id": "xunity-resource-redirector",
+          "assetTemplate": "XUnity.ResourceRedirector-BepInEx-{rrVersion}.zip",
+          "il2cppAssetTemplate": "XUnity.ResourceRedirector-BepInEx-IL2CPP-{rrVersion}.zip",
+          "version": "2.1.0",
+          "optional": true,
+          "note": "Needed only by translation packs that redirect asset bundles."
+        }
+      ]
+    },
+    {
+      "id": "mort",
+      "name": "MORT",
+      "kind": "ocr-overlay",
+      "homepage": "https://github.com/killkimno/MORT",
+      "repo": "killkimno/MORT",
+      "license": "MIT",
+      "engines": [
+        "*"
+      ],
+      "summary": "Korean-first real-time OCR screen translator. Engine-agnostic: it reads pixels, so it works where in-process hooks cannot (IL2CPP holdouts, GameMaker, Flash, emulators).",
+      "runsOutOfProcess": true,
+      "variants": [
+        {
+          "id": "standalone",
+          "name": "Standalone",
+          "assetTemplate": "MORT.{version}v.-.{releaseDate}.zip",
+          "install": {
+            "kind": "tool-install",
+            "dest": "$toolsDir/MORT"
+          },
+          "constraints": {},
+          "rank": 50
+        }
+      ],
+      "versions": [
+        {
+          "version": "1.318",
+          "tag": "1.318",
+          "channel": "stable",
+          "released": "2026-08-15",
+          "asset": "MORT.1.318v.-.20260815.zip",
+          "variants": [
+            "standalone"
+          ]
+        }
+      ],
+      "notes": [
+        "Ships its own embedded Python and tessdata; treat the whole folder as one unit and never merge versions."
+      ]
+    },
+    {
+      "id": "lunatranslator",
+      "name": "LunaTranslator",
+      "kind": "hook-and-ocr",
+      "homepage": "https://github.com/HIllya51/LunaTranslator",
+      "repo": "HIllya51/LunaTranslator",
+      "license": "GPL-3.0",
+      "engines": [
+        "*"
+      ],
+      "summary": "Visual-novel oriented translator combining text hooking (Textractor-style), OCR and clipboard capture, with a large set of MT/LLM backends.",
+      "runsOutOfProcess": true,
+      "variants": [
+        {
+          "id": "x64",
+          "name": "Windows x64",
+          "asset": "LunaTranslator_x64.zip",
+          "install": {
+            "kind": "tool-install",
+            "dest": "$toolsDir/LunaTranslator"
+          },
+          "constraints": {
+            "arch": [
+              "x64"
+            ]
+          },
+          "rank": 60
+        },
+        {
+          "id": "x86",
+          "name": "Windows x86 (win7)",
+          "asset": "LunaTranslator_x86_win7.zip",
+          "install": {
+            "kind": "tool-install",
+            "dest": "$toolsDir/LunaTranslator-x86"
+          },
+          "constraints": {
+            "arch": [
+              "x86"
+            ]
+          },
+          "rank": 40
+        }
+      ],
+      "versions": [
+        {
+          "version": "10.16.3.6",
+          "tag": "v10.16.3.6",
+          "channel": "stable",
+          "released": "2026-08-20",
+          "variants": [
+            "x64",
+            "x86"
+          ]
+        }
+      ],
+      "notes": [
+        "Best fit for KiriKiri / NScripter / other Win32 VN engines where a text hook beats OCR."
+      ]
+    },
+    {
+      "id": "textractor",
+      "name": "Textractor",
+      "kind": "text-hook",
+      "homepage": "https://github.com/Artikash/Textractor",
+      "repo": "Artikash/Textractor",
+      "license": "GPL-3.0",
+      "engines": [
+        "kirikiri",
+        "nscripter",
+        "rpgmaker-rgss",
+        "wolf-rpg"
+      ],
+      "summary": "Classic text hooker for Win32 visual novels. Extracts in-game text for an external translator to consume.",
+      "runsOutOfProcess": true,
+      "maintenance": {
+        "lastPush": "2024-03-15",
+        "status": "dormant",
+        "note": "No upstream activity since March 2024 - LunaTranslator is the actively maintained alternative."
+      },
+      "variants": [
+        {
+          "id": "zip",
+          "name": "Zip (English only)",
+          "asset": "Textractor-5.2.0-Zip-Version-English-Only.zip",
+          "install": {
+            "kind": "tool-install",
+            "dest": "$toolsDir/Textractor"
+          },
+          "constraints": {},
+          "rank": 30
+        }
+      ],
+      "versions": [
+        {
+          "version": "5.2.0",
+          "tag": "v5.2.0",
+          "channel": "stable",
+          "variants": [
+            "zip"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "renpy-translator",
+      "name": "renpy-translator",
+      "kind": "offline-file-patcher",
+      "homepage": "https://github.com/anonymousException/renpy-translator",
+      "repo": "anonymousException/renpy-translator",
+      "license": "MIT",
+      "engines": [
+        "renpy"
+      ],
+      "summary": "Generates Ren'Py tl/ translation files offline (Google/Youdao/DeepL/OpenAI backends). Produces a real translation the game loads natively - no runtime hook.",
+      "variants": [
+        {
+          "id": "release",
+          "name": "Windows release",
+          "install": {
+            "kind": "tool-install",
+            "dest": "$toolsDir/renpy-translator"
+          },
+          "assetPattern": ".*\\.(zip|7z)$",
+          "constraints": {
+            "engine": [
+              "renpy"
+            ]
+          },
+          "rank": 80
+        }
+      ],
+      "versions": [
+        {
+          "version": "latest",
+          "tag": "latest",
+          "channel": "stable",
+          "variants": [
+            "release"
+          ]
+        }
+      ],
+      "notes": [
+        "Works on decompiled .rpy sources; archived .rpa/.rpyc-only builds must be unpacked first (UnRen or rpatool)."
+      ]
+    },
+    {
+      "id": "projz-renpy-translation",
+      "name": "projz_renpy_translation",
+      "kind": "offline-file-patcher",
+      "homepage": "https://github.com/abse4411/projz_renpy_translation",
+      "repo": "abse4411/projz_renpy_translation",
+      "license": "GPL-3.0",
+      "engines": [
+        "renpy"
+      ],
+      "summary": "Index-based Ren'Py translation manager: extracts strings, tracks them across game updates, and applies MT or human translations back into tl/.",
+      "variants": [
+        {
+          "id": "release",
+          "name": "Windows release",
+          "install": {
+            "kind": "tool-install",
+            "dest": "$toolsDir/projz-renpy"
+          },
+          "assetPattern": ".*\\.(zip|7z)$",
+          "constraints": {
+            "engine": [
+              "renpy"
+            ]
+          },
+          "rank": 70
+        }
+      ],
+      "versions": [
+        {
+          "version": "latest",
+          "tag": "latest",
+          "channel": "stable",
+          "variants": [
+            "release"
+          ]
+        }
+      ],
+      "notes": [
+        "Its translation index survives game updates, which is the main reason to pick it over a one-shot translator."
+      ]
+    },
+    {
+      "id": "rpgmaker-mvmz-translator",
+      "name": "RPGMakerTranslator",
+      "kind": "offline-file-patcher",
+      "homepage": "https://github.com/JaimeDevCode/RPGMakerTranslator",
+      "repo": "JaimeDevCode/RPGMakerTranslator",
+      "license": "MIT",
+      "engines": [
+        "rpgmaker-mv",
+        "rpgmaker-mz"
+      ],
+      "summary": "Free automatic translation of RPG Maker MV/MZ data files.",
+      "variants": [
+        {
+          "id": "source",
+          "name": "Python source",
+          "install": {
+            "kind": "tool-install",
+            "dest": "$toolsDir/rpgmaker-translator"
+          },
+          "constraints": {
+            "engine": [
+              "rpgmaker-mv",
+              "rpgmaker-mz"
+            ]
+          },
+          "rank": 50
+        }
+      ],
+      "versions": [
+        {
+          "version": "latest",
+          "tag": "latest",
+          "channel": "stable",
+          "variants": [
+            "source"
+          ]
+        }
+      ],
+      "notes": [
+        "Rewrites data/*.json in place - IndieDeck snapshots data/ (or www/data/) before running it."
+      ]
+    },
+    {
+      "id": "wolftrans",
+      "name": "Wolf Trans",
+      "kind": "offline-file-patcher",
+      "homepage": "https://github.com/elizagamedev/wolftrans",
+      "repo": "elizagamedev/wolftrans",
+      "license": "MPL-2.0",
+      "engines": [
+        "wolf-rpg"
+      ],
+      "summary": "Patch-based translation tool for Wolf RPG Editor games. Produces a translated copy of the game data rather than editing in place.",
+      "maintenance": {
+        "lastPush": "2019-12-19",
+        "status": "dormant",
+        "note": "Unmaintained since 2019; works on older Wolf RPG versions, newer Wolf 3.x data formats may fail."
+      },
+      "requiresRuntime": {
+        "ruby": ">=2.3"
+      },
+      "variants": [
+        {
+          "id": "source",
+          "name": "Ruby source",
+          "install": {
+            "kind": "manual"
+          },
+          "constraints": {
+            "engine": [
+              "wolf-rpg"
+            ]
+          },
+          "rank": 20
+        }
+      ],
+      "versions": [
+        {
+          "version": "latest",
+          "tag": "latest",
+          "channel": "stable",
+          "variants": [
+            "source"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mtool",
+      "name": "MTool",
+      "kind": "external-injector",
+      "homepage": "https://afdian.com/a/AdventCirno",
+      "license": "proprietary",
+      "engines": [
+        "rpgmaker-mv",
+        "rpgmaker-mz",
+        "rpgmaker-rgss",
+        "wolf-rpg",
+        "unity"
+      ],
+      "summary": "Closed-source RPG Maker translation/cheat tool. IndieDeck does not download or install it - it only detects an existing install so the library view stays honest.",
+      "detectOnly": true,
+      "installedMarkers": {
+        "paths": [
+          "MTool_Game.exe",
+          "TrsData.bin"
+        ],
+        "globs": [
+          "TrsData_*.bin"
+        ]
+      },
+      "variants": [],
+      "versions": []
+    },
+    {
+      "id": "translator-plus-plus",
+      "name": "Translator++",
+      "kind": "external-editor",
+      "homepage": "https://dreamsavior.net/translator-plusplus/",
+      "license": "proprietary",
+      "engines": [
+        "rpgmaker-mv",
+        "rpgmaker-mz",
+        "rpgmaker-rgss",
+        "wolf-rpg",
+        "unity",
+        "renpy"
+      ],
+      "summary": "Closed-source translation workbench with broad engine coverage. Detect-and-link only.",
+      "detectOnly": true,
+      "installedMarkers": {
+        "paths": [
+          "www/data/.trans",
+          "data/.trans"
+        ],
+        "globs": [
+          "*.trans"
+        ]
+      },
+      "variants": [],
+      "versions": []
+    }
+  ]
+}

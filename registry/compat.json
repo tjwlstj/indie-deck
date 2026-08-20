@@ -1,0 +1,178 @@
+{
+  "$schema": "./schema/compat.schema.json",
+  "schemaVersion": 1,
+  "updated": "2026-08-21",
+  "notes": "The compatibility matrix. Rules are evaluated against a candidate plan (game profile + translator variant + version + loader version). `severity: block` removes the candidate, `warn` keeps it with a note, `info` only annotates, `prefer` shifts the score. Every rule carries `confidence` and `sources`; the CLI and UI show unverified rules as advisories, never as hard blocks.",
+  "channelPreference": ["stable", "prerelease", "bleeding-edge"],
+  "rules": [
+    {
+      "id": "il2cpp-requires-il2cpp-variant",
+      "severity": "block",
+      "confidence": "verified",
+      "sources": ["https://github.com/bbepis/XUnity.AutoTranslator/blob/master/README.md"],
+      "when": { "backend": "il2cpp", "variantIn": ["bepinex", "melonmod", "reipatcher", "unityinjector", "ipa"] },
+      "message": "This game uses the IL2CPP scripting backend (GameAssembly.dll). Mono-targeted packages cannot load. Use the BepInEx-IL2CPP or MelonMod-IL2CPP package instead.",
+      "suggestVariants": ["bepinex-il2cpp", "melonmod-il2cpp"]
+    },
+    {
+      "id": "mono-requires-mono-variant",
+      "severity": "block",
+      "confidence": "verified",
+      "sources": ["https://github.com/bbepis/XUnity.AutoTranslator/blob/master/README.md"],
+      "when": { "backend": "mono", "variantIn": ["bepinex-il2cpp", "melonmod-il2cpp"] },
+      "message": "This game uses the Mono scripting backend (MonoBleedingEdge / Managed assemblies). The IL2CPP package will not load here.",
+      "suggestVariants": ["bepinex", "melonmod", "reipatcher"]
+    },
+    {
+      "id": "bepinex5-no-il2cpp",
+      "severity": "block",
+      "confidence": "verified",
+      "sources": ["https://docs.bepinex.dev/articles/user_guide/installation/index.html"],
+      "when": { "backend": "il2cpp", "loaderId": "bepinex5" },
+      "message": "BepInEx 5 does not support IL2CPP games ('Games built with IL2CPP are not supported at the moment'). BepInEx 6 IL2CPP bleeding-edge builds are required.",
+      "suggestLoaders": ["bepinex6-il2cpp"]
+    },
+    {
+      "id": "xuat-il2cpp-min-bepinex-build",
+      "severity": "warn",
+      "confidence": "verified",
+      "sources": ["https://github.com/bbepis/XUnity.AutoTranslator/blob/master/CHANGELOG.md", "https://github.com/bbepis/XUnity.AutoTranslator/blob/master/README.md"],
+      "when": { "translator": "xunity-autotranslator", "variant": "bepinex-il2cpp", "loaderBuildBelow": 704 },
+      "message": "XUnity.AutoTranslator 5.4.0+ was built against BepInEx bleeding-edge build 704 ('Update to BepInEx 6.0 BE-704 to fix some IL2CPP crashes'). Older BE builds are known to crash under IL2CPP.",
+      "requireLoaderBuildMin": 704
+    },
+    {
+      "id": "xuat-il2cpp-min-unity-2017",
+      "severity": "block",
+      "confidence": "verified",
+      "sources": ["https://github.com/bbepis/XUnity.AutoTranslator/blob/master/CHANGELOG.md"],
+      "when": { "translator": "xunity-autotranslator", "variantIn": ["bepinex-il2cpp", "melonmod-il2cpp"], "unityVersionBelow": "2017.1.0" },
+      "message": "XUnity.AutoTranslator 5.3.0 dropped support for pre-2017 Unity versions in its IL2CPP packages. For a pre-2017 IL2CPP build, an out-of-process OCR translator is the realistic option.",
+      "suggestTranslators": ["mort", "lunatranslator"]
+    },
+    {
+      "id": "xuat-5.6.0-has-no-reipatcher",
+      "severity": "block",
+      "confidence": "verified",
+      "sources": ["https://github.com/bbepis/XUnity.AutoTranslator/releases/tag/v5.6"],
+      "when": { "translator": "xunity-autotranslator", "variant": "reipatcher", "translatorVersion": "5.6.0" },
+      "message": "Release v5.6 does not publish a ReiPatcher asset. Pin 5.6.1 (or 5.5.2) when the ReiPatcher variant is required.",
+      "pinTranslatorVersions": ["5.6.1", "5.5.2"]
+    },
+    {
+      "id": "deepl-auth-header-needs-5.5.2",
+      "severity": "warn",
+      "confidence": "verified",
+      "sources": ["https://github.com/bbepis/XUnity.AutoTranslator/releases/tag/v5.5.2"],
+      "when": { "translator": "xunity-autotranslator", "endpointIn": ["DeepLTranslateLegitimate"], "translatorVersionBelow": "5.5.2" },
+      "message": "DeepL API authentication moved to the Authorization header in 5.5.2. Earlier versions send the legacy query/body auth and will fail against the current DeepL API.",
+      "requireTranslatorVersionMin": "5.5.2"
+    },
+    {
+      "id": "new-input-system-needs-5.5.1",
+      "severity": "warn",
+      "confidence": "verified",
+      "sources": ["https://github.com/bbepis/XUnity.AutoTranslator/releases/tag/v5.5.1"],
+      "when": { "translator": "xunity-autotranslator", "gameHasNewInputSystem": true, "translatorVersionBelow": "5.5.1" },
+      "message": "This game ships Unity's new Input System. XUnity.AutoTranslator 5.5.1 switched to UnityInput to support both input stacks; on older versions the in-game hotkeys (ALT+0 config UI, ALT+T retranslate) typically do nothing.",
+      "requireTranslatorVersionMin": "5.5.1"
+    },
+    {
+      "id": "reipatcher-conflicts-with-loader",
+      "severity": "block",
+      "confidence": "verified",
+      "sources": ["https://github.com/bbepis/XUnity.AutoTranslator/blob/master/README.md"],
+      "when": { "variant": "reipatcher", "installedLoaderAny": ["bepinex5", "bepinex6-mono", "bepinex6-il2cpp", "melonloader"] },
+      "message": "A mod loader is already installed in this game folder. The README warns ReiPatcher 'is incompatible with other plugin managers installed'. Use the package matching the loader that is already there.",
+      "suggestVariants": ["bepinex", "melonmod"]
+    },
+    {
+      "id": "arch-must-match",
+      "severity": "block",
+      "confidence": "verified",
+      "sources": ["https://docs.bepinex.dev/articles/user_guide/installation/index.html"],
+      "when": { "archMismatch": true },
+      "message": "Loader architecture must match the game executable: x86 build for a 32-bit game, x64 for a 64-bit game. IndieDeck reads the PE header of the launch executable to decide."
+    },
+    {
+      "id": "melonloader-il2cpp-needs-dotnet6",
+      "severity": "info",
+      "confidence": "verified",
+      "sources": ["https://github.com/LavaGang/MelonLoader"],
+      "when": { "loaderId": "melonloader", "backend": "il2cpp" },
+      "message": "MelonLoader on IL2CPP requires the .NET 6.0 Desktop Runtime. The Windows installer pulls it automatically; a manual zip install may not."
+    },
+    {
+      "id": "melonloader-unity-floor-unverified",
+      "severity": "warn",
+      "confidence": "unverified",
+      "sources": ["https://github.com/LavaGang/MelonLoader"],
+      "when": { "loaderId": "melonloader", "unityVersionBelow": "5.6.1" },
+      "message": "MelonLoader is commonly cited as requiring Unity 5.6.1 or newer, but upstream docs do not state a range. Treat this as advisory: if the game is older, prefer BepInEx 5 (documented down to Unity 3)."
+    },
+    {
+      "id": "old-unity-legacy-texture-hint",
+      "severity": "info",
+      "confidence": "verified",
+      "sources": ["https://github.com/bbepis/XUnity.AutoTranslator/blob/master/README.md"],
+      "when": { "translator": "xunity-autotranslator", "unityVersionBelow": "5.3.0" },
+      "message": "For Unity older than 5.3, the legacy texture-loading path in AutoTranslatorConfig.ini is often required for image translation to work.",
+      "configHints": { "Texture": { "EnableLegacyTextureLoading": "True" } }
+    },
+    {
+      "id": "cjk-needs-tmp-font",
+      "severity": "warn",
+      "confidence": "verified",
+      "sources": ["https://github.com/bbepis/XUnity.AutoTranslator/blob/master/README.md"],
+      "when": { "translator": "xunity-autotranslator", "targetLanguageIn": ["ko", "ja", "zh", "zh-CN", "zh-TW"], "gameUsesTextMeshPro": true },
+      "message": "TextMeshPro cannot render Korean/Japanese/Chinese glyphs with the game's built-in font atlas - translated text shows as blank boxes. Install a TMP fallback font bundle matching the game's Unity version and set FallbackFontTextMeshPro.",
+      "suggestFontBundle": true
+    },
+    {
+      "id": "mono-tls-warning",
+      "severity": "info",
+      "confidence": "verified",
+      "sources": ["https://github.com/bbepis/XUnity.AutoTranslator/blob/master/README.md"],
+      "when": { "backend": "mono", "endpointRequiresHttps": true, "unityVersionBelow": "2018.1.0" },
+      "message": "Old Mono runtimes have TLS 1.2 problems that can lock up translation requests. If translation stalls with no errors, try a different endpoint or the ReiPatcher variant."
+    },
+    {
+      "id": "no-inprocess-translator-for-engine",
+      "severity": "info",
+      "confidence": "verified",
+      "when": { "engineIn": ["gamemaker", "flash", "love2d", "java", "godot"] },
+      "message": "No maintained in-process text translator exists for this engine. Screen OCR (MORT) or a hook/OCR hybrid (LunaTranslator) is the practical route.",
+      "suggestTranslators": ["mort", "lunatranslator"]
+    },
+    {
+      "id": "renpy-archived-scripts",
+      "severity": "warn",
+      "confidence": "verified",
+      "when": { "engine": "renpy", "renpyOnlyCompiled": true },
+      "message": "This Ren'Py build ships only .rpa archives / .rpyc bytecode. Offline translators need decompiled .rpy sources - unpack first (UnRen or rpatool), or use screen OCR instead."
+    },
+    {
+      "id": "prefer-stable-channel",
+      "severity": "prefer",
+      "confidence": "verified",
+      "when": { "channel": "bleeding-edge" },
+      "scoreDelta": -15,
+      "message": "Bleeding-edge loader builds are unsigned CI artifacts and can regress between builds; they are only chosen when nothing stable satisfies the requirements."
+    },
+    {
+      "id": "prefer-installed-loader",
+      "severity": "prefer",
+      "confidence": "verified",
+      "when": { "loaderAlreadyInstalled": true },
+      "scoreDelta": 25,
+      "message": "Reuses the loader already present in the game folder instead of stacking a second one."
+    },
+    {
+      "id": "prefer-latest-translator",
+      "severity": "prefer",
+      "confidence": "verified",
+      "when": { "translatorIsLatest": true },
+      "scoreDelta": 10
+    }
+  ]
+}

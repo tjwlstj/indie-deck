@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tjwlstj/indie-deck/registry/schema/fonts.schema.json",
+  "title": "IndieDeck TextMeshPro font bundle registry",
+  "type": "object",
+  "required": ["schemaVersion", "source", "bundles", "apply"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": 1 },
+    "updated": { "type": "string", "format": "date" },
+    "notes": { "type": "string" },
+    "source": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "enum": ["github-release", "url"] },
+        "repo": { "type": "string" },
+        "tag": { "type": "string" },
+        "asset": { "type": "string" },
+        "url": { "type": "string" },
+        "note": { "type": "string" }
+      }
+    },
+    "bundles": { "type": "array", "items": { "$ref": "#/$defs/bundle" } },
+    "apply": { "type": "object" },
+    "systemFontOption": { "type": "object" }
+  },
+  "$defs": {
+    "bundle": {
+      "type": "object",
+      "required": ["id", "file", "unityRange", "confidence", "glyphs"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "file": { "type": "string", "description": "Filename as it appears inside the archive and in the game root." },
+        "unityRange": {
+          "type": "object",
+          "required": ["min", "max"],
+          "properties": { "min": { "type": "string" }, "max": { "type": "string" } },
+          "description": "A TMP atlas only loads in games built by a compatible Unity Editor line."
+        },
+        "confidence": { "enum": ["verified", "inferred", "community", "unverified"] },
+        "note": { "type": "string" },
+        "glyphs": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

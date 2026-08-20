@@ -1,0 +1,25 @@
+# --- local-only research & scratch (never published) ---
+_local/
+*.local.json
+scan-*.json
+
+# --- node ---
+node_modules/
+dist/
+build/
+out/
+*.tsbuildinfo
+npm-debug.log*
+.npm/
+
+# --- runtime data (user library index, caches, receipts) ---
+data/
+cache/
+.indiedeck/
+
+# --- editors / os ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

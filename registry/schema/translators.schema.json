@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tjwlstj/indie-deck/registry/schema/translators.schema.json",
+  "title": "IndieDeck translator registry",
+  "type": "object",
+  "required": ["schemaVersion", "translators"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": 1 },
+    "updated": { "type": "string", "format": "date" },
+    "notes": { "type": "string" },
+    "translators": { "type": "array", "items": { "$ref": "#/$defs/translator" } }
+  },
+  "$defs": {
+    "translator": {
+      "type": "object",
+      "required": ["id", "name", "kind", "engines", "variants", "versions"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+        "name": { "type": "string" },
+        "kind": {
+          "enum": ["in-process-hook", "ocr-overlay", "hook-and-ocr", "text-hook", "offline-file-patcher", "external-injector", "external-editor"]
+        },
+        "homepage": { "type": "string" },
+        "repo": { "type": "string", "pattern": "^[^/]+/[^/]+$" },
+        "license": { "type": "string" },
+        "engines": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Engine ids, or \"*\" for engine-agnostic tools such as screen OCR."
+        },
+        "summary": { "type": "string" },
+        "runsOutOfProcess": { "type": "boolean" },
+        "detectOnly": {
+          "type": "boolean",
+          "description": "Closed source or not fetchable: IndieDeck detects and links out, never installs."
+        },
+        "maintenance": {
+          "type": "object",
+          "properties": {
+            "lastPush": { "type": "string" },
+            "status": { "enum": ["active", "dormant", "archived"] },
+            "note": { "type": "string" }
+          }
+        },
+        "requiresRuntime": { "type": "object", "additionalProperties": { "type": "string" } },
+        "installedMarkers": {
+          "type": "object",
+          "properties": {
+            "paths": { "type": "array", "items": { "type": "string" } },
+            "globs": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "endpoints": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "needsKey"],
+            "properties": {
+              "id": { "type": "string" },
+              "needsKey": { "type": "boolean" },
+              "note": { "type": "string" }
+            }
+          }
+        },
+        "variants": { "type": "array", "items": { "$ref": "#/$defs/variant" } },
+        "versions": { "type": "array", "items": { "$ref": "#/$defs/version" } },
+        "companions": { "type": "array" },
+        "notes": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "variant": {
+      "type": "object",
+      "required": ["id", "name", "install"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "assetTemplate": { "type": "string", "description": "{version} is substituted from the chosen release." },
+        "asset": { "type": "string" },
+        "assetPattern": { "type": "string" },
+        "requiresLoader": {
+          "type": "object",
+          "required": ["capability"],
+          "properties": {
+            "capability": { "type": "string" },
+            "prefer": { "type": "array", "items": { "type": "string" } },
+            "bundled": { "type": "boolean", "description": "The loader ships inside this package (ReiPatcher)." }
+          }
+        },
+        "constraints": {
+          "type": "object",
+          "properties": {
+            "engine": { "type": "array", "items": { "type": "string" } },
+            "backend": { "type": "array", "items": { "enum": ["mono", "il2cpp"] } },
+            "arch": { "type": "array", "items": { "enum": ["x86", "x64", "arm64"] } },
+            "unityVersion": { "type": "object" },
+            "conflictsWithInstalled": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "install": { "type": "object", "required": ["kind"] },
+        "payloadPaths": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Specific enough that an unrelated folder cannot match - prefer a named file over a bare directory."
+        },
+        "payloadNote": { "type": "string" },
+        "configCandidates": { "type": "array", "items": { "type": "string" } },
+        "configConfidence": { "enum": ["verified", "inferred", "community", "unverified"] },
+        "configNote": { "type": "string" },
+        "recommendedFor": { "type": "string" },
+        "warnings": { "type": "array", "items": { "type": "string" } },
+        "rank": { "type": "integer", "description": "Base score before compatibility rules adjust it." }
+      }
+    },
+    "version": {
+      "type": "object",
+      "required": ["version", "tag", "channel", "variants"],
+      "additionalProperties": false,
+      "properties": {
+        "version": { "type": "string" },
+        "tag": { "type": "string", "description": "The release tag, which does not always equal the asset version." },
+        "channel": { "enum": ["stable", "prerelease", "bleeding-edge"] },
+        "released": { "type": "string" },
+        "asset": { "type": "string" },
+        "variants": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Which variants this release actually publishes an asset for."
+        },
+        "notes": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

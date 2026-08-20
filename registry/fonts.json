@@ -1,0 +1,83 @@
+{
+  "$schema": "./schema/fonts.schema.json",
+  "schemaVersion": 1,
+  "updated": "2026-08-21",
+  "notes": "TextMeshPro font atlases are built by a specific Unity Editor version and only load in games built with a compatible one - which is why a font bundle that works in one game shows blank boxes in the next. The bundle names below are the ones shipped in the XUnity.AutoTranslator TMP_Font_AssetBundles archive, mapped to the Unity ranges their filenames declare. Ranges marked `confidence: inferred` are gaps in upstream's naming, not documented facts.",
+  "source": {
+    "type": "github-release",
+    "repo": "bbepis/XUnity.AutoTranslator",
+    "tag": "v5.5.0",
+    "asset": "TMP_Font_AssetBundles_2025-12-08.7z",
+    "note": "Distributed as .7z. IndieDeck does not bundle a 7z decoder; it downloads the archive, then either uses a 7-Zip/7za binary found on PATH or hands the user the folder with instructions."
+  },
+  "bundles": [
+    {
+      "id": "arialuni_sdf-u55to2017",
+      "file": "arialuni_sdf-u55to2017",
+      "unityRange": { "min": "5.5.0", "max": "2017.999" },
+      "confidence": "verified",
+      "note": "Filename declares the range explicitly.",
+      "glyphs": ["latin", "ja", "ko", "zh"]
+    },
+    {
+      "id": "arialuni_sdf_u2018",
+      "file": "arialuni_sdf_u2018",
+      "unityRange": { "min": "2018.1.0", "max": "2018.999" },
+      "confidence": "verified",
+      "glyphs": ["latin", "ja", "ko", "zh"]
+    },
+    {
+      "id": "arialuni_sdf_u2019",
+      "file": "arialuni_sdf_u2019",
+      "unityRange": { "min": "2019.1.0", "max": "2020.999" },
+      "confidence": "inferred",
+      "note": "Upstream ships no u2020 bundle. The 2020.x line is mapped here as the nearest lower build; if text renders as boxes on a 2020.x game, try arialuni_sdf_u2021 next.",
+      "glyphs": ["latin", "ja", "ko", "zh"]
+    },
+    {
+      "id": "arialuni_sdf_u2021",
+      "file": "arialuni_sdf_u2021",
+      "unityRange": { "min": "2021.1.0", "max": "2021.999" },
+      "confidence": "verified",
+      "glyphs": ["latin", "ja", "ko", "zh"]
+    },
+    {
+      "id": "arialuni_sdf_u2022",
+      "file": "arialuni_sdf_u2022",
+      "unityRange": { "min": "2022.1.0", "max": "2023.999" },
+      "confidence": "inferred",
+      "note": "2023.x (and Unity 2023 LTS rebranded as Unity 6 previews) is mapped to the 2022 bundle; upstream ships nothing between u2022 and u6000.",
+      "glyphs": ["latin", "ja", "ko", "zh"]
+    },
+    {
+      "id": "arialuni_sdf_u6000",
+      "file": "arialuni_sdf_u6000",
+      "unityRange": { "min": "6000.0.0", "max": "6999.999" },
+      "confidence": "verified",
+      "note": "Added in the v5.5.0 TMP_Font_AssetBundles refresh for Unity 6.",
+      "glyphs": ["latin", "ja", "ko", "zh"]
+    }
+  ],
+  "apply": {
+    "copyTo": "$gameRoot",
+    "config": {
+      "file": "$translatorConfig",
+      "section": "Behaviour",
+      "key": "FallbackFontTextMeshPro",
+      "valueFrom": "bundle.file",
+      "note": "README recommends FallbackFontTextMeshPro over OverrideFontTextMeshPro so the game keeps its own font and only falls back for glyphs it cannot render."
+    },
+    "alternative": {
+      "key": "OverrideFontTextMeshPro",
+      "note": "Replaces every TMP font. Use only when the fallback path fails.",
+      "deprecated": true
+    }
+  },
+  "systemFontOption": {
+    "note": "TextMeshPro 3.2.0+ can load a system-installed font by name, which avoids asset-bundle version matching entirely.",
+    "confidence": "verified",
+    "sources": ["https://github.com/bbepis/XUnity.AutoTranslator/blob/master/README.md"],
+    "suggestedKoreanFonts": ["Malgun Gothic", "NanumGothic"],
+    "suggestedJapaneseFonts": ["Meiryo", "Yu Gothic UI"]
+  }
+}

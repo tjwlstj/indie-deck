@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tjwlstj/indie-deck/registry/schema/compat.schema.json",
+  "title": "IndieDeck compatibility rules",
+  "type": "object",
+  "required": ["schemaVersion", "rules"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": 1 },
+    "updated": { "type": "string", "format": "date" },
+    "notes": { "type": "string" },
+    "channelPreference": {
+      "type": "array",
+      "items": { "enum": ["stable", "prerelease", "bleeding-edge"] }
+    },
+    "rules": { "type": "array", "items": { "$ref": "#/$defs/rule" } }
+  },
+  "$defs": {
+    "rule": {
+      "type": "object",
+      "required": ["id", "severity", "confidence", "when"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9.-]+$" },
+        "severity": {
+          "enum": ["block", "warn", "info", "prefer"],
+          "description": "block removes the candidate, warn scores it down, info annotates, prefer only shifts the score."
+        },
+        "confidence": {
+          "enum": ["verified", "inferred", "community", "unverified"],
+          "description": "An unverified rule is never allowed to block a plan."
+        },
+        "sources": { "type": "array", "items": { "type": "string", "format": "uri" } },
+        "when": {
+          "type": "object",
+          "minProperties": 1,
+          "description": "All predicates must match. An unrecognised predicate makes the rule never fire.",
+          "additionalProperties": true
+        },
+        "message": { "type": "string" },
+        "scoreDelta": { "type": "integer" },
+        "suggestVariants": { "type": "array", "items": { "type": "string" } },
+        "suggestLoaders": { "type": "array", "items": { "type": "string" } },
+        "suggestTranslators": { "type": "array", "items": { "type": "string" } },
+        "pinTranslatorVersions": { "type": "array", "items": { "type": "string" } },
+        "requireTranslatorVersionMin": { "type": "string" },
+        "requireLoaderBuildMin": { "type": "integer" },
+        "suggestFontBundle": { "type": "boolean" },
+        "configHints": {
+          "type": "object",
+          "additionalProperties": { "type": "object", "additionalProperties": { "type": "string" } }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "severity": { "const": "block" } }, "required": ["severity"] },
+          "then": {
+            "required": ["message", "sources"],
+            "description": "A rule that blocks an install must explain itself and cite a source."
+          }
+        },
+        {
+          "if": { "properties": { "confidence": { "const": "unverified" } }, "required": ["confidence"] },
+          "then": { "properties": { "severity": { "enum": ["warn", "info", "prefer"] } } }
+        }
+      ]
+    }
+  }
+}

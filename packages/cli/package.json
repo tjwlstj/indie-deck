@@ -1,0 +1,18 @@
+{
+  "name": "@indiedeck/cli",
+  "version": "0.1.0",
+  "description": "Command line interface for IndieDeck.",
+  "license": "MIT",
+  "type": "module",
+  "bin": { "indiedeck": "./dist/index.js" },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist", "src"],
+  "scripts": {
+    "build": "tsc --build",
+    "start": "node --experimental-strip-types src/index.ts"
+  },
+  "dependencies": {
+    "@indiedeck/core": "0.1.0"
+  }
+}

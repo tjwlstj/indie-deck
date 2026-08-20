@@ -1,0 +1,768 @@
+{
+  "$schema": "./schema/engines.schema.json",
+  "schemaVersion": 1,
+  "updated": "2026-08-21",
+  "notes": "Detection rules are declarative. Each matching rule contributes its `score`; an engine is a candidate when its total >= minScore. Highest total wins, ties broken by `priority`. A rule with `capture` stores its match under that name so later rules of the same engine can reference it as $name.",
+  "engines": [
+    {
+      "id": "unity",
+      "name": "Unity",
+      "family": "unity",
+      "priority": 90,
+      "minScore": 60,
+      "rules": [
+        {
+          "kind": "file",
+          "value": "UnityPlayer.dll",
+          "score": 60,
+          "note": "Unity 5.4+ standalone player runtime"
+        },
+        {
+          "kind": "dirSuffix",
+          "value": "_Data",
+          "score": 45,
+          "capture": "dataDir",
+          "note": "<GameName>_Data payload folder, present in every Windows Unity build"
+        },
+        {
+          "kind": "fileUnder",
+          "dir": "$dataDir",
+          "value": "globalgamemanagers",
+          "score": 25
+        },
+        {
+          "kind": "fileUnder",
+          "dir": "$dataDir",
+          "value": "data.unity3d",
+          "score": 25,
+          "note": "Unity 2019+ single-bundle builds ship this instead of globalgamemanagers"
+        },
+        {
+          "kind": "dir",
+          "value": "MonoBleedingEdge",
+          "score": 15,
+          "note": "Mono scripting backend runtime"
+        },
+        {
+          "kind": "file",
+          "value": "GameAssembly.dll",
+          "score": 15,
+          "note": "IL2CPP scripting backend"
+        },
+        {
+          "kind": "fileAny",
+          "value": [
+            "UnityCrashHandler64.exe",
+            "UnityCrashHandler32.exe"
+          ],
+          "score": 10
+        }
+      ],
+      "probes": [
+        "unityBackend",
+        "unityVersion",
+        "peArch"
+      ],
+      "loaders": [
+        "bepinex5",
+        "bepinex6-mono",
+        "bepinex6-il2cpp",
+        "melonloader",
+        "unity-mod-manager",
+        "reipatcher"
+      ],
+      "translators": [
+        "xunity-autotranslator",
+        "mort",
+        "lunatranslator"
+      ]
+    },
+    {
+      "id": "renpy",
+      "name": "RenPy",
+      "displayName": "Ren'Py",
+      "family": "python",
+      "priority": 85,
+      "minScore": 60,
+      "rules": [
+        {
+          "kind": "dir",
+          "value": "renpy",
+          "score": 50
+        },
+        {
+          "kind": "dir",
+          "value": "game",
+          "score": 20
+        },
+        {
+          "kind": "dir",
+          "value": "lib",
+          "score": 10
+        },
+        {
+          "kind": "fileUnder",
+          "dir": "renpy",
+          "value": "__init__.py",
+          "score": 20
+        },
+        {
+          "kind": "extUnder",
+          "dir": "game",
+          "value": ".rpa",
+          "score": 15
+        },
+        {
+          "kind": "extUnder",
+          "dir": "game",
+          "value": ".rpyc",
+          "score": 15
+        },
+        {
+          "kind": "exeSiblingExt",
+          "value": ".py",
+          "score": 15,
+          "note": "Ships GameName.exe next to GameName.py"
+        }
+      ],
+      "probes": [
+        "renpyVersion",
+        "peArch"
+      ],
+      "loaders": [
+        "renpy-native"
+      ],
+      "translators": [
+        "renpy-translator",
+        "projz-renpy-translation",
+        "mort",
+        "lunatranslator"
+      ]
+    },
+    {
+      "id": "rpgmaker-mz",
+      "name": "RPG Maker MZ",
+      "family": "nwjs",
+      "priority": 80,
+      "minScore": 60,
+      "rules": [
+        {
+          "kind": "fileAny",
+          "value": [
+            "js/rmmz_core.js",
+            "www/js/rmmz_core.js"
+          ],
+          "score": 70
+        },
+        {
+          "kind": "fileAny",
+          "value": [
+            "package.json",
+            "www/package.json"
+          ],
+          "score": 10
+        },
+        {
+          "kind": "fileAny",
+          "value": [
+            "nw.dll",
+            "node.dll"
+          ],
+          "score": 10
+        },
+        {
+          "kind": "dirAny",
+          "value": [
+            "data",
+            "www/data"
+          ],
+          "score": 10
+        }
+      ],
+      "probes": [
+        "rpgmakerInfo",
+        "nwjsVersion",
+        "peArch"
+      ],
+      "loaders": [
+        "rpgmaker-plugins"
+      ],
+      "translators": [
+        "mtool",
+        "translator-plus-plus",
+        "rpgmaker-mvmz-translator",
+        "mort",
+        "lunatranslator"
+      ]
+    },
+    {
+      "id": "rpgmaker-mv",
+      "name": "RPG Maker MV",
+      "family": "nwjs",
+      "priority": 79,
+      "minScore": 60,
+      "rules": [
+        {
+          "kind": "fileAny",
+          "value": [
+            "js/rpg_core.js",
+            "www/js/rpg_core.js"
+          ],
+          "score": 70
+        },
+        {
+          "kind": "fileAny",
+          "value": [
+            "package.json",
+            "www/package.json"
+          ],
+          "score": 10
+        },
+        {
+          "kind": "fileAny",
+          "value": [
+            "nw.dll",
+            "node.dll"
+          ],
+          "score": 10
+        },
+        {
+          "kind": "dirAny",
+          "value": [
+            "data",
+            "www/data"
+          ],
+          "score": 10
+        }
+      ],
+      "probes": [
+        "rpgmakerInfo",
+        "nwjsVersion",
+        "peArch"
+      ],
+      "loaders": [
+        "rpgmaker-plugins"
+      ],
+      "translators": [
+        "mtool",
+        "translator-plus-plus",
+        "rpgmaker-mvmz-translator",
+        "mort",
+        "lunatranslator"
+      ]
+    },
+    {
+      "id": "rpgmaker-rgss",
+      "name": "RPG Maker XP/VX/VX Ace",
+      "family": "rgss",
+      "priority": 78,
+      "minScore": 55,
+      "rules": [
+        {
+          "kind": "file",
+          "value": "Game.ini",
+          "score": 20
+        },
+        {
+          "kind": "extUnder",
+          "dir": "Data",
+          "value": ".rvdata2",
+          "score": 60,
+          "capture": "rgssAce"
+        },
+        {
+          "kind": "extUnder",
+          "dir": "Data",
+          "value": ".rvdata",
+          "score": 55,
+          "capture": "rgssVx"
+        },
+        {
+          "kind": "extUnder",
+          "dir": "Data",
+          "value": ".rxdata",
+          "score": 55,
+          "capture": "rgssXp"
+        },
+        {
+          "kind": "extRoot",
+          "value": ".rgss3a",
+          "score": 40
+        },
+        {
+          "kind": "extRoot",
+          "value": ".rgss2a",
+          "score": 35
+        },
+        {
+          "kind": "extRoot",
+          "value": ".rgssad",
+          "score": 35
+        },
+        {
+          "kind": "fileGlob",
+          "value": "RGSS*.dll",
+          "score": 25
+        }
+      ],
+      "probes": [
+        "rgssVariant",
+        "peArch"
+      ],
+      "loaders": [
+        "rgss-script-injection"
+      ],
+      "translators": [
+        "translator-plus-plus",
+        "mort",
+        "lunatranslator",
+        "textractor"
+      ]
+    },
+    {
+      "id": "wolf-rpg",
+      "name": "Wolf RPG Editor",
+      "family": "wolf",
+      "priority": 77,
+      "minScore": 55,
+      "rules": [
+        {
+          "kind": "fileAny",
+          "value": [
+            "Data/BasicData/Game.dat",
+            "data/BasicData/Game.dat"
+          ],
+          "score": 60
+        },
+        {
+          "kind": "extRoot",
+          "value": ".wolf",
+          "score": 45
+        },
+        {
+          "kind": "file",
+          "value": "GuruguruSMF4.dll",
+          "score": 30
+        },
+        {
+          "kind": "fileAny",
+          "value": [
+            "Config.exe",
+            "Game.exe"
+          ],
+          "score": 10
+        }
+      ],
+      "probes": [
+        "peArch"
+      ],
+      "loaders": [],
+      "translators": [
+        "wolftrans",
+        "mort",
+        "lunatranslator",
+        "textractor"
+      ]
+    },
+    {
+      "id": "godot",
+      "name": "Godot Engine",
+      "family": "godot",
+      "priority": 75,
+      "minScore": 55,
+      "rules": [
+        {
+          "kind": "extRoot",
+          "value": ".pck",
+          "score": 55
+        },
+        {
+          "kind": "exeSiblingSuffix",
+          "value": ".console.exe",
+          "score": 45,
+          "note": "Godot 4.2+ exports a paired console executable"
+        },
+        {
+          "kind": "fileGlob",
+          "value": "libgodot*",
+          "score": 25
+        },
+        {
+          "kind": "fileGlob",
+          "value": "*godot*.dll",
+          "score": 20
+        }
+      ],
+      "probes": [
+        "godotVersion",
+        "peArch"
+      ],
+      "loaders": [
+        "gdweave"
+      ],
+      "translators": [
+        "mort",
+        "lunatranslator"
+      ]
+    },
+    {
+      "id": "gamemaker",
+      "name": "GameMaker (Studio 1/2/LTS)",
+      "family": "gamemaker",
+      "priority": 74,
+      "minScore": 55,
+      "rules": [
+        {
+          "kind": "file",
+          "value": "data.win",
+          "score": 70
+        },
+        {
+          "kind": "fileGlob",
+          "value": "audiogroup*.dat",
+          "score": 20
+        },
+        {
+          "kind": "file",
+          "value": "options.ini",
+          "score": 10
+        }
+      ],
+      "probes": [
+        "peArch"
+      ],
+      "loaders": [
+        "undertale-mod-tool"
+      ],
+      "translators": [
+        "mort",
+        "lunatranslator"
+      ]
+    },
+    {
+      "id": "unreal",
+      "name": "Unreal Engine",
+      "family": "unreal",
+      "priority": 73,
+      "minScore": 55,
+      "rules": [
+        {
+          "kind": "dir",
+          "value": "Engine/Binaries/Win64",
+          "score": 45
+        },
+        {
+          "kind": "fileGlob",
+          "value": "*-Win64-Shipping.exe",
+          "score": 40,
+          "recursive": true
+        },
+        {
+          "kind": "dirGlob",
+          "value": "*/Content/Paks",
+          "score": 40
+        },
+        {
+          "kind": "dir",
+          "value": "Engine/Binaries/ThirdParty",
+          "score": 10
+        }
+      ],
+      "probes": [
+        "unrealVersion",
+        "peArch"
+      ],
+      "loaders": [
+        "ue4ss"
+      ],
+      "translators": [
+        "mort",
+        "lunatranslator"
+      ]
+    },
+    {
+      "id": "kirikiri",
+      "name": "KiriKiri / KAG",
+      "family": "vn",
+      "priority": 70,
+      "minScore": 50,
+      "rules": [
+        {
+          "kind": "extRoot",
+          "value": ".xp3",
+          "score": 60
+        },
+        {
+          "kind": "fileGlob",
+          "value": "*.tpm",
+          "score": 20
+        },
+        {
+          "kind": "fileAny",
+          "value": [
+            "data.xp3",
+            "patch.xp3"
+          ],
+          "score": 20
+        }
+      ],
+      "probes": [
+        "peArch"
+      ],
+      "loaders": [],
+      "translators": [
+        "textractor",
+        "lunatranslator",
+        "mort"
+      ]
+    },
+    {
+      "id": "nscripter",
+      "name": "NScripter / ONScripter",
+      "family": "vn",
+      "priority": 69,
+      "minScore": 50,
+      "rules": [
+        {
+          "kind": "fileAny",
+          "value": [
+            "nscript.dat",
+            "0.txt",
+            "00.txt"
+          ],
+          "score": 55
+        },
+        {
+          "kind": "extRoot",
+          "value": ".nsa",
+          "score": 35
+        },
+        {
+          "kind": "extRoot",
+          "value": ".sar",
+          "score": 20
+        }
+      ],
+      "probes": [
+        "peArch"
+      ],
+      "loaders": [],
+      "translators": [
+        "textractor",
+        "lunatranslator",
+        "mort"
+      ]
+    },
+    {
+      "id": "tyranoscript",
+      "name": "TyranoScript / TyranoBuilder",
+      "family": "electron",
+      "priority": 68,
+      "minScore": 50,
+      "rules": [
+        {
+          "kind": "dirAny",
+          "value": [
+            "data/scenario",
+            "resources/app/data/scenario"
+          ],
+          "score": 55
+        },
+        {
+          "kind": "dirAny",
+          "value": [
+            "tyrano",
+            "data/tyrano"
+          ],
+          "score": 30
+        },
+        {
+          "kind": "fileAny",
+          "value": [
+            "index.html",
+            "resources/app/index.html"
+          ],
+          "score": 10
+        }
+      ],
+      "probes": [
+        "peArch"
+      ],
+      "loaders": [],
+      "translators": [
+        "mort",
+        "lunatranslator"
+      ]
+    },
+    {
+      "id": "love2d",
+      "name": "LOVE (Love2D)",
+      "family": "lua",
+      "priority": 60,
+      "minScore": 50,
+      "rules": [
+        {
+          "kind": "file",
+          "value": "love.dll",
+          "score": 55
+        },
+        {
+          "kind": "extRoot",
+          "value": ".love",
+          "score": 40
+        },
+        {
+          "kind": "fileAny",
+          "value": [
+            "lua51.dll",
+            "SDL2.dll"
+          ],
+          "score": 10
+        }
+      ],
+      "probes": [
+        "peArch"
+      ],
+      "loaders": [],
+      "translators": [
+        "mort"
+      ]
+    },
+    {
+      "id": "electron",
+      "name": "Electron (generic)",
+      "family": "electron",
+      "priority": 40,
+      "minScore": 55,
+      "rules": [
+        {
+          "kind": "dir",
+          "value": "resources",
+          "score": 20
+        },
+        {
+          "kind": "fileAny",
+          "value": [
+            "resources/app.asar",
+            "resources/app/package.json"
+          ],
+          "score": 45
+        },
+        {
+          "kind": "fileAny",
+          "value": [
+            "ffmpeg.dll",
+            "libEGL.dll"
+          ],
+          "score": 10
+        },
+        {
+          "kind": "file",
+          "value": "icudtl.dat",
+          "score": 10
+        }
+      ],
+      "probes": [
+        "peArch"
+      ],
+      "loaders": [],
+      "translators": [
+        "mort",
+        "lunatranslator"
+      ]
+    },
+    {
+      "id": "nwjs",
+      "name": "NW.js (generic)",
+      "family": "nwjs",
+      "priority": 39,
+      "minScore": 55,
+      "rules": [
+        {
+          "kind": "fileAny",
+          "value": [
+            "nw.dll",
+            "node.dll"
+          ],
+          "score": 45
+        },
+        {
+          "kind": "file",
+          "value": "package.json",
+          "score": 20
+        },
+        {
+          "kind": "file",
+          "value": "icudtl.dat",
+          "score": 15
+        },
+        {
+          "kind": "dir",
+          "value": "locales",
+          "score": 10
+        }
+      ],
+      "probes": [
+        "nwjsVersion",
+        "peArch"
+      ],
+      "loaders": [],
+      "translators": [
+        "mort",
+        "lunatranslator"
+      ]
+    },
+    {
+      "id": "java",
+      "name": "Java (LibGDX / jar)",
+      "family": "jvm",
+      "priority": 35,
+      "minScore": 50,
+      "rules": [
+        {
+          "kind": "extRoot",
+          "value": ".jar",
+          "score": 45
+        },
+        {
+          "kind": "dirAny",
+          "value": [
+            "jre",
+            "jdk",
+            "runtime"
+          ],
+          "score": 20
+        }
+      ],
+      "probes": [],
+      "loaders": [],
+      "translators": [
+        "mort"
+      ]
+    },
+    {
+      "id": "flash",
+      "name": "Flash / Adobe AIR",
+      "family": "flash",
+      "priority": 30,
+      "minScore": 50,
+      "rules": [
+        {
+          "kind": "extRoot",
+          "value": ".swf",
+          "score": 50
+        },
+        {
+          "kind": "fileGlob",
+          "value": "Adobe AIR*",
+          "score": 20
+        }
+      ],
+      "probes": [],
+      "loaders": [],
+      "translators": [
+        "mort"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,862 @@
+{
+  "$schema": "./schema/loaders.schema.json",
+  "schemaVersion": 1,
+  "updated": "2026-08-21",
+  "notes": "Mod loaders / plugin hosts. A translator variant may declare `requiresLoader`; the resolver then picks a loader version whose `provides` capability and constraints match the detected game profile. Every constraint carries a `confidence` and `sources` so the UI can distinguish verified facts from community lore.",
+  "loaders": [
+    {
+      "id": "bepinex5",
+      "name": "BepInEx 5",
+      "provides": [
+        "bepinex",
+        "bepinex5"
+      ],
+      "homepage": "https://github.com/BepInEx/BepInEx",
+      "license": "LGPL-2.1",
+      "engines": [
+        "unity"
+      ],
+      "constraints": {
+        "backend": [
+          "mono"
+        ],
+        "unityVersion": {
+          "min": "3.0.0",
+          "confidence": "verified",
+          "sources": [
+            "https://docs.bepinex.dev/articles/user_guide/installation/index.html"
+          ],
+          "note": "Docs: 'Unity 3 or newer'. Same docs: 'Games built with IL2CPP are not supported at the moment.'"
+        },
+        "arch": [
+          "x86",
+          "x64"
+        ]
+      },
+      "installedMarkers": {
+        "paths": [
+          "BepInEx/core/BepInEx.dll"
+        ],
+        "excludeIfPresent": [
+          "BepInEx/core/BepInEx.Core.dll"
+        ],
+        "versionFrom": {
+          "kind": "peFileVersion",
+          "path": "BepInEx/core/BepInEx.dll"
+        },
+        "note": "BepInEx 6 also ships a BepInEx.dll, so the 6-only BepInEx.Core.dll acts as a negative marker. Verified against real installs."
+      },
+      "install": {
+        "kind": "extract-root",
+        "note": "Extract archive contents into the game root, then launch once to generate BepInEx/config."
+      },
+      "uninstall": {
+        "removePaths": [
+          "BepInEx",
+          "winhttp.dll",
+          "doorstop_config.ini",
+          ".doorstop_version"
+        ]
+      },
+      "versions": [
+        {
+          "version": "5.4.23.5",
+          "channel": "stable",
+          "released": "2026-02-08",
+          "assets": {
+            "x64": {
+              "type": "github-release",
+              "repo": "BepInEx/BepInEx",
+              "tag": "v5.4.23.5",
+              "asset": "BepInEx_win_x64_5.4.23.5.zip"
+            },
+            "x86": {
+              "type": "github-release",
+              "repo": "BepInEx/BepInEx",
+              "tag": "v5.4.23.5",
+              "asset": "BepInEx_win_x86_5.4.23.5.zip"
+            }
+          }
+        },
+        {
+          "version": "5.4.23.4",
+          "channel": "stable",
+          "released": "2025-09-25",
+          "assets": {
+            "x64": {
+              "type": "github-release",
+              "repo": "BepInEx/BepInEx",
+              "tag": "v5.4.23.4",
+              "asset": "BepInEx_win_x64_5.4.23.4.zip"
+            },
+            "x86": {
+              "type": "github-release",
+              "repo": "BepInEx/BepInEx",
+              "tag": "v5.4.23.4",
+              "asset": "BepInEx_win_x86_5.4.23.4.zip"
+            }
+          }
+        },
+        {
+          "version": "5.4.23.3",
+          "channel": "stable",
+          "released": "2025-04-22",
+          "assets": {
+            "x64": {
+              "type": "github-release",
+              "repo": "BepInEx/BepInEx",
+              "tag": "v5.4.23.3",
+              "asset": "BepInEx_win_x64_5.4.23.3.zip"
+            },
+            "x86": {
+              "type": "github-release",
+              "repo": "BepInEx/BepInEx",
+              "tag": "v5.4.23.3",
+              "asset": "BepInEx_win_x86_5.4.23.3.zip"
+            }
+          }
+        },
+        {
+          "version": "5.4.23.2",
+          "channel": "stable",
+          "released": "2024-05-01",
+          "assets": {
+            "x64": {
+              "type": "github-release",
+              "repo": "BepInEx/BepInEx",
+              "tag": "v5.4.23.2",
+              "asset": "BepInEx_win_x64_5.4.23.2.zip"
+            },
+            "x86": {
+              "type": "github-release",
+              "repo": "BepInEx/BepInEx",
+              "tag": "v5.4.23.2",
+              "asset": "BepInEx_win_x86_5.4.23.2.zip"
+            }
+          }
+        }
+      ],
+      "modLayout": {
+        "dir": "BepInEx/plugins",
+        "entry": "dll-or-folder",
+        "disable": "rename-suffix",
+        "disabledSuffix": ".disabled",
+        "note": "BepInEx loads every .dll under plugins/, one level of subfolders included. Renaming the extension is the standard way to disable a plugin without deleting it."
+      }
+    },
+    {
+      "id": "bepinex6-mono",
+      "name": "BepInEx 6 (Unity.Mono, bleeding edge)",
+      "provides": [
+        "bepinex",
+        "bepinex6",
+        "bepinex6-mono"
+      ],
+      "homepage": "https://builds.bepinex.dev/projects/bepinex_be",
+      "license": "LGPL-2.1",
+      "engines": [
+        "unity"
+      ],
+      "stability": "prerelease",
+      "constraints": {
+        "backend": [
+          "mono"
+        ],
+        "arch": [
+          "x86",
+          "x64"
+        ],
+        "note": "BepInEx maintainers recommend the BepInEx 5 stable line for Mono games; BE 6 Mono is for users who need newer features."
+      },
+      "installedMarkers": {
+        "paths": [
+          "BepInEx/core/BepInEx.Unity.Mono.dll"
+        ],
+        "versionFrom": {
+          "kind": "peFileVersion",
+          "path": "BepInEx/core/BepInEx.Core.dll"
+        }
+      },
+      "install": {
+        "kind": "extract-root"
+      },
+      "uninstall": {
+        "removePaths": [
+          "BepInEx",
+          "winhttp.dll",
+          "doorstop_config.ini",
+          ".doorstop_version"
+        ]
+      },
+      "versions": [
+        {
+          "version": "6.0.0-be.785",
+          "build": 785,
+          "commit": "6abdba4",
+          "channel": "bleeding-edge",
+          "released": "2026-06-28",
+          "assets": {
+            "x64": {
+              "type": "url",
+              "url": "https://builds.bepinex.dev/projects/bepinex_be/785/BepInEx-Unity.Mono-win-x64-6.0.0-be.785%2B6abdba4.zip"
+            },
+            "x86": {
+              "type": "url",
+              "url": "https://builds.bepinex.dev/projects/bepinex_be/785/BepInEx-Unity.Mono-win-x86-6.0.0-be.785%2B6abdba4.zip"
+            }
+          }
+        },
+        {
+          "version": "6.0.0-be.733",
+          "build": 733,
+          "commit": "995f049",
+          "channel": "bleeding-edge",
+          "assets": {
+            "x64": {
+              "type": "url",
+              "url": "https://builds.bepinex.dev/projects/bepinex_be/733/BepInEx-Unity.Mono-win-x64-6.0.0-be.733%2B995f049.zip"
+            },
+            "x86": {
+              "type": "url",
+              "url": "https://builds.bepinex.dev/projects/bepinex_be/733/BepInEx-Unity.Mono-win-x86-6.0.0-be.733%2B995f049.zip"
+            }
+          }
+        },
+        {
+          "version": "6.0.0-pre.2",
+          "channel": "prerelease",
+          "released": "2024-08-27",
+          "assets": {
+            "x64": {
+              "type": "github-release",
+              "repo": "BepInEx/BepInEx",
+              "tag": "v6.0.0-pre.2",
+              "asset": "BepInEx-Unity.Mono-win-x64-6.0.0-pre.2.zip"
+            },
+            "x86": {
+              "type": "github-release",
+              "repo": "BepInEx/BepInEx",
+              "tag": "v6.0.0-pre.2",
+              "asset": "BepInEx-Unity.Mono-win-x86-6.0.0-pre.2.zip"
+            }
+          }
+        }
+      ],
+      "modLayout": {
+        "dir": "BepInEx/plugins",
+        "entry": "dll-or-folder",
+        "disable": "rename-suffix",
+        "disabledSuffix": ".disabled",
+        "note": "BepInEx loads every .dll under plugins/, one level of subfolders included. Renaming the extension is the standard way to disable a plugin without deleting it."
+      }
+    },
+    {
+      "id": "bepinex6-il2cpp",
+      "name": "BepInEx 6 (Unity.IL2CPP, bleeding edge)",
+      "provides": [
+        "bepinex",
+        "bepinex6",
+        "bepinex6-il2cpp"
+      ],
+      "homepage": "https://builds.bepinex.dev/projects/bepinex_be",
+      "license": "LGPL-2.1",
+      "engines": [
+        "unity"
+      ],
+      "stability": "prerelease",
+      "constraints": {
+        "backend": [
+          "il2cpp"
+        ],
+        "arch": [
+          "x86",
+          "x64"
+        ],
+        "unityVersion": {
+          "min": "2017.1.0",
+          "confidence": "inferred",
+          "sources": [
+            "https://github.com/bbepis/XUnity.AutoTranslator/blob/master/CHANGELOG.md"
+          ],
+          "note": "XUnity.AutoTranslator 5.3.0 'Dropped support for pre-2017 Unity Engine versions for IL2CPP versions'. The floor is inherited by anything stacked on top of BepInEx 6 IL2CPP."
+        },
+        "runtime": {
+          "dotnet": "6.0-desktop",
+          "confidence": "community",
+          "note": "IL2CPP interop pulls a .NET runtime; BepInEx bootstraps it on first launch."
+        }
+      },
+      "installedMarkers": {
+        "paths": [
+          "BepInEx/core/BepInEx.Unity.IL2CPP.dll"
+        ],
+        "versionFrom": {
+          "kind": "peFileVersion",
+          "path": "BepInEx/core/BepInEx.Unity.IL2CPP.dll"
+        }
+      },
+      "install": {
+        "kind": "extract-root",
+        "note": "First launch generates interop assemblies under BepInEx/interop and can take several minutes."
+      },
+      "uninstall": {
+        "removePaths": [
+          "BepInEx",
+          "winhttp.dll",
+          "doorstop_config.ini",
+          ".doorstop_version",
+          "dotnet"
+        ]
+      },
+      "versions": [
+        {
+          "version": "6.0.0-be.785",
+          "build": 785,
+          "commit": "6abdba4",
+          "channel": "bleeding-edge",
+          "released": "2026-06-28",
+          "assets": {
+            "x64": {
+              "type": "url",
+              "url": "https://builds.bepinex.dev/projects/bepinex_be/785/BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.785%2B6abdba4.zip",
+              "size": 34335572
+            },
+            "x86": {
+              "type": "url",
+              "url": "https://builds.bepinex.dev/projects/bepinex_be/785/BepInEx-Unity.IL2CPP-win-x86-6.0.0-be.785%2B6abdba4.zip"
+            }
+          }
+        },
+        {
+          "version": "6.0.0-be.733",
+          "build": 733,
+          "commit": "995f049",
+          "channel": "bleeding-edge",
+          "assets": {
+            "x64": {
+              "type": "url",
+              "url": "https://builds.bepinex.dev/projects/bepinex_be/733/BepInEx-Unity.IL2CPP-win-x64-6.0.0-be.733%2B995f049.zip"
+            },
+            "x86": {
+              "type": "url",
+              "url": "https://builds.bepinex.dev/projects/bepinex_be/733/BepInEx-Unity.IL2CPP-win-x86-6.0.0-be.733%2B995f049.zip"
+            }
+          }
+        },
+        {
+          "version": "6.0.0-pre.2",
+          "channel": "prerelease",
+          "released": "2024-08-27",
+          "assets": {
+            "x64": {
+              "type": "github-release",
+              "repo": "BepInEx/BepInEx",
+              "tag": "v6.0.0-pre.2",
+              "asset": "BepInEx-Unity.IL2CPP-win-x64-6.0.0-pre.2.zip"
+            },
+            "x86": {
+              "type": "github-release",
+              "repo": "BepInEx/BepInEx",
+              "tag": "v6.0.0-pre.2",
+              "asset": "BepInEx-Unity.IL2CPP-win-x86-6.0.0-pre.2.zip"
+            }
+          }
+        }
+      ],
+      "modLayout": {
+        "dir": "BepInEx/plugins",
+        "entry": "dll-or-folder",
+        "disable": "rename-suffix",
+        "disabledSuffix": ".disabled",
+        "note": "BepInEx loads every .dll under plugins/, one level of subfolders included. Renaming the extension is the standard way to disable a plugin without deleting it."
+      }
+    },
+    {
+      "id": "melonloader",
+      "name": "MelonLoader",
+      "provides": [
+        "melonloader"
+      ],
+      "homepage": "https://github.com/LavaGang/MelonLoader",
+      "license": "Apache-2.0",
+      "engines": [
+        "unity"
+      ],
+      "constraints": {
+        "backend": [
+          "mono",
+          "il2cpp"
+        ],
+        "arch": [
+          "x86",
+          "x64"
+        ],
+        "unityVersion": {
+          "min": "5.6.1",
+          "confidence": "unverified",
+          "sources": [
+            "https://github.com/LavaGang/MelonLoader"
+          ],
+          "note": "The README does not state a Unity range. 5.6.1 is the commonly cited community minimum and has NOT been confirmed against primary docs - treated as a warning, never a hard block."
+        },
+        "runtime": {
+          "dotnet": "6.0-desktop",
+          "confidence": "verified",
+          "sources": [
+            "https://github.com/LavaGang/MelonLoader"
+          ],
+          "note": "README: Il2Cpp games require the .NET 6.0 Desktop Runtime (auto-installed on Windows)."
+        }
+      },
+      "installedMarkers": {
+        "paths": [
+          "MelonLoader/net6/MelonLoader.dll",
+          "MelonLoader/net35/MelonLoader.dll",
+          "MelonLoader/MelonLoader.dll"
+        ],
+        "versionFrom": {
+          "kind": "peFileVersion",
+          "path": "MelonLoader/net6/MelonLoader.dll"
+        },
+        "note": "version.dll is deliberately not a marker: every proxy-DLL loader claims that filename."
+      },
+      "install": {
+        "kind": "extract-root",
+        "note": "README: extract the MelonLoader folder plus version.dll and dobby.dll into the game folder."
+      },
+      "uninstall": {
+        "removePaths": [
+          "MelonLoader",
+          "version.dll",
+          "dobby.dll",
+          "NOTICE.txt"
+        ]
+      },
+      "versions": [
+        {
+          "version": "0.7.3",
+          "channel": "stable",
+          "released": "2026-05-14",
+          "assets": {
+            "x64": {
+              "type": "github-release",
+              "repo": "LavaGang/MelonLoader",
+              "tag": "v0.7.3",
+              "asset": "MelonLoader.x64.zip"
+            },
+            "x86": {
+              "type": "github-release",
+              "repo": "LavaGang/MelonLoader",
+              "tag": "v0.7.3",
+              "asset": "MelonLoader.x86.zip"
+            }
+          }
+        },
+        {
+          "version": "0.7.2",
+          "channel": "stable",
+          "released": "2026-03-03",
+          "assets": {
+            "x64": {
+              "type": "github-release",
+              "repo": "LavaGang/MelonLoader",
+              "tag": "v0.7.2",
+              "asset": "MelonLoader.x64.zip"
+            },
+            "x86": {
+              "type": "github-release",
+              "repo": "LavaGang/MelonLoader",
+              "tag": "v0.7.2",
+              "asset": "MelonLoader.x86.zip"
+            }
+          }
+        },
+        {
+          "version": "0.7.1",
+          "channel": "stable",
+          "released": "2025-06-21",
+          "assets": {
+            "x64": {
+              "type": "github-release",
+              "repo": "LavaGang/MelonLoader",
+              "tag": "v0.7.1",
+              "asset": "MelonLoader.x64.zip"
+            },
+            "x86": {
+              "type": "github-release",
+              "repo": "LavaGang/MelonLoader",
+              "tag": "v0.7.1",
+              "asset": "MelonLoader.x86.zip"
+            }
+          }
+        },
+        {
+          "version": "0.6.6",
+          "channel": "stable",
+          "released": "2024-11-12",
+          "assets": {
+            "x64": {
+              "type": "github-release",
+              "repo": "LavaGang/MelonLoader",
+              "tag": "v0.6.6",
+              "asset": "MelonLoader.x64.zip"
+            },
+            "x86": {
+              "type": "github-release",
+              "repo": "LavaGang/MelonLoader",
+              "tag": "v0.6.6",
+              "asset": "MelonLoader.x86.zip"
+            }
+          }
+        }
+      ],
+      "modLayout": {
+        "dir": "Mods",
+        "entry": "dll",
+        "disable": "rename-suffix",
+        "disabledSuffix": ".disabled",
+        "extraDirs": [
+          "UserLibs"
+        ],
+        "note": "MelonLoader loads Mods/*.dll; shared dependencies belong in UserLibs."
+      }
+    },
+    {
+      "id": "reipatcher",
+      "name": "ReiPatcher (bundled with XUnity.AutoTranslator)",
+      "provides": [
+        "reipatcher"
+      ],
+      "homepage": "https://github.com/bbepis/XUnity.AutoTranslator",
+      "license": "MIT",
+      "engines": [
+        "unity"
+      ],
+      "constraints": {
+        "backend": [
+          "mono"
+        ],
+        "conflictsWith": [
+          "bepinex",
+          "melonloader",
+          "unityinjector",
+          "ipa"
+        ],
+        "note": "XUAT README: ReiPatcher is provided by the download itself and is incompatible with other plugin managers installed."
+      },
+      "installedMarkers": {
+        "paths": [
+          "ReiPatcher/ReiPatcher.exe",
+          "SetupReiPatcherAndAutoTranslator.exe"
+        ]
+      },
+      "install": {
+        "kind": "bundled",
+        "note": "Installed as part of the XUnity.AutoTranslator ReiPatcher package - never fetched on its own."
+      },
+      "versions": []
+    },
+    {
+      "id": "unity-mod-manager",
+      "name": "Unity Mod Manager",
+      "provides": [
+        "umm"
+      ],
+      "homepage": "https://github.com/newman55/unity-mod-manager",
+      "license": "MIT",
+      "engines": [
+        "unity"
+      ],
+      "constraints": {
+        "backend": [
+          "mono",
+          "il2cpp"
+        ],
+        "note": "Distributed primarily through Nexus Mods; the GitHub repo holds sources, not release binaries. IndieDeck therefore only detects it and links out - it does not auto-download."
+      },
+      "installedMarkers": {
+        "paths": [
+          "$dataDir/Managed/UnityModManager",
+          "UnityModManager"
+        ]
+      },
+      "install": {
+        "kind": "manual",
+        "url": "https://www.nexusmods.com/site/mods/21"
+      },
+      "versions": []
+    },
+    {
+      "id": "gdweave",
+      "name": "GDWeave",
+      "provides": [
+        "gdweave"
+      ],
+      "homepage": "https://github.com/NotNite/GDWeave",
+      "license": "MIT",
+      "engines": [
+        "godot"
+      ],
+      "constraints": {
+        "note": "Godot mod loader with runtime script patching. Built around Godot 4 games (originally WEBFISHING); per-game compatibility varies."
+      },
+      "installedMarkers": {
+        "paths": [
+          "GDWeave/core/GDWeave.dll"
+        ]
+      },
+      "install": {
+        "kind": "extract-root"
+      },
+      "uninstall": {
+        "removePaths": [
+          "GDWeave",
+          "winmm.dll"
+        ]
+      },
+      "versions": [
+        {
+          "version": "latest",
+          "channel": "stable",
+          "assets": {
+            "x64": {
+              "type": "github-release",
+              "repo": "NotNite/GDWeave",
+              "tag": "latest",
+              "assetPattern": "GDWeave.*\\.zip"
+            }
+          }
+        }
+      ],
+      "modLayout": {
+        "dir": "GDWeave/mods",
+        "entry": "folder",
+        "manifest": "manifest.json",
+        "disable": "move-to-disabled",
+        "disabledDir": "GDWeave/mods.disabled"
+      }
+    },
+    {
+      "id": "ue4ss",
+      "name": "RE-UE4SS",
+      "provides": [
+        "ue4ss"
+      ],
+      "homepage": "https://github.com/UE4SS-RE/RE-UE4SS",
+      "license": "MIT",
+      "engines": [
+        "unreal"
+      ],
+      "constraints": {
+        "note": "Injectable Lua scripting/SDK system for Unreal Engine games. Install target is the shipping binary folder, not the game root."
+      },
+      "installedMarkers": {
+        "paths": [
+          "ue4ss/UE4SS.dll",
+          "UE4SS.dll"
+        ]
+      },
+      "install": {
+        "kind": "extract-into",
+        "dest": "$shippingBinDir"
+      },
+      "versions": [
+        {
+          "version": "latest",
+          "channel": "stable",
+          "assets": {
+            "x64": {
+              "type": "github-release",
+              "repo": "UE4SS-RE/RE-UE4SS",
+              "tag": "latest",
+              "assetPattern": "UE4SS_v.*\\.zip"
+            }
+          }
+        }
+      ],
+      "modLayout": {
+        "dir": "$shippingBinDir/ue4ss/Mods",
+        "entry": "folder",
+        "disable": "registry-flag",
+        "registryFile": "$shippingBinDir/ue4ss/Mods/mods.txt",
+        "note": "UE4SS reads mods.txt, where each line is \"ModName : 1\" (enabled) or \"ModName : 0\"."
+      }
+    },
+    {
+      "id": "undertale-mod-tool",
+      "name": "UndertaleModTool",
+      "provides": [
+        "gamemaker-tooling"
+      ],
+      "homepage": "https://github.com/UnderminersTeam/UndertaleModTool",
+      "license": "GPL-3.0",
+      "engines": [
+        "gamemaker"
+      ],
+      "constraints": {
+        "note": "Not a runtime loader: an external editor that rewrites data.win. IndieDeck manages it as a tool and always backs up data.win before handing it over."
+      },
+      "installedMarkers": {
+        "paths": []
+      },
+      "install": {
+        "kind": "external-tool"
+      },
+      "versions": [
+        {
+          "version": "latest",
+          "channel": "stable",
+          "assets": {
+            "x64": {
+              "type": "github-release",
+              "repo": "UnderminersTeam/UndertaleModTool",
+              "tag": "latest",
+              "assetPattern": "UndertaleModTool.*win.*\\.zip"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "rpgmaker-plugins",
+      "name": "RPG Maker MV/MZ plugin system (native)",
+      "provides": [
+        "rpgmaker-plugins"
+      ],
+      "engines": [
+        "rpgmaker-mv",
+        "rpgmaker-mz"
+      ],
+      "constraints": {
+        "note": "No external loader needed: js/plugins/*.js plus an entry in js/plugins.js. IndieDeck edits plugins.js transactionally and keeps a backup."
+      },
+      "installedMarkers": {
+        "paths": [
+          "js/plugins.js",
+          "www/js/plugins.js"
+        ]
+      },
+      "install": {
+        "kind": "native"
+      },
+      "versions": [],
+      "modLayout": {
+        "dir": "js/plugins",
+        "altDir": "www/js/plugins",
+        "entry": "js",
+        "disable": "registry-flag",
+        "registryFile": "js/plugins.js",
+        "altRegistryFile": "www/js/plugins.js",
+        "note": "plugins.js is a JS array literal of {name, status, description, parameters}. Toggling `status` is how the engine enables/disables a plugin."
+      }
+    },
+    {
+      "id": "renpy-native",
+      "name": "Ren'Py native (game/ directory)",
+      "provides": [
+        "renpy-native"
+      ],
+      "engines": [
+        "renpy"
+      ],
+      "constraints": {
+        "note": "Mods and translations are plain .rpy/.rpyc files dropped into game/. Load order follows filename order; IndieDeck namespaces its own files with a zz_indiedeck_ prefix."
+      },
+      "installedMarkers": {
+        "paths": [
+          "game"
+        ]
+      },
+      "install": {
+        "kind": "native"
+      },
+      "versions": [],
+      "modLayout": {
+        "dir": "game",
+        "entry": "rpy",
+        "disable": "rename-suffix",
+        "disabledSuffix": ".disabled",
+        "filePrefix": "zz_indiedeck_",
+        "note": "Ren'Py loads game/*.rpy in filename order. IndieDeck-managed files carry a zz_indiedeck_ prefix so they load last and are trivially identifiable."
+      }
+    },
+    {
+      "id": "rgss-script-injection",
+      "name": "RGSS script injection",
+      "provides": [
+        "rgss-script-injection"
+      ],
+      "engines": [
+        "rpgmaker-rgss"
+      ],
+      "constraints": {
+        "note": "XP/VX/VX Ace keep scripts inside Data/Scripts.r*data. Editing requires unpacking that archive; IndieDeck only detects and backs up - it does not auto-patch."
+      },
+      "installedMarkers": {
+        "paths": [
+          "Game.ini"
+        ]
+      },
+      "install": {
+        "kind": "manual"
+      },
+      "versions": []
+    },
+    {
+      "id": "unityinjector",
+      "name": "UnityInjector / Sybaris",
+      "provides": [
+        "unityinjector"
+      ],
+      "homepage": "https://github.com/usagirei/Sybaris",
+      "license": "unknown",
+      "engines": [
+        "unity"
+      ],
+      "constraints": {
+        "backend": [
+          "mono"
+        ],
+        "note": "Legacy injector used by older Unity games. Detect-only: IndieDeck never installs it."
+      },
+      "installedMarkers": {
+        "paths": [
+          "UnityInjector",
+          "Sybaris"
+        ]
+      },
+      "install": {
+        "kind": "manual"
+      },
+      "versions": []
+    },
+    {
+      "id": "ipa",
+      "name": "IPA (Illusion Plugin Architecture)",
+      "provides": [
+        "ipa"
+      ],
+      "homepage": "https://github.com/Eusth/IPA",
+      "license": "MIT",
+      "engines": [
+        "unity"
+      ],
+      "constraints": {
+        "backend": [
+          "mono"
+        ],
+        "note": "Detect-only: IndieDeck never installs it."
+      },
+      "installedMarkers": {
+        "paths": [
+          "IPA.exe",
+          "Plugins/IPA.dll"
+        ]
+      },
+      "install": {
+        "kind": "manual"
+      },
+      "versions": []
+    }
+  ]
+}

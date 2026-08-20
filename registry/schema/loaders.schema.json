@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tjwlstj/indie-deck/registry/schema/loaders.schema.json",
+  "title": "IndieDeck mod loader registry",
+  "type": "object",
+  "required": ["schemaVersion", "loaders"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": 1 },
+    "updated": { "type": "string", "format": "date" },
+    "notes": { "type": "string" },
+    "loaders": { "type": "array", "items": { "$ref": "#/$defs/loader" } }
+  },
+  "$defs": {
+    "loader": {
+      "type": "object",
+      "required": ["id", "name", "provides", "engines", "constraints", "installedMarkers", "install", "versions"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+        "name": { "type": "string" },
+        "provides": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" },
+          "description": "Capabilities a translator variant can require, e.g. \"bepinex\", \"bepinex6-il2cpp\"."
+        },
+        "homepage": { "type": "string" },
+        "license": { "type": "string" },
+        "engines": { "type": "array", "items": { "type": "string" } },
+        "stability": { "type": "string" },
+        "constraints": { "$ref": "#/$defs/constraints" },
+        "installedMarkers": { "$ref": "#/$defs/markers" },
+        "modLayout": { "$ref": "#/$defs/modLayout" },
+        "install": { "$ref": "#/$defs/install" },
+        "uninstall": {
+          "type": "object",
+          "properties": { "removePaths": { "type": "array", "items": { "type": "string" } } }
+        },
+        "versions": { "type": "array", "items": { "$ref": "#/$defs/version" } }
+      }
+    },
+    "constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "backend": { "type": "array", "items": { "enum": ["mono", "il2cpp"] } },
+        "arch": { "type": "array", "items": { "enum": ["x86", "x64", "arm64"] } },
+        "unityVersion": { "$ref": "#/$defs/versionConstraint" },
+        "runtime": { "type": "object", "additionalProperties": true },
+        "conflictsWith": { "type": "array", "items": { "type": "string" } },
+        "note": { "type": "string" }
+      }
+    },
+    "versionConstraint": {
+      "type": "object",
+      "properties": {
+        "min": { "type": "string" },
+        "max": { "type": "string" },
+        "confidence": { "enum": ["verified", "inferred", "community", "unverified"] },
+        "sources": { "type": "array", "items": { "type": "string" } },
+        "note": { "type": "string" }
+      }
+    },
+    "markers": {
+      "type": "object",
+      "required": ["paths"],
+      "additionalProperties": false,
+      "properties": {
+        "paths": { "type": "array", "items": { "type": "string" } },
+        "globs": { "type": "array", "items": { "type": "string" } },
+        "excludeIfPresent": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Negative markers, for loaders whose layouts overlap."
+        },
+        "versionFrom": {
+          "type": "object",
+          "required": ["kind", "path"],
+          "properties": { "kind": { "enum": ["peFileVersion"] }, "path": { "type": "string" } }
+        },
+        "note": { "type": "string" }
+      }
+    },
+    "modLayout": {
+      "type": "object",
+      "required": ["dir", "entry", "disable"],
+      "additionalProperties": false,
+      "properties": {
+        "dir": { "type": "string" },
+        "altDir": { "type": "string" },
+        "entry": { "enum": ["dll", "dll-or-folder", "folder", "js", "rpy"] },
+        "disable": { "enum": ["rename-suffix", "move-to-disabled", "registry-flag"] },
+        "disabledSuffix": { "type": "string" },
+        "disabledDir": { "type": "string" },
+        "registryFile": { "type": "string" },
+        "altRegistryFile": { "type": "string" },
+        "manifest": { "type": "string" },
+        "extraDirs": { "type": "array", "items": { "type": "string" } },
+        "filePrefix": { "type": "string" },
+        "note": { "type": "string" }
+      }
+    },
+    "install": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "enum": ["extract-root", "extract-into", "run-setup", "tool-install", "native", "manual", "bundled", "external-tool"]
+        },
+        "dest": { "type": "string" },
+        "setupExe": { "type": "string" },
+        "launchShortcut": { "type": "string" },
+        "url": { "type": "string" },
+        "note": { "type": "string" }
+      }
+    },
+    "version": {
+      "type": "object",
+      "required": ["version", "channel", "assets"],
+      "additionalProperties": false,
+      "properties": {
+        "version": { "type": "string" },
+        "build": { "type": "integer" },
+        "commit": { "type": "string" },
+        "channel": { "enum": ["stable", "prerelease", "bleeding-edge"] },
+        "released": { "type": "string" },
+        "assets": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/asset" }
+        }
+      }
+    },
+    "asset": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "enum": ["github-release", "url"] },
+        "repo": { "type": "string" },
+        "tag": { "type": "string" },
+        "asset": { "type": "string" },
+        "assetPattern": { "type": "string" },
+        "url": { "type": "string" },
+        "size": { "type": "integer" }
+      }
+    }
+  }
+}
