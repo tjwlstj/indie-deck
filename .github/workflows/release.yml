@@ -24,7 +24,7 @@ jobs:
         os: [ubuntu-latest, windows-latest]
         node: ['22.x', '24.x']
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -39,7 +39,7 @@ jobs:
           release_commit="$(git rev-list -n 1 "$GITHUB_REF")"
           git merge-base --is-ancestor "$release_commit" origin/main
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node }}
           cache: npm
@@ -48,6 +48,17 @@ jobs:
       - name: Verify tag and package versions
         run: npm run release:check
       - run: npm run verify
+
+      # Keep Chromium's production sandbox enabled in hosted Linux runners.
+      # Electron ships this helper without the privileged ownership/mode that
+      # Chromium requires, so configure it explicitly before the smoke boot.
+      - name: Configure Electron sandbox helper (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo chown root:root node_modules/electron/dist/chrome-sandbox
+          sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
+          test "$(stat -c '%U:%G %a' node_modules/electron/dist/chrome-sandbox)" = "root:root 4755"
 
       - name: Desktop smoke test (Linux)
         if: runner.os == 'Linux'
@@ -70,11 +81,11 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '24.x'
           cache: npm
