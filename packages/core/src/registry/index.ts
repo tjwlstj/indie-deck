@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadConfigSchemas, type ConfigSchema } from '../config/schema.ts';
 import type {
   CompatRule,
   EngineDef,
@@ -57,6 +58,7 @@ export function loadRegistry(registryDir?: string): Registry {
     translators: translators.translators,
     compat: { channelPreference: compat.channelPreference ?? ['stable', 'prerelease', 'bleeding-edge'], rules: compat.rules },
     fonts,
+    configSchemas: loadConfigSchemas(dir),
     meta: {
       updated: {
         engines: engines.updated,

@@ -36,6 +36,28 @@ export {
 export { evaluateRule, scoreEngine, rankEngines } from './detect/rules.ts';
 export { runProbes, type ProbeContext, type ProbeResult } from './detect/probes.ts';
 
+export {
+  readGameConfig,
+  planConfigChanges,
+  writeGameConfig,
+  restoreConfigBackup,
+  detectTranslatorVersion,
+  findConfigPath,
+  loadConfigSchemas,
+  resolveMapping,
+  providerById,
+  settingById,
+  type ConfigSchema,
+  type GameConfig,
+  type ConfigChange,
+  type ConfigPlan,
+  type ConfigValue,
+  type ProviderDef,
+  type SettingDef,
+  type ValidationIssue,
+  type DetectedTranslatorVersion,
+} from './config/index.ts';
+
 export { resolvePlans, recommendPlan, summarisePlans, pickFontBundle } from './resolve/index.ts';
 
 export {

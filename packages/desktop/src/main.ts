@@ -16,6 +16,9 @@ import {
   loadConfig,
   loadLibrary,
   loadRegistry,
+  planConfigChanges,
+  readGameConfig,
+  writeGameConfig,
   modHosts,
   readReceipts,
   refreshLibrary,
@@ -29,6 +32,8 @@ import {
   type LauncherConfig,
   type Registry,
   type ResolveOptions,
+  type ConfigChange,
+  type ConfigSchema,
   type TranslatorPlan,
 } from '@indiedeck/core';
 
@@ -171,16 +176,28 @@ async function runSmokeTest(window: BrowserWindow): Promise<void> {
           return {
             title: document.querySelector('#detail h1')?.textContent ?? '',
             plans: document.querySelectorAll('#detail .plan').length,
+            configRows: document.querySelectorAll('#configPanel .cfg-row').length,
+            configSections: document.querySelectorAll('#configPanel .cfg-section').length,
+            configText: (document.getElementById('configPanel')?.textContent ?? '(no panel)').slice(0, 160),
             facts: document.querySelectorAll('#detail .facts dt').length,
           };
         })()`,
-      )) as { skipped?: boolean; title?: string; plans?: number; facts?: number };
+      )) as { skipped?: boolean; title?: string; plans?: number; facts?: number; configRows?: number; configSections?: number; configText?: string };
 
       if (detail.skipped) console.log('[smoke] no games indexed - detail panel not exercised');
-      else console.log(`[smoke] detail for "${detail.title}": ${detail.facts} facts, ${detail.plans} translator plans`);
+      else console.log(`[smoke] detail for "${detail.title}": ${detail.facts} facts, ${detail.plans} translator plans, ${detail.configSections} config sections / ${detail.configRows} settings`);
+      if (process.env['INDIEDECK_DEBUG']) console.log(`[smoke] config panel says: ${detail.configText}`);
 
       const shot = process.env['INDIEDECK_SCREENSHOT'];
       if (shot) {
+        // Optionally frame a particular part of the page for documentation shots.
+        const selector = process.env['INDIEDECK_SCREENSHOT_SELECTOR'];
+        if (selector) {
+          await window.webContents.executeJavaScript(
+            `document.querySelector(${JSON.stringify(selector)})?.scrollIntoView({ block: 'start' })`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, 600));
+        }
         const image = await window.webContents.capturePage();
         await writeFile(shot, image.toPNG());
         console.log(`[smoke] screenshot written to ${shot}`);
@@ -194,6 +211,37 @@ async function runSmokeTest(window: BrowserWindow): Promise<void> {
 
   console.error('[smoke] renderer did not finish loading within 20s');
   app.exit(1);
+}
+
+/* ------------------------------------------------------------- config */
+
+function pickTranslator(schemas: Map<string, ConfigSchema>, profile: GameProfile, requested?: string): string {
+  if (typeof requested === 'string' && schemas.has(requested)) return requested;
+  const installed = profile.installedTranslators.find((t) => schemas.has(t.translatorId));
+  if (installed) return installed.translatorId;
+  const first = [...schemas.keys()][0];
+  if (!first) throw new Error('No translator config schemas are registered.');
+  return first;
+}
+
+/** Renderer-supplied changes are reduced to plain id/value string pairs. */
+function sanitiseChanges(changes: unknown): ConfigChange[] {
+  if (!Array.isArray(changes)) return [];
+  return changes
+    .filter((c): c is { id: unknown; value: unknown } => typeof c === 'object' && c !== null)
+    .map((c) => ({ id: String(c.id), value: String(c.value) }))
+    .slice(0, 200);
+}
+
+async function configContext(gameId: string, translatorId: string) {
+  const gamePath = requireGamePath(gameId);
+  const profile = detectGame(registry, gamePath, { deep: true });
+  if (!profile) throw new Error('Game folder is gone.');
+  const schemas = registry.configSchemas as Map<string, ConfigSchema>;
+  const id = pickTranslator(schemas, profile, translatorId);
+  const schema = schemas.get(id)!;
+  const config = await readGameConfig(registry, schemas, profile, id, { revealSecrets: true });
+  return { schema, config, profile };
 }
 
 /* ---------------------------------------------------------------- ipc */
@@ -358,6 +406,34 @@ function register(): void {
     const child = spawn(target, { cwd: gamePath, detached: true, stdio: 'ignore' });
     child.unref();
     return profile.executable;
+  });
+
+  handle('config:read', async (gameId: string, translatorId: string, options: { revealSecrets?: boolean }) => {
+    const gamePath = requireGamePath(gameId);
+    const profile = detectGame(registry, gamePath, { deep: true });
+    if (!profile) throw new Error('Game folder is gone.');
+    const schemas = registry.configSchemas as Map<string, ConfigSchema>;
+    const id = pickTranslator(schemas, profile, translatorId);
+    const config = await readGameConfig(registry, schemas, profile, id, {
+      revealSecrets: options?.revealSecrets === true,
+    });
+    return { config, categories: schemas.get(id)?.categories ?? [], fontBundles: profile.installedFontBundles };
+  });
+
+  handle('config:plan', async (gameId: string, translatorId: string, changes: ConfigChange[]) => {
+    const { schema, config, profile } = await configContext(gameId, translatorId);
+    return planConfigChanges(schema, config, sanitiseChanges(changes), { fontBundles: profile.installedFontBundles });
+  });
+
+  handle('config:write', async (gameId: string, translatorId: string, changes: ConfigChange[]) => {
+    const { schema, config, profile } = await configContext(gameId, translatorId);
+    const plan = planConfigChanges(schema, config, sanitiseChanges(changes), {
+      fontBundles: profile.installedFontBundles,
+    });
+    if (!plan.valid) return { plan, result: undefined };
+    // The plan is rebuilt here from the current file rather than trusting one
+    // the renderer held on to, so a stale form cannot overwrite newer values.
+    return { plan, result: await writeGameConfig(profile, config, plan) };
   });
 
   handle('shell:openGameFolder', async (gameId: string) => shell.openPath(requireGamePath(gameId)));

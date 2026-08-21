@@ -6,6 +6,10 @@ import {
   auditGame,
   auditLibrary,
   summariseAudit,
+  readGameConfig,
+  planConfigChanges,
+  writeGameConfig,
+  type ConfigSchema,
   createLogger,
   defaultCacheDir,
   defaultDataDir,
@@ -38,7 +42,7 @@ import { bullet, c, engineBadge, formatBytes, heading, severityTone, table } fro
 const CLEAR_LINE = `${CSI}K`;
 
 export interface Flags {
-  [key: string]: string | boolean | undefined;
+  [key: string]: string | boolean | (string | boolean)[] | undefined;
 }
 
 export interface Ctx {
@@ -664,6 +668,165 @@ export async function cmdCheck(ctx: Ctx): Promise<number> {
       }
     }
     if (audits.length > limit) console.log(c.dim(`\n  ... and ${audits.length - limit} more (--limit N)`));
+  });
+  return 0;
+}
+
+/* ------------------------------------------------------------------ config */
+
+function tierBadge(tier: string[]): string {
+  if (tier.includes('official')) return c.green('official API');
+  if (tier.includes('local')) return c.cyan('local');
+  if (tier.includes('free')) return c.yellow('free') + (tier.includes('unofficial') ? c.dim(' / unofficial') : '');
+  return c.dim(tier.join(', '));
+}
+
+export async function cmdConfig(ctx: Ctx): Promise<number> {
+  const target = ctx.args[0];
+  if (!target) {
+    console.error('usage: indiedeck config <game|path> [--set id=value ...] [--dry-run] [--expert] [--reveal] [--providers]');
+    return 2;
+  }
+
+  const profile = await resolveGameArg(ctx.reg, target, { deep: true });
+  const schemas = ctx.reg.configSchemas as Map<string, ConfigSchema>;
+  const translatorId =
+    str(ctx.flags, 'translator') ??
+    profile.installedTranslators.find((t) => schemas.has(t.translatorId))?.translatorId ??
+    'xunity-autotranslator';
+
+  const schema = schemas.get(translatorId);
+  if (!schema) {
+    console.error(c.red('error:') + ' no config schema for "' + translatorId + '".');
+    return 1;
+  }
+
+  const config = await readGameConfig(ctx.reg, schemas, profile, translatorId, {
+    revealSecrets: bool(ctx.flags, 'reveal'),
+  });
+
+  if (bool(ctx.flags, 'providers')) {
+    out(ctx, config.providers, () => {
+      console.log(heading(config.translatorName + ' - translation engines'));
+      console.log(
+        table(
+          config.providers.map((p) => ({
+            sel: p.selected ? c.green('*') : ' ',
+            id: p.provider.id,
+            label: p.provider.label,
+            tier: tierBadge(p.provider.tier),
+            needs: p.provider.fields.filter((f) => f.required).map((f) => f.label).join(', ') || c.dim('nothing'),
+          })),
+          [
+            { header: '', key: 'sel', max: 2 },
+            { header: 'ID', key: 'id', max: 26 },
+            { header: 'ENGINE', key: 'label', max: 28 },
+            { header: 'KIND', key: 'tier', max: 22 },
+            { header: 'REQUIRES', key: 'needs', max: 30 },
+          ],
+        ),
+      );
+      for (const p of config.providers) {
+        if (!p.provider.languages) continue;
+        console.log(c.dim('  ' + p.provider.label + ': ' + p.provider.languages.source.join('/') + ' -> ' + p.provider.languages.target.join('/')));
+      }
+    });
+    return 0;
+  }
+
+  const rawSets = Array.isArray(ctx.flags['set']) ? ctx.flags['set'] : [ctx.flags['set']];
+  const sets = rawSets
+    .filter((v): v is string => typeof v === 'string')
+    .map((pair) => {
+      const at = pair.indexOf('=');
+      if (at < 0) throw new Error('--set expects id=value, got "' + pair + '"');
+      return { id: pair.slice(0, at).trim(), value: pair.slice(at + 1) };
+    });
+
+  if (sets.length === 0) {
+    out(ctx, config, () => {
+      console.log(heading(profile.name + ' - ' + config.translatorName));
+      const version = config.detected.version ?? 'unknown';
+      console.log(
+        c.dim(
+          '  version ' + version + ' (from ' + config.detected.source + ', ' + config.detected.confidence + ')  ·  ' +
+            config.location.path + (config.location.exists ? '' : c.yellow(' [not created yet]')),
+        ),
+      );
+      console.log(c.dim('  schema describes ' + config.coverage.described + ' of ' + config.coverage.total + ' keys in the file'));
+      for (const warning of config.warnings) console.log(bullet(warning, 'warn'));
+
+      let category = '';
+      for (const value of config.values) {
+        if (value.category !== category) {
+          category = value.category;
+          const label = schema.categories.find((x) => x.id === category)?.label ?? category;
+          console.log(heading(label));
+        }
+        const marker = value.isDefault ? c.dim(' (default)') : '';
+        const flags = [value.assumed ? c.yellow('assumed') : '', value.deprecated ? c.dim('deprecated') : '']
+          .filter(Boolean)
+          .join(' ');
+        const shown = value.value === '' ? c.dim('(empty)') : value.value;
+        console.log('  ' + c.dim(value.id.padEnd(38)) + ' ' + shown.padEnd(24) + marker + (flags ? ' ' + flags : ''));
+      }
+
+      const selected = config.providers.find((p) => p.selected);
+      if (selected && selected.fields.length > 0) {
+        console.log(heading(selected.provider.label + ' credentials'));
+        for (const field of selected.fields) {
+          const shown = field.value === '' ? c.dim('(empty)') : field.value;
+          const missing = field.required && !field.value ? c.red('  required') : '';
+          console.log('  ' + c.dim(('provider:' + selected.provider.id + ':' + field.key).padEnd(38)) + ' ' + shown + missing);
+        }
+        if (selected.provider.note) console.log(c.dim('  ' + selected.provider.note));
+      }
+
+      if (bool(ctx.flags, 'expert') && config.unknown.length > 0) {
+        console.log(heading('Keys IndieDeck does not describe (' + config.unknown.length + ')'));
+        console.log(c.dim('  These are preserved exactly as they are on every write.'));
+        for (const entry of config.unknown) console.log('  ' + c.dim('[' + entry.section + ']') + ' ' + entry.key + '=' + entry.value);
+      } else if (config.unknown.length > 0) {
+        console.log(c.dim('\n  ' + config.unknown.length + ' further keys are preserved untouched (--expert to list them)'));
+      }
+      console.log(c.dim('\n  change one with: indiedeck config <game> --set xunity.targetLanguage=ko'));
+    });
+    return 0;
+  }
+
+  const plan = planConfigChanges(schema, config, sets, { fontBundles: profile.installedFontBundles });
+  const dryRun = bool(ctx.flags, 'dry-run');
+
+  if (!ctx.json) {
+    console.log(heading(dryRun ? 'Planned changes' : 'Changes'));
+    for (const change of plan.changes) {
+      const from = change.from === '' ? c.dim('(empty)') : change.from;
+      const to = change.to === '' ? '(empty)' : change.to;
+      console.log('  ' + c.dim('[' + change.section + ']') + ' ' + change.key + ': ' + from + ' ' + c.dim('->') + ' ' + c.bold(to));
+    }
+    for (const issue of plan.issues) {
+      const tone = issue.severity === 'error' ? 'err' : issue.severity === 'warn' ? 'warn' : 'info';
+      console.log(bullet(issue.message, tone));
+    }
+  }
+
+  if (!plan.valid) {
+    if (ctx.json) console.log(JSON.stringify({ plan, written: false }, null, 2));
+    return 1;
+  }
+  if (plan.issues.some((i) => i.severity === 'warn') && !bool(ctx.flags, 'yes') && !dryRun) {
+    console.log(bullet(c.yellow('Re-run with --yes to write these anyway, or --dry-run to preview.'), 'warn'));
+    return 1;
+  }
+
+  const result = await writeGameConfig(profile, config, plan, { dryRun });
+  out(ctx, { plan, result }, () => {
+    if (dryRun) {
+      console.log(c.dim('\n  dry run - ' + config.location.path + ' was not touched'));
+      return;
+    }
+    console.log('\n  ' + c.green(result.changed + ' setting(s) written') + ' to ' + result.path);
+    if (result.backup) console.log(c.dim('  original backed up to ' + result.backup));
   });
   return 0;
 }

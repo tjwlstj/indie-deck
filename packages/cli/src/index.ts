@@ -6,6 +6,7 @@ import { setColorEnabled } from './ansi.ts';
 import { c } from './ui.ts';
 import {
   cmdCheck,
+  cmdConfig,
   cmdDetect,
   cmdInfo,
   cmdInstall,
@@ -44,6 +45,9 @@ ${c.bold('TRANSLATION')}
                               ${c.dim('--lang ko --from ja --endpoint DeepLTranslate --all --limit N')}
   install <game|path>         Install the best plan (loader + translator + config)
                               ${c.dim('--translator id --variant id --version v --dry-run --yes --allow-run')}
+  config <game>               Read or change translator settings by semantic id,
+                              checked against the version actually installed
+                              ${c.dim('--set id=value --dry-run --expert --reveal --providers')}
   uninstall <game> [component] Remove what IndieDeck installed, restore backups
                               ${c.dim('--dry-run')}
 
@@ -76,17 +80,24 @@ export function parseArgs(argv: string[]): { command: string; args: string[]; fl
     if (token.startsWith('--')) {
       const [rawKey, inlineValue] = token.slice(2).split(/=(.*)/s);
       const key = rawKey!;
+      let value: string | boolean;
       if (inlineValue !== undefined) {
-        flags[key] = inlineValue;
+        value = inlineValue;
       } else {
         const next = argv[i + 1];
         if (next !== undefined && !next.startsWith('-')) {
-          flags[key] = next;
+          value = next;
           i += 1;
         } else {
-          flags[key] = true;
+          value = true;
         }
       }
+      // Repeating a flag accumulates rather than overwrites, so
+      // `--set a=1 --set b=2` keeps both.
+      const existing = flags[key];
+      if (existing === undefined) flags[key] = value;
+      else if (Array.isArray(existing)) existing.push(value);
+      else flags[key] = [existing, value];
       continue;
     }
     if (token.startsWith('-') && token.length > 1) {
@@ -114,6 +125,7 @@ const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
   root: cmdRoot,
   registry: cmdRegistry,
   stats: cmdStats,
+  config: cmdConfig,
   check: cmdCheck,
   doctor: cmdCheck,
 };

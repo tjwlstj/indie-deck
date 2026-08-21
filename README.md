@@ -45,6 +45,16 @@ blocked or preferred, each finding carrying a confidence level and a source URL.
 `install` then downloads, extracts, writes the config, and records a receipt so
 `uninstall` can put the folder back.
 
+**Translator settings without hand-editing INI.** The config a translator reads
+is described by a *versioned schema*: a stable id like `xunity.targetLanguage`
+maps to whichever `(section, key)` the installed build actually uses, so the
+form is not pinned to one version's layout. Editing preserves every comment,
+every key IndieDeck does not describe, and the file's line endings; credentials
+are redacted everywhere but the file itself. See
+[docs/config-manager.md](docs/config-manager.md).
+
+![The translation settings panel](docs/media/config.png)
+
 **Mod management.** One model over BepInEx `plugins/`, MelonLoader `Mods/`,
 GDWeave, UE4SS, RPG Maker `js/plugins` (including the `plugins.js` registry) and
 Ren'Py `game/` — list, add, enable, disable, with the right disable strategy for
@@ -96,6 +106,10 @@ indiedeck uninstall "MyGame"        # removes exactly what it installed
 indiedeck mods list "MyGame"
 indiedeck mods add "MyGame" ./cool-mod.zip
 indiedeck mods disable "MyGame" cool-mod
+
+indiedeck config "MyGame"           # translator settings, by semantic id
+indiedeck config "MyGame" --set xunity.targetLanguage=ko --dry-run
+indiedeck config "MyGame" --providers   # engines, their tier and what they need
 
 indiedeck check                     # library-wide health sweep
 indiedeck registry check --online   # is the pinned data still current?
@@ -198,9 +212,9 @@ runs them directly without a build step.
 
 ## Roadmap
 
-P0 (safety) is done. Next up: a portable Windows build, then the versioned
-config manager that removes the last hand-editing step. See
-[docs/roadmap.md](docs/roadmap.md).
+Safety (transactional installs, download integrity, the desktop trust boundary)
+and the versioned config manager are done. Next up: a portable Windows build, a
+game session layer, and mod profiles. See [docs/roadmap.md](docs/roadmap.md).
 
 ## Contributing
 

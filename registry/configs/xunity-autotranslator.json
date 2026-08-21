@@ -1,0 +1,294 @@
+{
+  "$schema": "../schema/config.schema.json",
+  "schemaVersion": 1,
+  "updated": "2026-08-21",
+  "translator": "xunity-autotranslator",
+  "notes": "Semantic config schema. A setting is identified by a stable id (xunity.targetLanguage) and each id declares where it lives per translator version range, so the UI never hard-codes one version's INI layout. Mappings were read off a real generated AutoTranslatorConfig.ini (23 sections, 112 keys) rather than guessed; keys this file does not describe are preserved untouched and shown in the expert view.",
+
+  "versionDetection": {
+    "order": [
+      { "kind": "receipt", "confidence": "verified", "note": "IndieDeck installed it and recorded the version." },
+      {
+        "kind": "peFileVersion",
+        "paths": [
+          "BepInEx/plugins/XUnity.AutoTranslator/XUnity.AutoTranslator.Plugin.Core.dll",
+          "BepInEx/plugins/XUnity.AutoTranslator.Plugin.Core.dll",
+          "Mods/XUnity.AutoTranslator.Plugin.MelonMod.dll",
+          "AutoTranslator/XUnity.AutoTranslator.Plugin.Core.dll",
+          "UnityInjector/XUnity.AutoTranslator.Plugin.Core.dll"
+        ],
+        "confidence": "verified",
+        "note": "The assembly on disk is the authority for what is actually installed."
+      },
+      {
+        "kind": "configTag",
+        "section": "Migrations",
+        "key": "Tag",
+        "confidence": "community",
+        "note": "The Migrations tag records the version whose config migration last ran, which usually - but not necessarily - equals the installed version. Only used when no assembly could be read."
+      }
+    ]
+  },
+
+  "configLocations": [
+    { "variant": "bepinex", "path": "BepInEx/config/AutoTranslatorConfig.ini", "confidence": "verified" },
+    { "variant": "bepinex-il2cpp", "path": "BepInEx/config/AutoTranslatorConfig.ini", "confidence": "verified" },
+    { "variant": "melonmod", "path": "UserData/AutoTranslatorConfig.ini", "confidence": "community" },
+    { "variant": "melonmod-il2cpp", "path": "UserData/AutoTranslatorConfig.ini", "confidence": "community" },
+    { "variant": "reipatcher", "path": "AutoTranslator/Config.ini", "confidence": "community" },
+    { "variant": "unityinjector", "path": "UnityInjector/Config/AutoTranslatorConfig.ini", "confidence": "community" },
+    { "variant": "ipa", "path": "UserData/AutoTranslatorConfig.ini", "confidence": "community" }
+  ],
+
+  "providers": [
+    {
+      "id": "GoogleTranslate",
+      "label": "Google Translate",
+      "tier": ["free", "unofficial"],
+      "section": "Google",
+      "fields": [{ "key": "ServiceUrl", "type": "string", "label": "Service URL", "optional": true }],
+      "note": "Free web endpoint. No key needed, but it can break when the site changes."
+    },
+    {
+      "id": "GoogleTranslateV2",
+      "label": "Google Translate (V2 endpoint)",
+      "tier": ["free", "unofficial"],
+      "section": "GoogleV2",
+      "fields": [
+        { "key": "ServiceUrl", "type": "string", "label": "Service URL", "optional": true },
+        { "key": "UseSimplest", "type": "boolean", "label": "Use simplest request", "optional": true }
+      ]
+    },
+    { "id": "GoogleTranslateCompat", "label": "Google Translate (compatibility)", "tier": ["free", "unofficial"], "section": "Google", "fields": [] },
+    {
+      "id": "GoogleTranslateLegitimate",
+      "label": "Google Cloud Translation",
+      "tier": ["official"],
+      "section": "GoogleLegitimate",
+      "fields": [{ "key": "GoogleAPIKey", "type": "secret", "label": "API key", "required": true }]
+    },
+    { "id": "BingTranslate", "label": "Bing Translate", "tier": ["free", "unofficial"], "fields": [] },
+    {
+      "id": "BingTranslateLegitimate",
+      "label": "Azure Translator",
+      "tier": ["official"],
+      "section": "BingLegitimate",
+      "fields": [{ "key": "OcpApimSubscriptionKey", "type": "secret", "label": "Subscription key", "required": true }]
+    },
+    {
+      "id": "DeepLTranslate",
+      "label": "DeepL (free endpoint)",
+      "tier": ["free", "unofficial"],
+      "section": "DeepL",
+      "fields": [
+        { "key": "MinDelaySeconds", "type": "number", "label": "Minimum delay (s)", "min": 0, "max": 60, "optional": true },
+        { "key": "MaxDelaySeconds", "type": "number", "label": "Maximum delay (s)", "min": 0, "max": 120, "optional": true }
+      ],
+      "note": "Rate limited on purpose - the delays exist to avoid being blocked."
+    },
+    {
+      "id": "DeepLTranslateLegitimate",
+      "label": "DeepL API",
+      "tier": ["official"],
+      "section": "DeepLLegitimate",
+      "fields": [
+        { "key": "ApiKey", "type": "secret", "label": "API key", "required": true },
+        { "key": "Free", "type": "boolean", "label": "Free API plan", "optional": true }
+      ],
+      "requiresTranslatorVersion": { "min": "5.5.2", "reason": "5.5.2 moved auth to the Authorization header; earlier builds are rejected by the current API." }
+    },
+    {
+      "id": "PapagoTranslate",
+      "label": "Papago",
+      "tier": ["free", "unofficial"],
+      "fields": [],
+      "languages": {
+        "source": ["ja", "ko", "en", "zh-CN", "zh-TW", "es", "fr", "de", "ru", "pt", "it", "vi", "th", "id"],
+        "target": ["ja", "ko", "en", "zh-CN", "zh-TW", "es", "fr", "de", "ru", "pt", "it", "vi", "th", "id"],
+        "confidence": "community",
+        "note": "Papago covers a much smaller language set than Google. List is from the public service, not from a machine-readable source."
+      }
+    },
+    {
+      "id": "BaiduTranslate",
+      "label": "Baidu Translate",
+      "tier": ["official"],
+      "section": "Baidu",
+      "fields": [
+        { "key": "BaiduAppId", "type": "string", "label": "App ID", "required": true },
+        { "key": "BaiduAppSecret", "type": "secret", "label": "App secret", "required": true },
+        { "key": "DelaySeconds", "type": "number", "label": "Delay (s)", "min": 0, "max": 60, "optional": true }
+      ]
+    },
+    {
+      "id": "YandexTranslate",
+      "label": "Yandex Translate",
+      "tier": ["official"],
+      "section": "Yandex",
+      "fields": [{ "key": "YandexAPIKey", "type": "secret", "label": "API key", "required": true }]
+    },
+    {
+      "id": "WatsonTranslate",
+      "label": "IBM Watson",
+      "tier": ["official"],
+      "section": "Watson",
+      "fields": [
+        { "key": "Url", "type": "string", "label": "Service URL", "required": true },
+        { "key": "Key", "type": "secret", "label": "API key", "required": true }
+      ]
+    },
+    {
+      "id": "LingoCloudTranslate",
+      "label": "LingoCloud (Caiyun)",
+      "tier": ["official"],
+      "section": "LingoCloud",
+      "fields": [{ "key": "LingoCloudToken", "type": "secret", "label": "Token", "required": true }]
+    },
+    {
+      "id": "ezTransXP",
+      "label": "ezTrans XP (local)",
+      "tier": ["local"],
+      "section": "ezTrans",
+      "fields": [{ "key": "InstallationPath", "type": "directory", "label": "ezTrans XP install folder", "required": true }],
+      "languages": {
+        "source": ["ja"],
+        "target": ["ko"],
+        "confidence": "community",
+        "note": "ezTrans XP is a Japanese-to-Korean engine only. Any other pair silently produces nothing useful."
+      },
+      "note": "Runs entirely offline once installed. The usual choice for Korean players translating Japanese games."
+    },
+    {
+      "id": "LecPowerTranslator15",
+      "label": "LEC Power Translator 15 (local)",
+      "tier": ["local"],
+      "section": "LecPowerTranslator15",
+      "fields": [{ "key": "InstallationPath", "type": "directory", "label": "Install folder", "required": true }]
+    },
+    {
+      "id": "CustomTranslate",
+      "label": "Custom endpoint",
+      "tier": ["local", "experimental"],
+      "section": "Custom",
+      "fields": [
+        { "key": "Url", "type": "string", "label": "Endpoint URL", "required": true, "placeholder": "http://127.0.0.1:14366/translate" },
+        { "key": "EnableShortDelay", "type": "boolean", "label": "Short delay", "optional": true },
+        { "key": "DisableSpamChecks", "type": "boolean", "label": "Disable spam checks", "optional": true }
+      ],
+      "note": "Points at any local HTTP translation server - a self-hosted model, or a broker."
+    }
+  ],
+
+  "categories": [
+    { "id": "basic", "label": "Translation" },
+    { "id": "credentials", "label": "Service credentials" },
+    { "id": "frameworks", "label": "Text frameworks" },
+    { "id": "behaviour", "label": "Translation behaviour" },
+    { "id": "font", "label": "UI and fonts" },
+    { "id": "files", "label": "Cache and files" },
+    { "id": "debug", "label": "Debug" }
+  ],
+
+  "settings": [
+    {
+      "id": "xunity.endpoint",
+      "ui": { "category": "basic", "label": "Translation engine", "type": "provider-select", "order": 10 },
+      "versions": [{ "min": "5.0.0", "section": "Service", "key": "Endpoint" }],
+      "default": "GoogleTranslate",
+      "help": "Which service does the translating. Free web endpoints need no key but can break when the site changes."
+    },
+    {
+      "id": "xunity.fallbackEndpoint",
+      "ui": { "category": "basic", "label": "Fallback engine", "type": "provider-select", "allowEmpty": true, "order": 20 },
+      "versions": [{ "min": "5.0.0", "section": "Service", "key": "FallbackEndpoint" }],
+      "default": "",
+      "help": "Used when the primary engine fails. Leave empty to disable."
+    },
+    {
+      "id": "xunity.sourceLanguage",
+      "ui": { "category": "basic", "label": "Original language", "type": "language", "order": 30 },
+      "versions": [
+        { "min": "5.0.0", "section": "General", "key": "FromLanguage" },
+        { "max": "4.999", "section": "AutoTranslator", "key": "FromLanguage", "confidence": "inferred" }
+      ],
+      "default": "ja"
+    },
+    {
+      "id": "xunity.targetLanguage",
+      "ui": { "category": "basic", "label": "Translate into", "type": "language", "order": 40 },
+      "versions": [
+        { "min": "5.0.0", "section": "General", "key": "Language" },
+        { "max": "4.999", "section": "AutoTranslator", "key": "Language", "confidence": "inferred" }
+      ],
+      "default": "en"
+    },
+
+    {
+      "id": "xunity.enableIMGUI",
+      "ui": { "category": "frameworks", "label": "IMGUI", "type": "boolean", "order": 10 },
+      "versions": [{ "min": "5.0.0", "section": "TextFrameworks", "key": "EnableIMGUI" }],
+      "default": "False",
+      "help": "Off by default. Turning it on also translates mod and debug windows, which is often noise."
+    },
+    { "id": "xunity.enableUGUI", "ui": { "category": "frameworks", "label": "uGUI", "type": "boolean", "order": 20 }, "versions": [{ "min": "5.0.0", "section": "TextFrameworks", "key": "EnableUGUI" }], "default": "True" },
+    { "id": "xunity.enableNGUI", "ui": { "category": "frameworks", "label": "NGUI", "type": "boolean", "order": 30 }, "versions": [{ "min": "5.0.0", "section": "TextFrameworks", "key": "EnableNGUI" }], "default": "True" },
+    { "id": "xunity.enableTextMeshPro", "ui": { "category": "frameworks", "label": "TextMeshPro", "type": "boolean", "order": 40 }, "versions": [{ "min": "5.0.0", "section": "TextFrameworks", "key": "EnableTextMeshPro" }], "default": "True" },
+    { "id": "xunity.enableTextMesh", "ui": { "category": "frameworks", "label": "TextMesh (legacy)", "type": "boolean", "order": 50 }, "versions": [{ "min": "5.0.0", "section": "TextFrameworks", "key": "EnableTextMesh" }], "default": "False" },
+    { "id": "xunity.enableFairyGUI", "ui": { "category": "frameworks", "label": "FairyGUI", "type": "boolean", "order": 60 }, "versions": [{ "min": "5.0.0", "section": "TextFrameworks", "key": "EnableFairyGUI" }], "default": "True" },
+    {
+      "id": "xunity.enableUIElements",
+      "ui": { "category": "frameworks", "label": "UIElements", "type": "boolean", "order": 70 },
+      "versions": [{ "min": "5.6.0", "section": "TextFrameworks", "key": "EnableUIElements", "confidence": "inferred" }],
+      "default": "True",
+      "help": "Added in 5.6. Hidden on older versions.",
+      "availability": { "min": "5.6.0" }
+    },
+
+    {
+      "id": "xunity.maxCharactersPerTranslation",
+      "ui": { "category": "behaviour", "label": "Max characters per request", "type": "integer", "min": 1, "max": 10000, "order": 10 },
+      "versions": [{ "min": "5.0.0", "section": "Behaviour", "key": "MaxCharactersPerTranslation" }],
+      "default": "2000",
+      "help": "Longer text is skipped. Some APIs reject very large requests."
+    },
+    { "id": "xunity.ignoreWhitespaceInDialogue", "ui": { "category": "behaviour", "label": "Ignore whitespace in dialogue", "type": "boolean", "order": 20 }, "versions": [{ "min": "5.0.0", "section": "Behaviour", "key": "IgnoreWhitespaceInDialogue" }], "default": "False" },
+    { "id": "xunity.minDialogueChars", "ui": { "category": "behaviour", "label": "Minimum dialogue length", "type": "integer", "min": 0, "max": 1000, "order": 30 }, "versions": [{ "min": "5.0.0", "section": "Behaviour", "key": "MinDialogueChars" }], "default": "20" },
+    { "id": "xunity.forceSplitTextAfterCharacters", "ui": { "category": "behaviour", "label": "Force line break after N characters", "type": "integer", "min": 0, "max": 1000, "order": 40 }, "versions": [{ "min": "5.0.0", "section": "Behaviour", "key": "ForceSplitTextAfterCharacters" }], "default": "0", "help": "0 disables it." },
+    { "id": "xunity.enableBatching", "ui": { "category": "behaviour", "label": "Batch requests", "type": "boolean", "order": 50 }, "versions": [{ "min": "5.0.0", "section": "Behaviour", "key": "EnableBatching" }], "default": "True" },
+    { "id": "xunity.useStaticTranslations", "ui": { "category": "behaviour", "label": "Use static translations", "type": "boolean", "order": 60 }, "versions": [{ "min": "5.0.0", "section": "Behaviour", "key": "UseStaticTranslations" }], "default": "True" },
+    { "id": "xunity.copyToClipboard", "ui": { "category": "behaviour", "label": "Copy source text to clipboard", "type": "boolean", "order": 70 }, "versions": [{ "min": "5.0.0", "section": "Behaviour", "key": "CopyToClipboard" }], "default": "False", "help": "Lets an external tool pick the text up." },
+
+    {
+      "id": "xunity.fallbackFontTextMeshPro",
+      "ui": { "category": "font", "label": "TMP fallback font", "type": "font-bundle", "order": 10 },
+      "versions": [{ "min": "5.0.0", "section": "Behaviour", "key": "FallbackFontTextMeshPro" }],
+      "default": "",
+      "help": "Recommended over the override: the game keeps its own font and only falls back for glyphs it cannot draw. Needed for Korean, Japanese and Chinese."
+    },
+    {
+      "id": "xunity.overrideFontTextMeshPro",
+      "ui": { "category": "font", "label": "TMP override font", "type": "font-bundle", "order": 20, "deprecated": true },
+      "versions": [{ "min": "5.0.0", "section": "Behaviour", "key": "OverrideFontTextMeshPro" }],
+      "default": "",
+      "help": "Replaces every TextMeshPro font in the game. Use only when the fallback path does not work."
+    },
+    { "id": "xunity.overrideFont", "ui": { "category": "font", "label": "uGUI override font", "type": "string", "order": 30 }, "versions": [{ "min": "5.0.0", "section": "Behaviour", "key": "OverrideFont" }], "default": "" },
+    { "id": "xunity.overrideFontSize", "ui": { "category": "font", "label": "Override font size", "type": "string", "order": 40 }, "versions": [{ "min": "5.0.0", "section": "Behaviour", "key": "OverrideFontSize" }], "default": "" },
+    { "id": "xunity.enableUIResizing", "ui": { "category": "font", "label": "Resize UI to fit", "type": "boolean", "order": 50 }, "versions": [{ "min": "5.0.0", "section": "Behaviour", "key": "EnableUIResizing" }], "default": "True" },
+    { "id": "xunity.forceUIResizing", "ui": { "category": "font", "label": "Force UI resizing", "type": "boolean", "order": 60 }, "versions": [{ "min": "5.0.0", "section": "Behaviour", "key": "ForceUIResizing" }], "default": "False" },
+
+    { "id": "xunity.translationDirectory", "ui": { "category": "files", "label": "Translation folder", "type": "string", "order": 10 }, "versions": [{ "min": "5.0.0", "section": "Files", "key": "Directory" }], "default": "Translation\\{Lang}\\Text" },
+    { "id": "xunity.outputFile", "ui": { "category": "files", "label": "Generated translations file", "type": "string", "order": 20 }, "versions": [{ "min": "5.0.0", "section": "Files", "key": "OutputFile" }], "default": "Translation\\{Lang}\\Text\\_AutoGeneratedTranslations.txt" },
+    { "id": "xunity.substitutionFile", "ui": { "category": "files", "label": "Substitutions file", "type": "string", "order": 30 }, "versions": [{ "min": "5.0.0", "section": "Files", "key": "SubstitutionFile" }], "default": "Translation\\{Lang}\\Text\\_Substitutions.txt" },
+
+    {
+      "id": "xunity.enableLegacyTextureLoading",
+      "ui": { "category": "debug", "label": "Legacy texture loading", "type": "boolean", "order": 10 },
+      "versions": [{ "min": "5.0.0", "section": "Texture", "key": "EnableLegacyTextureLoading" }],
+      "default": "False",
+      "help": "Often required for image translation on Unity older than 5.3."
+    },
+    { "id": "xunity.enableConsole", "ui": { "category": "debug", "label": "Console window", "type": "boolean", "order": 20 }, "versions": [{ "min": "5.0.0", "section": "Debug", "key": "EnableConsole" }], "default": "False" },
+    { "id": "xunity.enableLog", "ui": { "category": "debug", "label": "Verbose log", "type": "boolean", "order": 30 }, "versions": [{ "min": "5.0.0", "section": "Debug", "key": "EnableLog" }], "default": "False" }
+  ]
+}

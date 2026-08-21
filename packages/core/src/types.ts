@@ -214,6 +214,8 @@ export interface Registry {
     apply: Record<string, unknown>;
     systemFontOption?: Record<string, unknown>;
   };
+  /** Per-translator config layout schemas, keyed by translator id. */
+  configSchemas: Map<string, unknown>;
   meta: { updated: Record<string, string> };
 }
 

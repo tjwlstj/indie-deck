@@ -41,23 +41,30 @@ Right now a user needs git and Node. That is the biggest adoption barrier.
 - [ ] Release CI: tag → build → test → package → checksum → GitHub Release
 - [ ] In-app registry update check (the data ages faster than the code)
 
-## P1 — Config Manager
+## P1 — Config Manager  ✅ done
 
-The feature that removes the last hand-editing step. Design notes in
+The feature that removes the last hand-editing step. How it works:
 [config-manager.md](config-manager.md).
 
-- [ ] Round-trip INI parser (already have `applyIni`; needs an AST that also
-      preserves key order and blank lines under insertion)
-- [ ] **Versioned config schema** — semantic ids (`xunity.targetLanguage`) mapped
-      to `(section, key)` per translator version range, so a GUI form is not
+- [x] Round-trip INI editing that preserves comments, key order, line endings
+- [x] **Versioned config schema** — semantic ids (`xunity.targetLanguage`) mapped
+      to `(section, key)` per translator version range, so the form is not
       pinned to one version's INI layout
-- [ ] Translator version detection: receipt → DLL version → hash → unknown
-- [ ] Basic GUI: engine, source/target language, fallback, credentials
-- [ ] Provider manifests with per-provider auth fields and language capability,
-      so unsupported language pairs are caught before the game is launched
-- [ ] Advanced GUI grouped by category; expert mode; raw editor
-- [ ] Unknown keys preserved verbatim; config diff before save; config backup
-- [ ] Credentials in OS secure storage, redacted from every log and diff
+- [x] Translator version detection: receipt → assembly → Migrations tag →
+      unknown, each carrying its own confidence
+- [x] Compatibility mode when the version is unknown: newest layout, clearly
+      flagged as assumed
+- [x] Basic GUI: engine, source/target language, fallback, credentials
+- [x] Provider manifests with auth fields and, where genuinely known, language
+      capability — so ezTrans with an English source warns instead of silently
+      translating nothing
+- [x] Advanced categories, expert view listing every undescribed key
+- [x] Unknown keys preserved verbatim; plan + diff before save; automatic backup
+- [x] Credentials redacted on read, in diffs and in logs
+- [ ] Credentials in OS secure storage (blocked on the translation broker: the
+      plugin itself reads the key from the game's config file)
+- [ ] Schemas for BepInEx, MelonLoader and UE4SS configs (the engine is already
+      translator-agnostic - these are data files, not code)
 
 ## P1 — GameSession
 

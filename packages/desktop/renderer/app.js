@@ -298,6 +298,14 @@ function renderDetail() {
   }
   for (const plan of plans) panel.append(renderPlan(plan));
 
+  if (profile.installedTranslators.length > 0) {
+    panel.append(el('h3', null, 'Translation settings'));
+    const configHost = el('div', 'cfg');
+    configHost.id = 'configPanel';
+    panel.append(configHost);
+    void loadConfigPanel();
+  }
+
   panel.append(el('h3', null, `Mods${hosts.length > 0 ? ` · ${hosts.map((h) => h.dir).join(', ')}` : ''}`));
   if (hosts.length === 0) {
     panel.append(el('div', 'plan-sub', 'No mod host yet — install a loader above first.'));
@@ -336,9 +344,336 @@ function renderDetail() {
   panel.append(log);
 }
 
+
+/* ------------------------------------------------------- translator config */
+
+const configState = {
+  data: null,
+  categories: [],
+  pending: new Map(),
+  open: new Set(['basic', 'credentials']),
+  expert: false,
+  reveal: false,
+  busy: false,
+};
+
+function resetConfigState() {
+  configState.data = null;
+  configState.categories = [];
+  configState.pending.clear();
+  configState.busy = false;
+}
+
+function currentValue(id, fallback) {
+  return configState.pending.has(id) ? configState.pending.get(id) : fallback;
+}
+
+function stageChange(id, value, original) {
+  if (value === original) configState.pending.delete(id);
+  else configState.pending.set(id, value);
+  renderConfigFooter();
+}
+
+function fieldControl(id, type, value, original, options) {
+  const opts = options ?? {};
+  if (type === 'boolean') {
+    const button = el('button', 'toggle' + (String(value).toLowerCase() === 'true' ? ' on' : ''));
+    button.addEventListener('click', () => {
+      const next = String(currentValue(id, value)).toLowerCase() === 'true' ? 'False' : 'True';
+      stageChange(id, next, original);
+      button.classList.toggle('on', next === 'True');
+    });
+    return button;
+  }
+
+  if (type === 'provider-select') {
+    const select = el('select');
+    if (opts.allowEmpty) {
+      const none = el('option', null, '(none)');
+      none.value = '';
+      select.append(none);
+    }
+    for (const provider of configState.data.config.providers) {
+      const option = el('option', null, provider.provider.label + '  ·  ' + provider.provider.tier.join('/'));
+      option.value = provider.provider.id;
+      select.append(option);
+    }
+    select.value = value;
+    select.addEventListener('change', () => {
+      stageChange(id, select.value, original);
+      renderConfigPanel();
+    });
+    return select;
+  }
+
+  if (type === 'language') {
+    const select = el('select');
+    for (const code of ['ko', 'ja', 'en', 'zh-CN', 'zh-TW', 'es', 'fr', 'de', 'ru', 'pt', 'it', 'vi', 'th', 'id']) {
+      const option = el('option', null, code);
+      option.value = code;
+      select.append(option);
+    }
+    if (![...select.options].some((o) => o.value === value)) {
+      const custom = el('option', null, value + ' (in file)');
+      custom.value = value;
+      select.append(custom);
+    }
+    select.value = value;
+    select.addEventListener('change', () => stageChange(id, select.value, original));
+    return select;
+  }
+
+  if (type === 'font-bundle') {
+    const select = el('select');
+    const none = el('option', null, '(none)');
+    none.value = '';
+    select.append(none);
+    for (const bundle of configState.data.fontBundles ?? []) {
+      const option = el('option', null, bundle);
+      option.value = bundle;
+      select.append(option);
+    }
+    if (value && ![...select.options].some((o) => o.value === value)) {
+      const custom = el('option', null, value + ' (in file, not in folder)');
+      custom.value = value;
+      select.append(custom);
+    }
+    select.value = value;
+    select.addEventListener('change', () => stageChange(id, select.value, original));
+    return select;
+  }
+
+  const input = el('input');
+  input.type = type === 'secret' ? 'password' : type === 'integer' || type === 'number' ? 'number' : 'text';
+  input.value = value;
+  if (opts.placeholder) input.placeholder = opts.placeholder;
+  if (type === 'secret') input.autocomplete = 'off';
+  input.addEventListener('input', () => stageChange(id, input.value, original));
+  return input;
+}
+
+function configRow(setting) {
+  const row = el('div', 'cfg-row');
+  const label = el('label', 'cfg-label');
+  label.append(el('span', null, setting.label));
+  if (setting.deprecated) label.append(el('span', 'pill warn', 'deprecated'));
+  // When the version itself is unknown every mapping is assumed and the panel
+  // header already says so - only flag a row when it is the exception.
+  if (setting.assumed && configState.data?.config.detected.version) {
+    label.append(el('span', 'pill warn', 'assumed'));
+  }
+  row.append(label);
+
+  const control = fieldControl(setting.id, setting.type, currentValue(setting.id, setting.value), setting.value, setting.ui);
+  row.append(control);
+
+  if (setting.help) row.append(el('div', 'cfg-help', setting.help));
+  return row;
+}
+
+function renderConfigFooter() {
+  const footer = $('cfgFooter');
+  if (!footer) return;
+  const count = configState.pending.size;
+  footer.hidden = count === 0;
+  const label = $('cfgCount');
+  if (label) label.textContent = count === 1 ? '1 unsaved change' : count + ' unsaved changes';
+}
+
+function renderConfigPanel() {
+  const host = $('configPanel');
+  if (!host) return;
+  host.replaceChildren();
+
+  const data = configState.data;
+  if (!data) return;
+  const config = data.config;
+
+  const meta = el('div', 'cfg-meta');
+  const version = config.detected.version ?? 'unknown';
+  meta.append(
+    el('span', null, config.translatorName + '  ' + version),
+    el('span', 'plan-sub', 'from ' + config.detected.source + ' · ' + config.detected.confidence),
+  );
+  host.append(meta);
+  host.append(
+    el('div', 'plan-sub', config.location.path + (config.location.exists ? '' : '  (created on first launch)')),
+  );
+  host.append(
+    el('div', 'plan-sub', 'schema describes ' + config.coverage.described + ' of ' + config.coverage.total + ' keys; the rest are preserved untouched'),
+  );
+  for (const warning of config.warnings) {
+    const row = el('div', 'issue');
+    row.append(el('div', null, warning));
+    host.append(row);
+  }
+
+  const byCategory = new Map();
+  for (const value of config.values) {
+    if (!byCategory.has(value.category)) byCategory.set(value.category, []);
+    byCategory.get(value.category).push(value);
+  }
+
+  const renderCategory = (id, label, settings, extra) => {
+    const section = el('section', 'cfg-section');
+    const header = el('button', 'cfg-head');
+    const isOpen = configState.open.has(id);
+    header.append(el('span', 'chev', isOpen ? '▾' : '▸'), el('span', null, label));
+    header.addEventListener('click', () => {
+      if (configState.open.has(id)) configState.open.delete(id);
+      else configState.open.add(id);
+      renderConfigPanel();
+    });
+    section.append(header);
+
+    if (isOpen) {
+      const body = el('div', 'cfg-body');
+      for (const setting of settings ?? []) body.append(configRow(setting));
+      if (extra) extra(body);
+      section.append(body);
+    }
+    host.append(section);
+  };
+
+  for (const category of data.categories) {
+    if (category.id === 'credentials') continue;
+    const settings = byCategory.get(category.id);
+    if (!settings || settings.length === 0) continue;
+    renderCategory(category.id, category.label, settings);
+  }
+
+  // Credentials for whichever engine is selected right now, staged edits included.
+  const selectedId = currentValue('xunity.endpoint', config.values.find((v) => v.id === 'xunity.endpoint')?.value ?? '');
+  const selected = config.providers.find((p) => p.provider.id === selectedId);
+  if (selected) {
+    renderCategory('credentials', selected.provider.label + ' credentials', [], (body) => {
+      if (selected.fields.length === 0) {
+        body.append(el('div', 'cfg-help', 'This engine needs no credentials.'));
+      }
+      for (const field of selected.fields) {
+        const row = el('div', 'cfg-row');
+        const label = el('label', 'cfg-label');
+        label.append(el('span', null, field.label));
+        if (field.required && !field.value) label.append(el('span', 'pill err', 'required'));
+        row.append(label);
+        row.append(
+          fieldControl('provider:' + selected.provider.id + ':' + field.key, field.type, currentValue('provider:' + selected.provider.id + ':' + field.key, ''), '', {
+            placeholder: field.value ? field.value : undefined,
+          }),
+        );
+        if (field.isSecret) row.append(el('div', 'cfg-help', 'Stored in the game config as plain text - that is how the plugin reads it.'));
+        row.append(el('div', 'cfg-help', ''));
+        body.append(row);
+      }
+      if (selected.provider.note) body.append(el('div', 'cfg-help', selected.provider.note));
+      if (selected.provider.languages) {
+        body.append(
+          el('div', 'cfg-help', 'Supports ' + selected.provider.languages.source.join(', ') + ' → ' + selected.provider.languages.target.join(', ')),
+        );
+      }
+    });
+  }
+
+  if (config.unknown.length > 0) {
+    renderCategory('expert', 'Keys IndieDeck does not describe (' + config.unknown.length + ')', [], (body) => {
+      body.append(el('div', 'cfg-help', 'Never modified. Listed so nothing looks lost.'));
+      const list = el('div', 'log');
+      list.textContent = config.unknown.map((u) => '[' + u.section + '] ' + u.key + '=' + u.value).join('\n');
+      body.append(list);
+    });
+  }
+
+  const footer = el('div', 'cfg-footer');
+  footer.id = 'cfgFooter';
+  footer.hidden = configState.pending.size === 0;
+  footer.append(el('span', null, ''));
+  const count = el('span', 'cfg-count');
+  count.id = 'cfgCount';
+  footer.append(count);
+
+  const preview = el('button', 'ghost', 'Preview');
+  preview.addEventListener('click', () => applyConfig(true));
+  const save = el('button', 'primary', 'Save');
+  save.addEventListener('click', () => applyConfig(false));
+  const discard = el('button', 'ghost', 'Discard');
+  discard.addEventListener('click', () => {
+    configState.pending.clear();
+    renderConfigPanel();
+  });
+  footer.append(preview, save, discard);
+  host.append(footer);
+
+  const log = el('div', 'log');
+  log.id = 'cfgLog';
+  log.hidden = true;
+  host.append(log);
+  renderConfigFooter();
+}
+
+async function applyConfig(previewOnly) {
+  if (configState.busy) return;
+  const changes = [...configState.pending.entries()].map(([id, value]) => ({ id, value }));
+  if (changes.length === 0) return;
+
+  configState.busy = true;
+  const log = $('cfgLog');
+  log.hidden = false;
+  log.textContent = 'Checking…';
+
+  try {
+    if (previewOnly) {
+      const plan = await api.translatorConfig.plan(state.selected, configState.data.config.translatorId, changes);
+      log.textContent = renderPlanText(plan);
+      return;
+    }
+
+    const { plan, result } = await api.translatorConfig.write(state.selected, configState.data.config.translatorId, changes);
+    log.textContent = renderPlanText(plan);
+    if (!result) {
+      setStatus('Nothing written - fix the errors above.', 'err');
+      return;
+    }
+    log.textContent += '\n\n' + result.changed + ' setting(s) written to ' + result.path;
+    if (result.backup) log.textContent += '\noriginal backed up to ' + result.backup;
+    configState.pending.clear();
+    setStatus(result.changed + ' setting(s) saved', 'ok');
+    await loadConfigPanel();
+  } catch (err) {
+    log.textContent = err.message;
+    setStatus(err.message, 'err');
+  } finally {
+    configState.busy = false;
+    renderConfigFooter();
+  }
+}
+
+function renderPlanText(plan) {
+  const lines = plan.changes.map(
+    (c) => '[' + c.section + '] ' + c.key + ': ' + (c.from || '(empty)') + ' -> ' + (c.to || '(empty)'),
+  );
+  for (const issue of plan.issues) {
+    lines.push((issue.severity === 'error' ? '× ' : issue.severity === 'warn' ? '! ' : '• ') + issue.message);
+  }
+  return lines.join('\n');
+}
+
+async function loadConfigPanel() {
+  const host = $('configPanel');
+  if (!host || !state.selected) return;
+  const translatorId = configState.data?.config.translatorId;
+  try {
+    configState.data = await api.translatorConfig.read(state.selected, translatorId, {});
+    configState.categories = configState.data.categories;
+    renderConfigPanel();
+  } catch (err) {
+    host.replaceChildren(el('div', 'cfg-help', err.message));
+  }
+}
+
 /* ----------------------------------------------------------------- actions */
 
 async function selectGame(gameId, keepScroll) {
+  if (state.selected !== gameId) resetConfigState();
   state.selected = gameId;
   if (!keepScroll) $('detail').scrollTop = 0;
   renderGameList();

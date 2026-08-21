@@ -48,6 +48,12 @@ contextBridge.exposeInMainWorld('indiedeck', {
     openFolder: (gameId) => call('shell:openGameFolder', gameId),
   },
 
+  translatorConfig: {
+    read: (gameId, translatorId, options) => call('config:read', gameId, translatorId, options ?? {}),
+    plan: (gameId, translatorId, changes) => call('config:plan', gameId, translatorId, changes),
+    write: (gameId, translatorId, changes) => call('config:write', gameId, translatorId, changes),
+  },
+
   mods: {
     toggle: (gameId, modId, enabled) => call('mods:toggle', gameId, modId, enabled),
     add: (gameId) => call('mods:add', gameId),
