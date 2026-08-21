@@ -74,7 +74,9 @@
       "translators": [
         "xunity-autotranslator",
         "mort",
-        "lunatranslator"
+        "lunatranslator",
+        "mtool",
+        "translator-plus-plus"
       ]
     },
     {
@@ -136,7 +138,8 @@
         "renpy-translator",
         "projz-renpy-translation",
         "mort",
-        "lunatranslator"
+        "lunatranslator",
+        "translator-plus-plus"
       ]
     },
     {
@@ -316,7 +319,8 @@
         "translator-plus-plus",
         "mort",
         "lunatranslator",
-        "textractor"
+        "textractor",
+        "mtool"
       ]
     },
     {
@@ -361,7 +365,9 @@
         "wolftrans",
         "mort",
         "lunatranslator",
-        "textractor"
+        "textractor",
+        "mtool",
+        "translator-plus-plus"
       ]
     },
     {

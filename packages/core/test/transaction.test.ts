@@ -165,15 +165,19 @@ test('a mod that overwrites an existing file restores it on uninstall', async ()
 
 test('a failed install leaves the game folder exactly as it was', async () => {
   const root = rpgGame('rpg-rollback');
-  const snapshot = new Map<string, Buffer>();
-  const walk = (dir: string): void => {
+  // One walker, an explicit target map. The earlier version closed over
+  // `snapshot` and was called again after the failure, so it re-recorded the
+  // post-failure state and the test could not fail.
+  const walk = (dir: string, into: Map<string, Buffer>): void => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) walk(full);
-      else snapshot.set(path.relative(root, full), fs.readFileSync(full));
+      if (entry.isDirectory()) walk(full, into);
+      else into.set(path.relative(root, full), fs.readFileSync(full));
     }
   };
-  walk(root);
+
+  const snapshot = new Map<string, Buffer>();
+  walk(root, snapshot);
 
   const broken = path.join(tmp, 'broken.zip');
   await fsp.writeFile(broken, Buffer.from('this is not a zip at all'));
@@ -182,16 +186,7 @@ test('a failed install leaves the game folder exactly as it was', async () => {
   await assert.rejects(() => installModFromFile(reg, profile, broken, { name: 'Broken' }), /ZIP|zip/);
 
   const now = new Map<string, Buffer>();
-  walk(root);
-  const walkInto = (dir: string): void => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) walkInto(full);
-      else now.set(path.relative(root, full), fs.readFileSync(full));
-    }
-  };
-  now.clear();
-  walkInto(root);
+  walk(root, now);
 
   assert.deepEqual([...now.keys()].sort(), [...snapshot.keys()].sort(), 'no stray files are left behind');
   for (const [rel, content] of snapshot) {

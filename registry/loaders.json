@@ -679,7 +679,8 @@
         "entry": "folder",
         "disable": "registry-flag",
         "registryFile": "$shippingBinDir/ue4ss/Mods/mods.txt",
-        "note": "UE4SS reads mods.txt, where each line is \"ModName : 1\" (enabled) or \"ModName : 0\"."
+        "note": "UE4SS reads mods.txt, one line per mod: \"ModName : 1\" enabled, \"ModName : 0\" disabled. That is a different file format from RPG Maker's plugins.js, which is why modLayout declares registryFormat.",
+        "registryFormat": "lines"
       }
     },
     {
@@ -747,7 +748,8 @@
         "disable": "registry-flag",
         "registryFile": "js/plugins.js",
         "altRegistryFile": "www/js/plugins.js",
-        "note": "plugins.js is a JS array literal of {name, status, description, parameters}. Toggling `status` is how the engine enables/disables a plugin."
+        "note": "plugins.js is a JS array literal of {name, status, description, parameters}. Toggling `status` is how the engine enables/disables a plugin.",
+        "registryFormat": "plugins-js"
       }
     },
     {

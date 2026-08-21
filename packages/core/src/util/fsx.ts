@@ -164,16 +164,4 @@ export function dirSize(dir: string, capBytes = 8 * 1024 * 1024 * 1024): number 
   return total;
 }
 
-/** Copies a file, first moving any existing target aside into `backupDir`. */
-export async function backupFile(target: string, backupDir: string): Promise<string | undefined> {
-  if (!(await pathExists(target))) return undefined;
-  await ensureDir(backupDir);
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const dest = path.join(backupDir, `${path.basename(target)}.${stamp}.bak`);
-  await fsp.copyFile(target, dest);
-  return dest;
-}
 
-export function normalizeRel(p: string): string {
-  return p.replace(/\\/g, '/').replace(/^\.\//, '');
-}

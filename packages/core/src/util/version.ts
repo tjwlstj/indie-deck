@@ -81,9 +81,6 @@ export function satisfiesRange(version: string | undefined, range: { min?: strin
   return true;
 }
 
-export function sortDescending(versions: string[]): string[] {
-  return [...versions].sort((a, b) => compareVersions(b, a));
-}
 
 /** Major line of a Unity version, e.g. "2021.3.16f1" -> 2021, "6000.0.58f2" -> 6000. */
 export function unityMajor(version: string | undefined): number | undefined {

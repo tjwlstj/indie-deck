@@ -128,7 +128,7 @@ test('the installed version comes from the assembly, not the Migrations tag', as
   assert.equal(config.detected.source, 'config-tag');
   assert.equal(config.detected.version, '5.4.5');
   assert.equal(config.detected.confidence, 'community');
-  assert.ok(config.warnings.some((w) => /Migrations tag/.test(w)));
+  assert.ok(config.warnings.some((w) => /Migrations tag/.test(w.text)));
 });
 
 test('a missing config file is reported as "not generated yet", not as an error', async () => {
@@ -138,7 +138,7 @@ test('a missing config file is reported as "not generated yet", not as an error'
 
   assert.equal(config.location.exists, false);
   assert.equal(config.location.path, 'BepInEx/config/AutoTranslatorConfig.ini');
-  assert.ok(config.warnings.some((w) => /does not exist yet/.test(w)));
+  assert.ok(config.warnings.some((w) => /does not exist yet/.test(w.text)));
   assert.equal(config.values.find((v) => v.id === 'xunity.targetLanguage')?.value, 'en', 'defaults fill in');
 });
 

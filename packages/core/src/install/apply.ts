@@ -67,9 +67,18 @@ export async function applyPlan(plan: TranslatorPlan, options: ApplyOptions = {}
   let lastDownload: { path: string; name: string } | undefined;
   const loaderEntries: ReceiptEntry[] = [];
   const translatorEntries: ReceiptEntry[] = [];
-  let phase: 'loader' | 'translator' = plan.loader && !plan.loader.alreadyInstalled ? 'loader' : 'translator';
-  const collect = (entries: ReceiptEntry[]): void => {
-    (phase === 'loader' ? loaderEntries : translatorEntries).push(...entries);
+
+  /**
+   * Which receipt a written file belongs to is decided by the step itself, not
+   * by a cursor that advances on the first extract. A plan whose loader step is
+   * a manual instruction, or whose loader archive is not a ZIP, used to file the
+   * translator's whole payload under a loader receipt that was never installed.
+   */
+  const ownerOf = (step: PlanStep): 'loader' | 'translator' =>
+    step.details?.['loaderId'] !== undefined ? 'loader' : 'translator';
+
+  const collect = (step: PlanStep, entries: ReceiptEntry[]): void => {
+    (ownerOf(step) === 'loader' ? loaderEntries : translatorEntries).push(...entries);
     result.filesWritten.push(...entries.filter((e) => e.operation !== 'snapshot').map((e) => e.path));
   };
 
@@ -143,8 +152,7 @@ export async function applyPlan(plan: TranslatorPlan, options: ApplyOptions = {}
 
           const relDest = step.dest && step.dest !== '.' ? step.dest : '.';
           const entries = await tx.extract(lastDownload.path, relDest);
-          collect(entries);
-          if (phase === 'loader') phase = 'translator';
+          collect(step, entries);
           result.performed.push({
             step,
             status: options.dryRun ? 'skipped' : 'done',
@@ -167,7 +175,7 @@ export async function applyPlan(plan: TranslatorPlan, options: ApplyOptions = {}
             const source = await findExtractedEntry(extracted.dir, step.dest);
             if (!source) throw new Error(`${step.dest} not found inside ${lastDownload.name}`);
             const entry = await tx.copyIn(source, step.dest);
-            collect([entry]);
+            collect(step, [entry]);
             result.performed.push({
               step,
               status: 'done',
@@ -211,7 +219,7 @@ export async function applyPlan(plan: TranslatorPlan, options: ApplyOptions = {}
           const configPath = path.join(gameRoot, step.dest);
           const existing = (await pathExists(configPath)) ? await fsp.readFile(configPath, 'utf8') : '';
           const entry = await tx.write(step.dest, applyIni(existing, plan.config));
-          collect([entry]);
+          collect(step, [entry]);
           result.performed.push({ step, status: 'done', detail: Object.keys(plan.config).join(', ') });
           break;
         }
@@ -292,9 +300,23 @@ export async function writeReceipt(
   return receipt;
 }
 
+/**
+ * A receipt is a JSON file sitting in a game folder, so it is untrusted input:
+ * an entry that escapes the root would turn uninstall into an arbitrary delete.
+ */
+function isInsideRoot(relative: string): boolean {
+  const cleaned = relative.replace(/\\/g, '/');
+  if (cleaned === '' || cleaned.startsWith('/')) return false;
+  if (/^[a-zA-Z]:/.test(cleaned)) return false;
+  return !cleaned.split('/').includes('..');
+}
+
 /** Reads a receipt of either schema version into the current shape. */
 export function normaliseReceipt(raw: InstallReceipt): InstallReceipt {
-  if (Array.isArray(raw.entries) && raw.entries.length > 0) return raw;
+  const safe = (entries: ReceiptEntry[]): ReceiptEntry[] =>
+    entries.filter((e) => isInsideRoot(e.path) && (e.backup === undefined || isInsideRoot(e.backup)));
+
+  if (Array.isArray(raw.entries) && raw.entries.length > 0) return { ...raw, entries: safe(raw.entries) };
 
   // schemaVersion 1: a flat file list plus a separate backup list. Files that
   // have a matching backup were modifications, everything else was a creation.
@@ -309,7 +331,7 @@ export function normaliseReceipt(raw: InstallReceipt): InstallReceipt {
   for (const [original, backup] of backups) {
     if (!entries.some((e) => e.path === original)) entries.push({ path: original, operation: 'snapshot', backup });
   }
-  return { ...raw, schemaVersion: 1, entries };
+  return { ...raw, schemaVersion: 1, entries: safe(entries) };
 }
 
 export async function readReceipts(gameRoot: string): Promise<InstallReceipt[]> {
@@ -323,7 +345,10 @@ export async function readReceipts(gameRoot: string): Promise<InstallReceipt[]> 
   const out: InstallReceipt[] = [];
   for (const name of names.filter((n) => n.endsWith('.json'))) {
     try {
-      out.push(normaliseReceipt(JSON.parse(await fsp.readFile(path.join(dir, name), 'utf8')) as InstallReceipt));
+      const parsed = JSON.parse(await fsp.readFile(path.join(dir, name), 'utf8')) as InstallReceipt;
+      // The folder the receipt was found in is authoritative, not the path
+      // recorded inside it.
+      out.push(normaliseReceipt({ ...parsed, gamePath: gameRoot }));
     } catch {
       /* skip unreadable receipt */
     }
@@ -340,6 +365,8 @@ export interface UninstallResult {
 }
 
 export interface UninstallOptions {
+  /** Overrides the receipt's own gamePath. The caller knows where it read it from. */
+  root?: string;
   dryRun?: boolean;
   /** Remove files even when they no longer match what IndieDeck wrote. */
   force?: boolean;
@@ -355,7 +382,7 @@ export interface UninstallOptions {
 export async function uninstallReceipt(receipt: InstallReceipt, options: UninstallOptions = {}): Promise<UninstallResult> {
   const log = options.logger ?? silentLogger;
   const result: UninstallResult = { removed: [], restored: [], missing: [], keptModified: [] };
-  const root = receipt.gamePath;
+  const root = path.resolve(options.root ?? receipt.gamePath);
   const normalised = normaliseReceipt(receipt);
 
   for (const entry of [...normalised.entries].reverse()) {

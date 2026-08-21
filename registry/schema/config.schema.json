@@ -1,0 +1,188 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tjwlstj/indie-deck/registry/schema/config.schema.json",
+  "title": "IndieDeck versioned config schema",
+  "description": "Describes where a tool keeps each of its settings, per version. A setting is named by a stable semantic id and declares its (section, key) per version range, so a UI form is never pinned to one release's file layout.",
+  "type": "object",
+  "required": ["schemaVersion", "translator", "versionDetection", "configLocations", "providers", "categories", "settings"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": 1 },
+    "updated": { "type": "string", "format": "date" },
+    "translator": {
+      "type": "string",
+      "description": "Id of the translator (or other tool) in the registry this schema describes."
+    },
+    "notes": { "type": "string" },
+    "versionDetection": {
+      "type": "object",
+      "required": ["order"],
+      "properties": {
+        "order": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Tried in order. The first step that answers wins, and its confidence travels with the answer.",
+          "items": { "$ref": "#/$defs/versionStep" }
+        }
+      }
+    },
+    "configLocations": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/location" } },
+    "providers": { "type": "array", "items": { "$ref": "#/$defs/provider" } },
+    "categories": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "label"],
+        "properties": { "id": { "type": "string" }, "label": { "type": "string" } }
+      }
+    },
+    "settings": { "type": "array", "items": { "$ref": "#/$defs/setting" } }
+  },
+  "$defs": {
+    "confidence": { "enum": ["verified", "inferred", "community", "unverified"] },
+    "versionStep": {
+      "type": "object",
+      "required": ["kind", "confidence"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": ["receipt", "peFileVersion", "configTag"],
+          "description": "receipt = IndieDeck installed it; peFileVersion = read the assembly on disk; configTag = read a version-looking key out of the config itself, which is a hint rather than a fact."
+        },
+        "paths": { "type": "array", "items": { "type": "string" } },
+        "section": { "type": "string" },
+        "key": { "type": "string" },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "note": { "type": "string" }
+      }
+    },
+    "location": {
+      "type": "object",
+      "required": ["variant", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "variant": { "type": "string", "description": "Which install variant puts the config here." },
+        "path": { "type": "string" },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "note": { "type": "string" }
+      }
+    },
+    "provider": {
+      "type": "object",
+      "required": ["id", "label", "tier", "fields"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "tier": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "enum": ["free", "official", "unofficial", "local", "experimental"] },
+          "description": "Also decides whether the endpoint is treated as remote: anything without \"local\" is assumed to make HTTPS calls."
+        },
+        "section": { "type": "string", "description": "INI section holding this provider's credentials." },
+        "fields": { "type": "array", "items": { "$ref": "#/$defs/providerField" } },
+        "note": { "type": "string" },
+        "languages": {
+          "type": "object",
+          "required": ["source", "target"],
+          "description": "Only declare this when the coverage is genuinely known. An absent list means \"unknown\", and no language check runs - it must never mean \"unsupported\".",
+          "properties": {
+            "source": { "type": "array", "items": { "type": "string" } },
+            "target": { "type": "array", "items": { "type": "string" } },
+            "confidence": { "$ref": "#/$defs/confidence" },
+            "note": { "type": "string" }
+          }
+        },
+        "requiresTranslatorVersion": {
+          "type": "object",
+          "properties": {
+            "min": { "type": "string" },
+            "max": { "type": "string" },
+            "reason": { "type": "string" }
+          }
+        }
+      }
+    },
+    "providerField": {
+      "type": "object",
+      "required": ["key", "type", "label"],
+      "additionalProperties": false,
+      "properties": {
+        "key": { "type": "string" },
+        "type": { "enum": ["string", "secret", "boolean", "number", "directory"] },
+        "label": { "type": "string" },
+        "required": { "type": "boolean" },
+        "optional": { "type": "boolean" },
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "placeholder": { "type": "string" }
+      }
+    },
+    "setting": {
+      "type": "object",
+      "required": ["id", "ui", "versions"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Stable semantic id, e.g. xunity.targetLanguage. This is what the UI and the CLI address; the INI key is an implementation detail of a version."
+        },
+        "ui": { "$ref": "#/$defs/ui" },
+        "versions": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/mapping" }
+        },
+        "default": { "type": "string" },
+        "help": { "type": "string" },
+        "availability": {
+          "type": "object",
+          "description": "Version range in which the setting exists at all. Outside it the control is hidden rather than written to a file that ignores it.",
+          "properties": { "min": { "type": "string" }, "max": { "type": "string" } }
+        }
+      }
+    },
+    "mapping": {
+      "type": "object",
+      "required": ["section", "key"],
+      "additionalProperties": false,
+      "properties": {
+        "min": { "type": "string" },
+        "max": { "type": "string" },
+        "section": { "type": "string" },
+        "key": { "type": "string" },
+        "confidence": { "$ref": "#/$defs/confidence" }
+      }
+    },
+    "ui": {
+      "type": "object",
+      "required": ["category", "label", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "category": { "type": "string" },
+        "label": { "type": "string" },
+        "type": {
+          "enum": [
+            "boolean",
+            "integer",
+            "number",
+            "string",
+            "secret",
+            "language",
+            "provider-select",
+            "font-bundle",
+            "directory",
+            "enum"
+          ]
+        },
+        "order": { "type": "integer" },
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "options": { "type": "array", "items": { "type": "string" } },
+        "allowEmpty": { "type": "boolean" },
+        "deprecated": { "type": "boolean" }
+      }
+    }
+  }
+}

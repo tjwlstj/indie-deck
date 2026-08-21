@@ -1,7 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadConfigSchemas, type ConfigSchema } from '../config/schema.ts';
+import { loadConfigSchemas } from '../config/schema.ts';
+import { PROBE_IDS } from '../detect/probes.ts';
+import { RULE_PREDICATES } from '../resolve/index.ts';
+import { t } from '../i18n/index.ts';
 import type {
   CompatRule,
   EngineDef,
@@ -28,7 +31,11 @@ export function findRegistryDir(startFrom?: string): string {
     dir = parent;
   }
   throw new Error(
-    'Could not locate the IndieDeck registry directory. Set INDIEDECK_REGISTRY to the folder holding engines.json.',
+    t(
+      'core.error.registry-missing',
+      {},
+      'Could not locate the IndieDeck registry directory. Set INDIEDECK_REGISTRY to the folder holding engines.json.',
+    ),
   );
 }
 
@@ -85,6 +92,16 @@ export function translatorById(reg: Registry, id: string): TranslatorDef | undef
   return reg.translators.find((t) => t.id === id);
 }
 
+/**
+ * A "native" loader is the engine's own folder - RPG Maker's js/plugins,
+ * Ren'Py's game/ - not something IndieDeck installs. loaders.json already says
+ * so via `install.kind`, so nothing should keep its own list.
+ */
+export function isNativeLoader(reg: Registry, loaderId: string): boolean {
+  const loader = reg.loaders.find((l) => l.id === loaderId);
+  return loader?.install.kind === 'native' || loader?.install.kind === 'manual';
+}
+
 export function loadersProviding(reg: Registry, capability: string): LoaderDef[] {
   return reg.loaders.filter((l) => l.provides.includes(capability));
 }
@@ -116,6 +133,8 @@ export function validateRegistry(reg: Registry): RegistryIssue[] {
   const loaderIds = new Set(reg.loaders.map((l) => l.id));
   const translatorIds = new Set(reg.translators.map((t) => t.id));
   const capabilities = new Set(reg.loaders.flatMap((l) => l.provides));
+  const predicates = new Set<string>(RULE_PREDICATES);
+  const probeIds = new Set<string>(PROBE_IDS);
 
   for (const e of reg.engines) {
     for (const l of e.loaders) {
@@ -123,6 +142,15 @@ export function validateRegistry(reg: Registry): RegistryIssue[] {
     }
     for (const t of e.translators) {
       if (!translatorIds.has(t)) issues.push({ level: 'error', where: `engines/${e.id}`, message: `unknown translator "${t}"` });
+    }
+    for (const probe of e.probes) {
+      if (!probeIds.has(probe)) {
+        issues.push({
+          level: 'error',
+          where: `engines/${e.id}`,
+          message: `unknown probe "${probe}" - it would be skipped silently. Known: ${[...probeIds].join(', ')}`,
+        });
+      }
     }
     if (e.rules.length === 0) issues.push({ level: 'warn', where: `engines/${e.id}`, message: 'no detection rules' });
     const maxScore = e.rules.reduce((sum, r) => sum + r.score, 0);
@@ -135,9 +163,42 @@ export function validateRegistry(reg: Registry): RegistryIssue[] {
     }
   }
 
+  const MOD_ENTRY = new Set(['dll', 'dll-or-folder', 'folder', 'js', 'rpy']);
+  const MOD_DISABLE = new Set(['rename-suffix', 'move-to-disabled', 'registry-flag']);
+
   for (const l of reg.loaders) {
     for (const e of l.engines) {
       if (!engineIds.has(e)) issues.push({ level: 'error', where: `loaders/${l.id}`, message: `unknown engine "${e}"` });
+    }
+
+    const layout = l.modLayout;
+    if (!layout) continue;
+    if (!MOD_ENTRY.has(layout.entry)) {
+      issues.push({ level: 'error', where: `loaders/${l.id}/modLayout`, message: `unknown entry kind "${layout.entry}"` });
+    }
+    if (!MOD_DISABLE.has(layout.disable)) {
+      issues.push({ level: 'error', where: `loaders/${l.id}/modLayout`, message: `unknown disable strategy "${layout.disable}"` });
+    }
+    if (layout.disable === 'registry-flag' && !layout.registryFile) {
+      issues.push({
+        level: 'error',
+        where: `loaders/${l.id}/modLayout`,
+        message: 'disable "registry-flag" needs a registryFile',
+      });
+    }
+    if (layout.disable === 'registry-flag' && !layout.registryFormat) {
+      issues.push({
+        level: 'warn',
+        where: `loaders/${l.id}/modLayout`,
+        message: 'registry-flag without a registryFormat falls back to the RPG Maker plugins.js parser',
+      });
+    }
+    if (layout.disable === 'move-to-disabled' && !layout.disabledDir) {
+      issues.push({
+        level: 'warn',
+        where: `loaders/${l.id}/modLayout`,
+        message: 'disable "move-to-disabled" without disabledDir uses "<dir>.disabled"',
+      });
     }
   }
 
@@ -173,19 +234,78 @@ export function validateRegistry(reg: Registry): RegistryIssue[] {
     if (!t.detectOnly && t.variants.length > 0 && t.versions.length === 0) {
       issues.push({ level: 'warn', where: `translators/${t.id}`, message: 'has variants but no versions' });
     }
+
+    // engines.json and translators.json both record the relationship. They have
+    // to agree, or a translator is offered for an engine that does not list it
+    // (or worse, silently never offered at all).
+    for (const engineId of t.engines) {
+      if (engineId === '*') continue;
+      const engine = reg.engines.find((e) => e.id === engineId);
+      if (engine && !engine.translators.includes(t.id)) {
+        issues.push({
+          level: 'error',
+          where: `translators/${t.id}`,
+          message: `claims engine "${engineId}", but engines/${engineId} does not list this translator`,
+        });
+      }
+    }
+  }
+
+  for (const engine of reg.engines) {
+    for (const translatorId of engine.translators) {
+      const translator = reg.translators.find((x) => x.id === translatorId);
+      if (translator && !translator.engines.includes(engine.id) && !translator.engines.includes('*')) {
+        issues.push({
+          level: 'error',
+          where: `engines/${engine.id}`,
+          message: `lists translator "${translatorId}", which does not claim this engine`,
+        });
+      }
+    }
+    for (const loaderId of engine.loaders) {
+      const loader = reg.loaders.find((x) => x.id === loaderId);
+      if (loader && !loader.engines.includes(engine.id)) {
+        issues.push({
+          level: 'error',
+          where: `engines/${engine.id}`,
+          message: `lists loader "${loaderId}", which does not claim this engine`,
+        });
+      }
+    }
   }
 
   for (const rule of reg.compat.rules) {
-    const t = rule.when['translator'];
-    if (typeof t === 'string' && !translatorIds.has(t)) {
-      issues.push({ level: 'error', where: `compat/${rule.id}`, message: `unknown translator "${t}"` });
+    const translator = rule.when['translator'];
+    if (typeof translator === 'string' && !translatorIds.has(translator)) {
+      issues.push({ level: 'error', where: `compat/${rule.id}`, message: `unknown translator "${translator}"` });
     }
-    const l = rule.when['loaderId'];
-    if (typeof l === 'string' && !loaderIds.has(l)) {
-      issues.push({ level: 'error', where: `compat/${rule.id}`, message: `unknown loader "${l}"` });
+    const loader = rule.when['loaderId'];
+    if (typeof loader === 'string' && !loaderIds.has(loader)) {
+      issues.push({ level: 'error', where: `compat/${rule.id}`, message: `unknown loader "${loader}"` });
     }
     if (rule.severity !== 'prefer' && !rule.message) {
       issues.push({ level: 'warn', where: `compat/${rule.id}`, message: 'rule has no message to show the user' });
+    }
+
+    // A misspelled predicate used to disable the rule in silence, which turns a
+    // "block" into nothing at all.
+    for (const key of Object.keys(rule.when)) {
+      if (!predicates.has(key)) {
+        issues.push({
+          level: 'error',
+          where: `compat/${rule.id}`,
+          message: `unknown \`when\` predicate "${key}" - the rule would never fire. Known: ${[...predicates].join(', ')}`,
+        });
+      }
+    }
+
+    // The registry's own promise: an unverified claim may advise, never block.
+    if (rule.severity === 'block' && rule.confidence === 'unverified') {
+      issues.push({
+        level: 'error',
+        where: `compat/${rule.id}`,
+        message: 'an unverified rule must not block an install',
+      });
     }
   }
 

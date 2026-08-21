@@ -1,5 +1,9 @@
 /** Shared type surface for IndieDeck core. */
 
+import type { ConfigSchema } from './config/schema.ts';
+
+export type { ConfigSchema };
+
 export type Arch = 'x86' | 'x64' | 'arm64' | 'unknown';
 export type Backend = 'mono' | 'il2cpp' | 'unknown';
 export type Confidence = 'verified' | 'inferred' | 'community' | 'unverified';
@@ -98,6 +102,29 @@ export interface InstallSpec {
   note?: string;
 }
 
+/**
+ * Where a loader keeps its mods and how one is switched off.
+ *
+ * This is the whole mod-host extension point, so it belongs on LoaderDef rather
+ * than being reached through a cast from the mods module.
+ */
+export interface ModLayout {
+  dir: string;
+  altDir?: string;
+  entry: 'dll' | 'dll-or-folder' | 'folder' | 'js' | 'rpy';
+  disable: 'rename-suffix' | 'move-to-disabled' | 'registry-flag';
+  disabledSuffix?: string;
+  disabledDir?: string;
+  registryFile?: string;
+  altRegistryFile?: string;
+  /** Format of the registry file, when `disable` is `registry-flag`. */
+  registryFormat?: 'plugins-js' | 'lines';
+  manifest?: string;
+  extraDirs?: string[];
+  filePrefix?: string;
+  note?: string;
+}
+
 export interface LoaderDef {
   id: string;
   name: string;
@@ -117,6 +144,7 @@ export interface LoaderDef {
   };
   install: InstallSpec;
   uninstall?: { removePaths: string[] };
+  modLayout?: ModLayout;
   versions: LoaderVersion[];
 }
 
@@ -214,8 +242,8 @@ export interface Registry {
     apply: Record<string, unknown>;
     systemFontOption?: Record<string, unknown>;
   };
-  /** Per-translator config layout schemas, keyed by translator id. */
-  configSchemas: Map<string, unknown>;
+  /** Per-tool config layout schemas, keyed by the schema's own id. */
+  configSchemas: Map<string, ConfigSchema>;
   meta: { updated: Record<string, string> };
 }
 
@@ -281,13 +309,20 @@ export interface PlanFinding {
   ruleId: string;
   severity: Severity;
   confidence: Confidence;
+  /** Rendered in the active locale. */
   message: string;
+  /** Catalogue key and params, so a locale switch can re-render without re-resolving. */
+  messageKey?: string;
+  messageParams?: Record<string, string | number | undefined>;
   sources?: string[];
 }
 
 export interface PlanStep {
   action: 'download' | 'extract' | 'copy' | 'run' | 'config' | 'manual' | 'backup';
+  /** Rendered in the active locale. */
   description: string;
+  descriptionKey?: string;
+  descriptionParams?: Record<string, string | number | undefined>;
   source?: AssetSource;
   dest?: string;
   details?: Record<string, unknown>;

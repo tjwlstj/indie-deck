@@ -8,6 +8,31 @@
 export * from './types.ts';
 
 export {
+  t,
+  tRegistry,
+  message,
+  retranslate,
+  setLocale,
+  getLocale,
+  detectSystemLocale,
+  normaliseLocale,
+  availableLocales,
+  getCatalog,
+  loadCatalogs,
+  findLocalesDir,
+  catalogSource,
+  auditCatalogs,
+  interpolate,
+  hasKey,
+  LOCALES,
+  DEFAULT_LOCALE,
+  type LocaleCode,
+  type Message,
+  type Catalog,
+  type CatalogReport,
+} from './i18n/index.ts';
+
+export {
   findRegistryDir,
   loadRegistry,
   validateRegistry,
@@ -15,6 +40,7 @@ export {
   loaderById,
   translatorById,
   loadersProviding,
+  isNativeLoader,
   translatorsForEngine,
   variantOf,
   versionsForVariant,
@@ -29,6 +55,7 @@ export {
   detectInstalledLoaders,
   detectInstalledTranslators,
   detectInstalledFontBundles,
+  localiseProfile,
   type DetectOptions,
   type ScanOptions,
 } from './detect/index.ts';
@@ -58,7 +85,7 @@ export {
   type DetectedTranslatorVersion,
 } from './config/index.ts';
 
-export { resolvePlans, recommendPlan, summarisePlans, pickFontBundle } from './resolve/index.ts';
+export { resolvePlans, summarisePlans, pickFontBundle, RULE_PREDICATES, type RulePredicate } from './resolve/index.ts';
 
 export {
   auditGame,
@@ -83,7 +110,7 @@ export {
 } from './install/download.ts';
 
 export { extract7z, find7zExtractor, findExtractedEntry, type Extractor } from './install/sevenzip.ts';
-export { extractZip, listZip, readZipEntries, readEntryData, safeJoin, type ZipEntry } from './install/unzip.ts';
+export { extractZip, readZipEntries, readEntryData, safeJoin, type ZipEntry } from './install/unzip.ts';
 
 export { FileTransaction, withTransaction, type TransactionOptions } from './install/transaction.ts';
 
@@ -135,5 +162,5 @@ export {
 export { FsProbe, matchesGlob, globToRegExp, dirSize, ensureDir, pathExists } from './util/fsx.ts';
 export { compareVersions, parseVersion, gte, lt, satisfiesRange, unityMajor } from './util/version.ts';
 export { peArch, peArchFromBuffer, peVersionString } from './util/pe.ts';
-export { parseIni, applyIni, stringifyIni, type IniData } from './util/ini.ts';
+export { parseIni, applyIni, type IniData } from './util/ini.ts';
 export { createLogger, silentLogger, type Logger, type LogLevel } from './util/log.ts';

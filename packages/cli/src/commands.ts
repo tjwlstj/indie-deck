@@ -18,6 +18,8 @@ import {
   installModFromFile,
   latestReleaseTag,
   libraryStats,
+  isNativeLoader,
+  localiseProfile,
   listMods,
   loadConfig,
   loadLibrary,
@@ -36,6 +38,7 @@ import {
   type ResolveOptions,
   type TranslatorPlan,
 } from '@indiedeck/core';
+import { t } from '@indiedeck/core';
 import { CSI } from './ansi.ts';
 import { bullet, c, engineBadge, formatBytes, heading, severityTone, table } from './ui.ts';
 
@@ -84,7 +87,9 @@ export async function cmdScan(ctx: Ctx): Promise<number> {
   const config = await loadConfig();
   const roots = ctx.args.length > 0 ? ctx.args : config.roots;
   if (roots.length === 0) {
-    console.error(c.red('No roots to scan.') + ' Pass a path, or register one with `indiedeck root add <path>`.');
+    console.error(
+      `${c.red(t('cli.msg.noRoots', undefined, 'No roots to scan.'))} ${t('cli.msg.passPath', undefined, 'Pass a path, or register one with `indiedeck root add <path>`.')}`,
+    );
     return 2;
   }
 
@@ -110,23 +115,34 @@ export async function cmdScan(ctx: Ctx): Promise<number> {
   out(ctx, index, () => {
     const stats = libraryStats(index);
     console.log(
-      `${c.green('Scanned')} ${roots.length} root(s) in ${((Date.now() - started) / 1000).toFixed(1)}s - ${c.bold(String(stats.total))} games found, saved to ${c.dim(path.join(defaultDataDir(), 'library.json'))}`,
+      c.green(
+        t(
+          'cli.msg.scanned',
+          {
+            roots: roots.length,
+            seconds: ((Date.now() - started) / 1000).toFixed(1),
+            count: stats.total,
+            path: path.join(defaultDataDir(), 'library.json'),
+          },
+          'Scanned {roots} root(s) in {seconds}s - {count} games found, saved to {path}',
+        ),
+      ),
     );
-    console.log(heading('By engine'));
+    console.log(heading(t('cli.heading.byEngine', undefined, 'By engine')));
     console.log(
       table(
         stats.byEngine.map((e) => ({ engine: engineBadge(e.engineId), name: e.engineName, count: String(e.count) })),
         [
-          { header: 'ID', key: 'engine', max: 18 },
-          { header: 'ENGINE', key: 'name', max: 28 },
-          { header: 'GAMES', key: 'count', align: 'right' },
+          { header: t('cli.column.id', undefined, 'ID'), key: 'engine', max: 18 },
+          { header: t('cli.column.engine', undefined, 'ENGINE'), key: 'name', max: 28 },
+          { header: t('cli.column.games', undefined, 'GAMES'), key: 'count', align: 'right' },
         ],
       ),
     );
     console.log(
-      `\n  ${c.dim('translator installed:')} ${stats.withTranslator}  ${c.dim('mod loader installed:')} ${stats.withLoader}` +
+      `\n  ${c.dim(t('cli.msg.scanSummary', { translated: stats.withTranslator, loaders: stats.withLoader }, 'translator installed: {translated}  mod loader installed: {loaders}'))}` +
         (stats.byBackend['il2cpp'] || stats.byBackend['mono']
-          ? `  ${c.dim('unity mono/il2cpp:')} ${stats.byBackend['mono'] ?? 0}/${stats.byBackend['il2cpp'] ?? 0}`
+          ? `  ${c.dim(t('cli.msg.unityBackends', { mono: stats.byBackend['mono'] ?? 0, il2cpp: stats.byBackend['il2cpp'] ?? 0 }, 'unity mono/il2cpp: {mono}/{il2cpp}'))}`
           : ''),
     );
   });
@@ -136,9 +152,12 @@ export async function cmdScan(ctx: Ctx): Promise<number> {
 /* -------------------------------------------------------------------- list */
 
 export async function cmdList(ctx: Ctx): Promise<number> {
-  const index = await loadLibrary();
+  const saved = await loadLibrary();
+  const index = { ...saved, games: saved.games.map((g) => localiseProfile(ctx.reg, g)) };
   if (index.games.length === 0) {
-    console.error(c.yellow('Library is empty.') + ' Run `indiedeck scan <path>` first.');
+    console.error(
+      `${c.yellow(t('cli.msg.emptyLibrary', undefined, 'Library is empty.'))} ${t('cli.msg.runScanFirst', undefined, 'Run `indiedeck scan <path>` first.')}`,
+    );
     return 2;
   }
 
@@ -162,22 +181,25 @@ export async function cmdList(ctx: Ctx): Promise<number> {
             .filter(Boolean)
             .join(' '),
           arch: g.arch === 'unknown' ? '' : g.arch,
-          loader: g.installedLoaders.map((l) => l.loaderId).filter((l) => l !== 'renpy-native' && l !== 'rpgmaker-plugins').join(', '),
+          loader: g.installedLoaders
+            .map((l) => l.loaderId)
+            .filter((l) => !isNativeLoader(ctx.reg, l))
+            .join(', '),
           translator: g.installedTranslators
             .map((t) => `${t.translatorId.replace('xunity-autotranslator', 'XUAT')}${t.version ? `@${t.version}` : ''}`)
             .join(', '),
         })),
         [
-          { header: 'GAME', key: 'name', max: 44 },
-          { header: 'ENGINE', key: 'engine', max: 16 },
-          { header: 'RUNTIME', key: 'detail', max: 20 },
-          { header: 'ARCH', key: 'arch', max: 6 },
-          { header: 'LOADER', key: 'loader', max: 18 },
-          { header: 'TRANSLATOR', key: 'translator', max: 26 },
+          { header: t('cli.column.game', undefined, 'GAME'), key: 'name', max: 44 },
+          { header: t('cli.column.engine', undefined, 'ENGINE'), key: 'engine', max: 16 },
+          { header: t('cli.column.runtime', undefined, 'RUNTIME'), key: 'detail', max: 20 },
+          { header: t('cli.column.arch', undefined, 'ARCH'), key: 'arch', max: 6 },
+          { header: t('cli.column.loader', undefined, 'LOADER'), key: 'loader', max: 18 },
+          { header: t('cli.column.translator', undefined, 'TRANSLATOR'), key: 'translator', max: 26 },
         ],
       ),
     );
-    console.log(c.dim(`\n  ${games.length} of ${index.games.length} games`));
+    console.log(c.dim(`\n  ${t('cli.msg.shownOfTotal', { shown: games.length, total: index.games.length }, '{shown} of {total} games')}`));
   });
   return 0;
 }
@@ -216,8 +238,8 @@ export async function cmdInfo(ctx: Ctx): Promise<number> {
     console.log(bullet(`Executable ${profile.executable ?? c.dim('none found')} ${c.dim(`[${profile.arch}]`)}`));
     if (profile.sizeBytes) console.log(bullet(`Size       ${formatBytes(profile.sizeBytes)}`));
 
-    console.log(heading('Installed'));
-    if (profile.installedLoaders.length === 0) console.log(bullet('no mod loader', 'info'));
+    console.log(heading(t('cli.heading.installed', undefined, 'Installed')));
+    if (profile.installedLoaders.length === 0) console.log(bullet(t('cli.msg.noLoader', undefined, 'no mod loader'), 'info'));
     for (const l of profile.installedLoaders) {
       console.log(bullet(`loader      ${c.bold(l.loaderId)}${l.version ? ` ${l.version}` : ''} ${c.dim(l.markers[0] ?? '')}`, 'ok'));
     }
@@ -231,15 +253,26 @@ export async function cmdInfo(ctx: Ctx): Promise<number> {
     }
     for (const f of profile.installedFontBundles) console.log(bullet(`font        ${f}`, 'ok'));
     if (profile.installedFontBundles.length > 1) {
-      console.log(bullet(c.yellow('several TMP font bundles are present - only the one matching this Unity line will render'), 'warn'));
+      console.log(
+        bullet(
+          c.yellow(
+            t(
+              'cli.msg.severalFonts',
+              undefined,
+              'several TMP font bundles are present - only the one matching this Unity line will render',
+            ),
+          ),
+          'warn',
+        ),
+      );
     }
 
     if (hosts.length > 0) {
-      console.log(heading('Mod hosts'));
+      console.log(heading(t('cli.heading.modHosts', undefined, 'Mod hosts')));
       for (const h of hosts) console.log(bullet(`${h.loader.name} ${c.dim(`-> ${h.dir}`)}`));
     }
     if (receipts.length > 0) {
-      console.log(heading('IndieDeck receipts'));
+      console.log(heading(t('cli.heading.receipts', undefined, 'IndieDeck receipts')));
       for (const r of receipts) console.log(bullet(`${r.kind} ${r.componentId} ${r.version} ${c.dim(`${r.entries.length} files, ${r.installedAt.slice(0, 10)}`)}`));
     }
     for (const note of profile.notes) console.log(bullet(c.dim(note), 'info'));
@@ -281,14 +314,19 @@ export async function cmdPlan(ctx: Ctx): Promise<number> {
     console.log(heading(`${profile.name}  ${c.dim(`${profile.engineName}${profile.unity ? ` / ${profile.unity.backend} ${profile.unity.version ?? ''}` : ''} ${profile.arch}`)}`));
     console.log(c.dim(`  target ${options.targetLanguage} <- ${options.sourceLanguage} via ${options.endpoint}`));
     if (plans.length === 0) {
-      console.log(bullet('No viable translator for this game. Try --all to see why each option was rejected.', 'warn'));
+      console.log(
+        bullet(
+          t('cli.msg.noViablePlan', undefined, 'No viable translator for this game. Try --all to see why each option was rejected.'),
+          'warn',
+        ),
+      );
       return;
     }
     plans.slice(0, Number(str(ctx.flags, 'limit') ?? 8)).forEach(renderPlan);
     const best = plans.find((p) => p.viable);
     if (best) {
       console.log(
-        `\n  ${c.dim('install it with:')} indiedeck install ${JSON.stringify(profile.name)} --translator ${best.translatorId} --variant ${best.variantId} --version ${best.version}`,
+        `\n  ${c.dim(t('cli.msg.installWith', undefined, 'install it with:'))} indiedeck install ${JSON.stringify(profile.name)} --translator ${best.translatorId} --variant ${best.variantId} --version ${best.version}`,
       );
     }
   });
@@ -319,7 +357,18 @@ export async function cmdInstall(ctx: Ctx): Promise<number> {
     renderPlan(plan, 0);
     console.log();
     if (blocking.length > 0 && !bool(ctx.flags, 'yes') && !dryRun) {
-      console.log(bullet(c.yellow(`${blocking.length} warning(s) above. Re-run with --yes to proceed, or --dry-run to preview.`), 'warn'));
+      console.log(
+        bullet(
+          c.yellow(
+            t(
+              'cli.msg.warningsPresent',
+              { count: blocking.length },
+              '{count} warning(s) above. Re-run with --yes to proceed, or --dry-run to preview.',
+            ),
+          ),
+          'warn',
+        ),
+      );
       return 1;
     }
   }
@@ -331,18 +380,18 @@ export async function cmdInstall(ctx: Ctx): Promise<number> {
   });
 
   out(ctx, { plan, result }, () => {
-    console.log(heading(dryRun ? 'Dry run' : 'Installed'));
+    console.log(heading(dryRun ? t('cli.heading.dryRun', undefined, 'Dry run') : t('cli.heading.installed', undefined, 'Installed')));
     for (const step of result.performed) {
       const tone = step.status === 'done' ? 'ok' : step.status === 'pending-user' ? 'warn' : 'info';
       console.log(bullet(`${step.step.description} ${c.dim(step.detail ? `- ${step.detail}` : `- ${step.status}`)}`, tone));
     }
     if (result.pendingUserActions.length > 0) {
-      console.log(heading('Still needs you'));
+      console.log(heading(t('cli.heading.stillNeedsYou', undefined, 'Still needs you')));
       for (const action of result.pendingUserActions) console.log(bullet(action, 'warn'));
     }
     if (!dryRun) {
       console.log(
-        `\n  ${c.green(`${result.filesWritten.length} files written`)}, receipts: ${result.receipts.map((r) => `${r.kind}/${r.componentId}`).join(', ') || 'none'}`,
+        `\n  ${c.green(t('cli.msg.filesWritten', { count: result.filesWritten.length }, '{count} files written'))}, ${t('cli.msg.receipts', { list: result.receipts.map((r) => `${r.kind}/${r.componentId}`).join(', ') || t('cli.msg.none', undefined, 'none') }, 'receipts: {list}')}`,
       );
     }
   });
@@ -360,7 +409,9 @@ export async function cmdUninstall(ctx: Ctx): Promise<number> {
   const profile = await resolveGameArg(ctx.reg, target);
   const receipts = await readReceipts(profile.path);
   if (receipts.length === 0) {
-    console.error(c.yellow(`No IndieDeck receipts in ${profile.name}.`) + ' Only components installed through IndieDeck can be removed automatically.');
+    console.error(
+      `${c.yellow(t('cli.msg.noReceipts', { name: profile.name }, 'No IndieDeck receipts in {name}.'))} ${t('cli.msg.onlyIndieDeck', undefined, 'Only components installed through IndieDeck can be removed automatically.')}`,
+    );
     return 1;
   }
 
@@ -380,7 +431,7 @@ export async function cmdUninstall(ctx: Ctx): Promise<number> {
     for (const r of results) {
       console.log(bullet(`${r.receipt}: removed ${r.removed.length}, restored ${r.restored.length}, missing ${r.missing.length}`, 'ok'));
     }
-    if (dryRun) console.log(c.dim('  (dry run - nothing was deleted)'));
+    if (dryRun) console.log(c.dim(`  ${t('cli.msg.dryRunNothing', undefined, '(dry run - nothing was deleted)')}`));
   });
   return 0;
 }
@@ -401,7 +452,9 @@ export async function cmdMods(ctx: Ctx): Promise<number> {
     out(ctx, { mods, hosts: hosts.map((h) => ({ loader: h.loader.id, dir: h.dir })) }, () => {
       console.log(heading(`${profile.name} - mods`));
       if (hosts.length === 0) {
-        console.log(bullet('No mod host for this game. Install a loader first (see `indiedeck plan`).', 'warn'));
+        console.log(
+          bullet(t('cli.msg.noModHost', undefined, 'No mod host for this game. Install a loader first (see `indiedeck plan`).'), 'warn'),
+        );
         return;
       }
       for (const h of hosts) console.log(c.dim(`  host: ${h.loader.name} -> ${h.dir}`));
@@ -417,10 +470,10 @@ export async function cmdMods(ctx: Ctx): Promise<number> {
           })),
           [
             { header: '', key: 'state', max: 4 },
-            { header: 'MOD', key: 'name', max: 46 },
-            { header: 'KIND', key: 'kind', max: 8 },
-            { header: 'HOST', key: 'loader', max: 18 },
-            { header: 'SIZE', key: 'size', align: 'right' },
+            { header: t('cli.column.mod', undefined, 'MOD'), key: 'name', max: 46 },
+            { header: t('cli.column.kind', undefined, 'KIND'), key: 'kind', max: 8 },
+            { header: t('cli.column.host', undefined, 'HOST'), key: 'loader', max: 18 },
+            { header: t('cli.column.size', undefined, 'SIZE'), key: 'size', align: 'right' },
           ],
         ),
       );
@@ -441,7 +494,9 @@ export async function cmdMods(ctx: Ctx): Promise<number> {
     if (name) installOptions.name = name;
     const result = await installModFromFile(ctx.reg, profile, source, installOptions);
     out(ctx, result, () => {
-      console.log(bullet(`Installed into ${result.host.dir} (${result.files.length} files)`, 'ok'));
+      console.log(
+        bullet(t('cli.msg.installedInto', { dir: result.host.dir, count: result.files.length }, 'Installed into {dir} ({count} files)'), 'ok'),
+      );
       for (const f of result.files.slice(0, 12)) console.log(c.dim(`    ${f}`));
     });
     return 0;
@@ -471,10 +526,10 @@ export async function cmdRoot(ctx: Ctx): Promise<number> {
 
   if (!sub || sub === 'list') {
     out(ctx, config.roots, () => {
-      console.log(heading('Library roots'));
-      if (config.roots.length === 0) console.log(bullet('none configured', 'warn'));
+      console.log(heading(t('cli.heading.roots', undefined, 'Library roots')));
+      if (config.roots.length === 0) console.log(bullet(t('ui.sidebar.noRoots', undefined, 'none configured'), 'warn'));
       for (const r of config.roots) console.log(bullet(r));
-      console.log(c.dim(`\n  config: ${path.join(defaultDataDir(), 'config.json')}`));
+      console.log(c.dim(`\n  ${t('cli.msg.configAt', { path: path.join(defaultDataDir(), 'config.json') }, 'config: {path}')}`));
     });
     return 0;
   }
@@ -519,17 +574,27 @@ export async function cmdRegistry(ctx: Ctx): Promise<number> {
     }
 
     out(ctx, { issues, online, updated: ctx.reg.meta.updated }, () => {
-      console.log(heading('Registry self-check'));
+      console.log(heading(t('cli.heading.registryCheck', undefined, 'Registry self-check')));
       console.log(
         bullet(
-          `${ctx.reg.engines.length} engines, ${ctx.reg.loaders.length} loaders, ${ctx.reg.translators.length} translators, ${ctx.reg.compat.rules.length} compat rules, ${ctx.reg.fonts.bundles.length} font bundles`,
+          t(
+            'cli.msg.registryCounts',
+            {
+              engines: ctx.reg.engines.length,
+              loaders: ctx.reg.loaders.length,
+              translators: ctx.reg.translators.length,
+              rules: ctx.reg.compat.rules.length,
+              fonts: ctx.reg.fonts.bundles.length,
+            },
+            '{engines} engines, {loaders} loaders, {translators} translators, {rules} compat rules, {fonts} font bundles',
+          ),
         ),
       );
-      if (issues.length === 0) console.log(bullet('no structural issues', 'ok'));
+      if (issues.length === 0) console.log(bullet(t('cli.msg.noStructuralIssues', undefined, 'no structural issues'), 'ok'));
       for (const i of issues) console.log(bullet(`${i.where}: ${i.message}`, i.level === 'error' ? 'err' : 'warn'));
 
       if (online.length > 0) {
-        console.log(heading('Upstream releases'));
+        console.log(heading(t('cli.heading.upstream', undefined, 'Upstream releases')));
         console.log(
           table(
             online.map((o) => ({
@@ -539,9 +604,9 @@ export async function cmdRegistry(ctx: Ctx): Promise<number> {
               state: o.stale ? c.yellow('behind') : c.green('current'),
             })),
             [
-              { header: 'REPO', key: 'repo', max: 40 },
-              { header: 'PINNED', key: 'pinned', max: 16 },
-              { header: 'LATEST', key: 'latest', max: 20 },
+              { header: t('cli.column.repo', undefined, 'REPO'), key: 'repo', max: 40 },
+              { header: t('cli.column.pinned', undefined, 'PINNED'), key: 'pinned', max: 16 },
+              { header: t('cli.column.latest', undefined, 'LATEST'), key: 'latest', max: 20 },
               { header: '', key: 'state', max: 10 },
             ],
           ),
@@ -553,7 +618,7 @@ export async function cmdRegistry(ctx: Ctx): Promise<number> {
 
   if (sub === 'show') {
     out(ctx, ctx.reg, () => {
-      console.log(heading('Engines'));
+      console.log(heading(t('cli.heading.engines', undefined, 'Engines')));
       console.log(
         table(
           ctx.reg.engines.map((e) => ({
@@ -563,10 +628,10 @@ export async function cmdRegistry(ctx: Ctx): Promise<number> {
             translators: e.translators.join(', '),
           })),
           [
-            { header: 'ID', key: 'id', max: 16 },
-            { header: 'ENGINE', key: 'name', max: 26 },
-            { header: 'LOADERS', key: 'loaders', max: 40 },
-            { header: 'TRANSLATORS', key: 'translators', max: 46 },
+            { header: t('cli.column.id', undefined, 'ID'), key: 'id', max: 16 },
+            { header: t('cli.column.engine', undefined, 'ENGINE'), key: 'name', max: 26 },
+            { header: t('cli.column.loaders', undefined, 'LOADERS'), key: 'loaders', max: 40 },
+            { header: t('cli.column.translators', undefined, 'TRANSLATORS'), key: 'translators', max: 46 },
           ],
         ),
       );
@@ -581,23 +646,34 @@ export async function cmdRegistry(ctx: Ctx): Promise<number> {
 /* ------------------------------------------------------------------- stats */
 
 export async function cmdStats(ctx: Ctx): Promise<number> {
-  const index = await loadLibrary();
+  const saved = await loadLibrary();
+  const index = { ...saved, games: saved.games.map((g) => localiseProfile(ctx.reg, g)) };
   const stats = libraryStats(index);
   out(ctx, stats, () => {
-    console.log(heading('Library'));
-    console.log(bullet(`${stats.total} games, scanned ${index.scannedAt ? index.scannedAt.slice(0, 16).replace('T', ' ') : 'never'}`));
+    console.log(heading(t('cli.heading.library', undefined, 'Library')));
+    console.log(
+      bullet(
+        t(
+          'cli.msg.scannedAt',
+          { count: stats.total, when: index.scannedAt ? index.scannedAt.slice(0, 16).replace('T', ' ') : t('cli.msg.never', undefined, 'never') },
+          '{count} games, scanned {when}',
+        ),
+      ),
+    );
     console.log(
       table(
         stats.byEngine.map((e) => ({ engine: engineBadge(e.engineId), count: String(e.count), bar: '█'.repeat(Math.round((e.count / stats.total) * 30)) })),
         [
-          { header: 'ENGINE', key: 'engine', max: 20 },
-          { header: 'N', key: 'count', align: 'right' },
+          { header: t('cli.column.engine', undefined, 'ENGINE'), key: 'engine', max: 20 },
+          { header: t('cli.column.n', undefined, 'N'), key: 'count', align: 'right' },
           { header: '', key: 'bar', max: 30 },
         ],
       ),
     );
-    console.log(bullet(`${stats.withTranslator} with a translator, ${stats.withLoader} with a mod loader`));
-    console.log(c.dim(`  cache: ${defaultCacheDir()}`));
+    console.log(
+      bullet(t('cli.msg.scanSummary', { translated: stats.withTranslator, loaders: stats.withLoader }, 'translator installed: {translated}  mod loader installed: {loaders}')),
+    );
+    console.log(c.dim(`  ${t('cli.msg.cacheAt', { path: defaultCacheDir() }, 'cache: {path}')}`));
   });
   return 0;
 }
@@ -629,8 +705,8 @@ export async function cmdCheck(ctx: Ctx): Promise<number> {
     const profile = await resolveGameArg(ctx.reg, target, { deep: true });
     const audit = auditGame(ctx.reg, profile, auditOptions);
     out(ctx, audit, () => {
-      console.log(heading(`${profile.name} - ${audit.issues.length} issue(s)`));
-      if (audit.issues.length === 0) console.log(bullet('nothing to fix', 'ok'));
+      console.log(heading(t('cli.heading.issues', { name: profile.name, count: audit.issues.length }, '{name} - {count} issue(s)')));
+      if (audit.issues.length === 0) console.log(bullet(t('cli.msg.nothingToFix', undefined, 'nothing to fix'), 'ok'));
       for (const i of audit.issues) {
         console.log(bullet(`${c.dim(`[${i.code}]`)} ${i.message}`, severityTone(i.severity)));
         if (i.fix) console.log(c.dim(`      -> ${i.fix}`));
@@ -641,21 +717,31 @@ export async function cmdCheck(ctx: Ctx): Promise<number> {
 
   const index = await loadLibrary();
   if (index.games.length === 0) {
-    console.error(c.yellow('Library is empty.') + ' Run `indiedeck scan <path>` first.');
+    console.error(
+      `${c.yellow(t('cli.msg.emptyLibrary', undefined, 'Library is empty.'))} ${t('cli.msg.runScanFirst', undefined, 'Run `indiedeck scan <path>` first.')}`,
+    );
     return 2;
   }
   const audits = auditLibrary(ctx.reg, index.games, auditOptions);
   const summary = summariseAudit(audits);
 
   out(ctx, { summary, audits }, () => {
-    console.log(heading(`Library check - ${summary.gamesWithIssues} of ${index.games.length} games need attention`));
+    console.log(
+      heading(
+        t(
+          'cli.heading.libraryCheck',
+          { count: summary.gamesWithIssues, total: index.games.length },
+          'Library check - {count} of {total} games need attention',
+        ),
+      ),
+    );
     console.log(
       table(
         summary.byCode.map((b) => ({ code: b.code, count: String(b.count), sev: b.severity })),
         [
-          { header: 'ISSUE', key: 'code', max: 32 },
-          { header: 'GAMES', key: 'count', align: 'right' },
-          { header: 'SEVERITY', key: 'sev', max: 10 },
+          { header: t('cli.column.issue', undefined, 'ISSUE'), key: 'code', max: 32 },
+          { header: t('cli.column.games', undefined, 'GAMES'), key: 'count', align: 'right' },
+          { header: t('cli.column.severity', undefined, 'SEVERITY'), key: 'sev', max: 10 },
         ],
       ),
     );
@@ -667,7 +753,7 @@ export async function cmdCheck(ctx: Ctx): Promise<number> {
         if (i.fix && bool(ctx.flags, 'verbose')) console.log(c.dim(`      -> ${i.fix}`));
       }
     }
-    if (audits.length > limit) console.log(c.dim(`\n  ... and ${audits.length - limit} more (--limit N)`));
+    if (audits.length > limit) console.log(c.dim(`\n  ${t('cli.msg.andMore', { count: audits.length - limit }, '... and {count} more (--limit N)')}`));
   });
   return 0;
 }
@@ -707,7 +793,7 @@ export async function cmdConfig(ctx: Ctx): Promise<number> {
 
   if (bool(ctx.flags, 'providers')) {
     out(ctx, config.providers, () => {
-      console.log(heading(config.translatorName + ' - translation engines'));
+      console.log(heading(t('cli.heading.engineList', { translator: config.translatorName }, '{translator} - translation engines')));
       console.log(
         table(
           config.providers.map((p) => ({
@@ -715,14 +801,14 @@ export async function cmdConfig(ctx: Ctx): Promise<number> {
             id: p.provider.id,
             label: p.provider.label,
             tier: tierBadge(p.provider.tier),
-            needs: p.provider.fields.filter((f) => f.required).map((f) => f.label).join(', ') || c.dim('nothing'),
+            needs: p.provider.fields.filter((f) => f.required).map((f) => f.label).join(', ') || c.dim(t('cli.msg.nothing', undefined, 'nothing')),
           })),
           [
             { header: '', key: 'sel', max: 2 },
-            { header: 'ID', key: 'id', max: 26 },
-            { header: 'ENGINE', key: 'label', max: 28 },
-            { header: 'KIND', key: 'tier', max: 22 },
-            { header: 'REQUIRES', key: 'needs', max: 30 },
+            { header: t('cli.column.id', undefined, 'ID'), key: 'id', max: 26 },
+            { header: t('cli.column.engine', undefined, 'ENGINE'), key: 'label', max: 28 },
+            { header: t('cli.column.kind', undefined, 'KIND'), key: 'tier', max: 22 },
+            { header: t('cli.column.requires', undefined, 'REQUIRES'), key: 'needs', max: 30 },
           ],
         ),
       );
@@ -749,12 +835,28 @@ export async function cmdConfig(ctx: Ctx): Promise<number> {
       const version = config.detected.version ?? 'unknown';
       console.log(
         c.dim(
-          '  version ' + version + ' (from ' + config.detected.source + ', ' + config.detected.confidence + ')  ·  ' +
-            config.location.path + (config.location.exists ? '' : c.yellow(' [not created yet]')),
+          '  ' +
+            t(
+              'cli.msg.versionFrom',
+              { version, source: config.detected.source, confidence: config.detected.confidence },
+              'version {version} (from {source}, {confidence})',
+            ) +
+            '  ·  ' +
+            config.location.path +
+            (config.location.exists ? '' : ' ' + c.yellow(t('cli.msg.notCreatedYet', undefined, '[not created yet]'))),
         ),
       );
-      console.log(c.dim('  schema describes ' + config.coverage.described + ' of ' + config.coverage.total + ' keys in the file'));
-      for (const warning of config.warnings) console.log(bullet(warning, 'warn'));
+      console.log(
+        c.dim(
+          '  ' +
+            t(
+              'cli.msg.schemaDescribes',
+              { described: config.coverage.described, total: config.coverage.total },
+              'schema describes {described} of {total} keys in the file',
+            ),
+        ),
+      );
+      for (const warning of config.warnings) console.log(bullet(warning.text, 'warn'));
 
       let category = '';
       for (const value of config.values) {
@@ -763,7 +865,7 @@ export async function cmdConfig(ctx: Ctx): Promise<number> {
           const label = schema.categories.find((x) => x.id === category)?.label ?? category;
           console.log(heading(label));
         }
-        const marker = value.isDefault ? c.dim(' (default)') : '';
+        const marker = value.isDefault ? c.dim(' ' + t('cli.msg.default', undefined, '(default)')) : '';
         const flags = [value.assumed ? c.yellow('assumed') : '', value.deprecated ? c.dim('deprecated') : '']
           .filter(Boolean)
           .join(' ');
@@ -773,7 +875,7 @@ export async function cmdConfig(ctx: Ctx): Promise<number> {
 
       const selected = config.providers.find((p) => p.selected);
       if (selected && selected.fields.length > 0) {
-        console.log(heading(selected.provider.label + ' credentials'));
+        console.log(heading(t('cli.heading.credentials', { provider: selected.provider.label }, '{provider} credentials')));
         for (const field of selected.fields) {
           const shown = field.value === '' ? c.dim('(empty)') : field.value;
           const missing = field.required && !field.value ? c.red('  required') : '';
@@ -783,13 +885,13 @@ export async function cmdConfig(ctx: Ctx): Promise<number> {
       }
 
       if (bool(ctx.flags, 'expert') && config.unknown.length > 0) {
-        console.log(heading('Keys IndieDeck does not describe (' + config.unknown.length + ')'));
-        console.log(c.dim('  These are preserved exactly as they are on every write.'));
+        console.log(heading(t('cli.heading.undescribed', { count: config.unknown.length }, 'Keys IndieDeck does not describe ({count})')));
+        console.log(c.dim('  ' + t('cli.msg.preservedNote', undefined, 'These are preserved exactly as they are on every write.')));
         for (const entry of config.unknown) console.log('  ' + c.dim('[' + entry.section + ']') + ' ' + entry.key + '=' + entry.value);
       } else if (config.unknown.length > 0) {
-        console.log(c.dim('\n  ' + config.unknown.length + ' further keys are preserved untouched (--expert to list them)'));
+        console.log(c.dim('\n  ' + t('cli.msg.furtherKeys', { count: config.unknown.length }, '{count} further keys are preserved untouched (--expert to list them)')));
       }
-      console.log(c.dim('\n  change one with: indiedeck config <game> --set xunity.targetLanguage=ko'));
+      console.log(c.dim('\n  ' + t('cli.msg.changeHint', undefined, 'change one with: indiedeck config <game> --set xunity.targetLanguage=ko')));
     });
     return 0;
   }
@@ -798,7 +900,7 @@ export async function cmdConfig(ctx: Ctx): Promise<number> {
   const dryRun = bool(ctx.flags, 'dry-run');
 
   if (!ctx.json) {
-    console.log(heading(dryRun ? 'Planned changes' : 'Changes'));
+    console.log(heading(dryRun ? t('cli.heading.plannedChanges', undefined, 'Planned changes') : t('cli.heading.changes', undefined, 'Changes')));
     for (const change of plan.changes) {
       const from = change.from === '' ? c.dim('(empty)') : change.from;
       const to = change.to === '' ? '(empty)' : change.to;
@@ -815,18 +917,18 @@ export async function cmdConfig(ctx: Ctx): Promise<number> {
     return 1;
   }
   if (plan.issues.some((i) => i.severity === 'warn') && !bool(ctx.flags, 'yes') && !dryRun) {
-    console.log(bullet(c.yellow('Re-run with --yes to write these anyway, or --dry-run to preview.'), 'warn'));
+    console.log(bullet(c.yellow(t('cli.msg.reRunWithYes', undefined, 'Re-run with --yes to write these anyway, or --dry-run to preview.')), 'warn'));
     return 1;
   }
 
   const result = await writeGameConfig(profile, config, plan, { dryRun });
   out(ctx, { plan, result }, () => {
     if (dryRun) {
-      console.log(c.dim('\n  dry run - ' + config.location.path + ' was not touched'));
+      console.log(c.dim('\n  ' + t('cli.msg.dryRunUntouched', { path: config.location.path }, 'dry run - {path} was not touched')));
       return;
     }
-    console.log('\n  ' + c.green(result.changed + ' setting(s) written') + ' to ' + result.path);
-    if (result.backup) console.log(c.dim('  original backed up to ' + result.backup));
+    console.log('\n  ' + c.green(t('cli.msg.configWritten', { count: result.changed }, '{count} setting(s) written')) + ' -> ' + result.path);
+    if (result.backup) console.log(c.dim('  ' + t('cli.msg.backedUp', { path: result.backup }, 'original backed up to {path}')));
   });
   return 0;
 }

@@ -55,6 +55,14 @@ are redacted everywhere but the file itself. See
 
 ![The translation settings panel](docs/media/config.png)
 
+**Korean and English throughout.** Not just the chrome: the compatibility
+findings, the audit messages, the install steps and the config labels are all
+translated, because those are the sentences that actually decide what a user
+does. Every message carries its catalogue key, so switching language re-renders
+what is on screen without re-running the resolver, and an untranslated key falls
+back to English rather than to a blank. Adding a language is one file in
+[`locales/`](locales).
+
 **Mod management.** One model over BepInEx `plugins/`, MelonLoader `Mods/`,
 GDWeave, UE4SS, RPG Maker `js/plugins` (including the `plugins.js` registry) and
 Ren'Py `game/` — list, add, enable, disable, with the right disable strategy for
@@ -112,6 +120,7 @@ indiedeck config "MyGame" --set xunity.targetLanguage=ko --dry-run
 indiedeck config "MyGame" --providers   # engines, their tier and what they need
 
 indiedeck check                     # library-wide health sweep
+indiedeck --help --locale ko        # anything, in Korean
 indiedeck registry check --online   # is the pinned data still current?
 ```
 
@@ -215,6 +224,19 @@ runs them directly without a build step.
 Safety (transactional installs, download integrity, the desktop trust boundary)
 and the versioned config manager are done. Next up: a portable Windows build, a
 game session layer, and mod profiles. See [docs/roadmap.md](docs/roadmap.md).
+
+## Extending it
+
+Adding an engine, a translator, a mod loader, a compatibility rule, a config
+schema, a CLI command, a launcher panel or a language is a data edit in most
+cases — and where it is not, the extension point is one entry in one table.
+[docs/extending.md](docs/extending.md) walks through each one, including the
+list of things that are still code and why.
+
+`indiedeck registry check` is the guard rail: it rejects a misspelled rule
+predicate, an unknown probe id, an engine and a translator that disagree about
+each other, a mod layout that cannot work, and an unverified rule that tries to
+block an install.
 
 ## Contributing
 

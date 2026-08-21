@@ -12,10 +12,16 @@ import {
   detectGame,
   installModFromFile,
   libraryStats,
+  localiseProfile,
   listMods,
   loadConfig,
   loadLibrary,
   loadRegistry,
+  tRegistry,
+  availableLocales,
+  getCatalog,
+  getLocale,
+  setLocale,
   planConfigChanges,
   readGameConfig,
   writeGameConfig,
@@ -158,14 +164,17 @@ async function runSmokeTest(window: BrowserWindow): Promise<void> {
   while (Date.now() < deadline) {
     const report = (await window.webContents.executeJavaScript(
       `({
+        ready: document.body.dataset.libraryState === 'ready',
         games: document.querySelectorAll('#gameList .game').length,
         engines: document.querySelectorAll('#engineFilters button').length,
         status: document.getElementById('status')?.textContent ?? '',
         counts: document.getElementById('counts')?.textContent ?? '',
       })`,
-    )) as { games: number; engines: number; status: string; counts: string };
+    )) as { ready: boolean; games: number; engines: number; status: string; counts: string };
 
-    if (report.engines > 0 && !report.status.startsWith('Loading')) {
+    // Waits on a data attribute, not on English prose - the launcher is
+    // translated, so the status line is not a stable signal.
+    if (report.ready && report.engines > 0) {
       console.log(`[smoke] rendered ${report.games} game rows, ${report.engines} engine filters - ${report.counts || report.status}`);
       const detail = (await window.webContents.executeJavaScript(
         `(async () => {
@@ -244,6 +253,17 @@ async function configContext(gameId: string, translatorId: string) {
   return { schema, config, profile };
 }
 
+/** One shape for both load and scan, with display strings in the active locale. */
+function libraryPayload(index: Awaited<ReturnType<typeof loadLibrary>>) {
+  const games = index.games.map((game) => localiseProfile(registry, game));
+  rememberGames(games);
+  return {
+    index: { ...index, games: games.map(withId) },
+    stats: libraryStats({ ...index, games }),
+    audits: auditLibrary(registry, games).map((a) => ({ ...a, id: idFor(a.path) })),
+  };
+}
+
 /* ---------------------------------------------------------------- ipc */
 
 /** Wraps a handler so renderer errors arrive as data, not as unhandled rejections. */
@@ -270,19 +290,30 @@ function register(): void {
     updated: registry.meta.updated,
   }));
 
+  handle('i18n:get', () => ({
+    locale: getLocale(),
+    locales: availableLocales().map((l) => ({ code: l.code, label: l.label, keys: l.keys })),
+    catalog: getCatalog(),
+  }));
+
   handle('config:get', () => loadConfig());
   handle('config:set', async (config: LauncherConfig) => {
     // Only the fields the UI owns are honoured; roots are managed separately so
     // a config round-trip cannot quietly add a scan root.
     const current = await loadConfig();
+    const locale = typeof config?.locale === 'string' ? config.locale : current.locale;
     await saveConfig({
       ...current,
+      locale,
       defaults: {
         targetLanguage: String(config?.defaults?.targetLanguage ?? current.defaults.targetLanguage),
         sourceLanguage: String(config?.defaults?.sourceLanguage ?? current.defaults.sourceLanguage),
         endpoint: String(config?.defaults?.endpoint ?? current.defaults.endpoint),
       },
     });
+    // Core renders its messages at creation time, so the active locale has to
+    // change here before the renderer re-fetches the library.
+    setLocale(locale);
     return loadConfig();
   });
 
@@ -299,12 +330,7 @@ function register(): void {
 
   handle('library:load', async () => {
     const index = await loadLibrary();
-    rememberGames(index.games);
-    return {
-      index: { ...index, games: index.games.map(withId) },
-      stats: libraryStats(index),
-      audits: auditLibrary(registry, index.games).map((a) => ({ ...a, id: idFor(a.path) })),
-    };
+    return libraryPayload(index);
   });
 
   handle('library:scan', async (options: { depth?: number; deep?: boolean }) => {
@@ -314,18 +340,14 @@ function register(): void {
     if (typeof options?.depth === 'number') scanOptions.depth = options.depth;
     if (typeof options?.deep === 'boolean') scanOptions.deep = options.deep;
     const index = await refreshLibrary(registry, scanOptions);
-    rememberGames(index.games);
-    return {
-      index: { ...index, games: index.games.map(withId) },
-      stats: libraryStats(index),
-      audits: auditLibrary(registry, index.games).map((a) => ({ ...a, id: idFor(a.path) })),
-    };
+    return libraryPayload(index);
   });
 
   handle('game:detail', async (gameId: string, options: ResolveOptions) => {
     const gamePath = requireGamePath(gameId);
-    const profile = detectGame(registry, gamePath, { deep: true });
-    if (!profile) throw new Error('No known engine detected here any more - the folder may have changed.');
+    const detected = detectGame(registry, gamePath, { deep: true });
+    if (!detected) throw new Error('No known engine detected here any more - the folder may have changed.');
+    const profile = localiseProfile(registry, detected);
 
     const safeOptions: ResolveOptions = {
       targetLanguage: String(options?.targetLanguage ?? 'en'),
@@ -417,7 +439,15 @@ function register(): void {
     const config = await readGameConfig(registry, schemas, profile, id, {
       revealSecrets: options?.revealSecrets === true,
     });
-    return { config, categories: schemas.get(id)?.categories ?? [], fontBundles: profile.installedFontBundles };
+    const schema = schemas.get(id);
+    return {
+      config,
+      categories: (schema?.categories ?? []).map((category) => ({
+        id: category.id,
+        label: tRegistry(`configSchema.${id}.categories.${category.id}`, category.label),
+      })),
+      fontBundles: profile.installedFontBundles,
+    };
   });
 
   handle('config:plan', async (gameId: string, translatorId: string, changes: ConfigChange[]) => {
@@ -446,8 +476,11 @@ function register(): void {
   });
 }
 
-void app.whenReady().then(() => {
+void app.whenReady().then(async () => {
   try {
+    // Language before anything else: the registry load itself can throw a
+    // translated error.
+    setLocale((await loadConfig()).locale);
     registry = loadRegistry();
   } catch (err) {
     dialog.showErrorBox('Registry not found', (err as Error).message);

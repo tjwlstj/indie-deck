@@ -39,6 +39,13 @@ export class FileTransaction {
   private readonly log: Logger;
   private readonly dryRun: boolean;
   private readonly journal: ReceiptEntry[] = [];
+  /**
+   * One backup per path per transaction. A second write to the same file must
+   * not overwrite the pristine copy with the installer's own intermediate
+   * content - the backup has to stay the state the folder was in before we
+   * touched it.
+   */
+  private readonly backups = new Map<string, string>();
   private readonly stamp: string;
   private committed = false;
 
@@ -62,14 +69,21 @@ export class FileTransaction {
     return target;
   }
 
-  /** Copies an existing file aside and returns the backup's relative path. */
+  /** Copies an existing file aside once and returns the backup's relative path. */
   private async backup(rel: string): Promise<string> {
+    const key = rel.replace(/\\/g, '/').toLowerCase();
+    const existing = this.backups.get(key);
+    if (existing) return existing;
+
     const source = this.abs(rel);
     const backupRel = path.join(this.backupDir, this.stamp, rel);
     const dest = this.abs(backupRel);
     await ensureDir(path.dirname(dest));
     await fsp.cp(source, dest, { recursive: true });
-    return backupRel.replace(/\\/g, '/');
+
+    const normalised = backupRel.replace(/\\/g, '/');
+    this.backups.set(key, normalised);
+    return normalised;
   }
 
   /** Writes a file, recording whether it displaced an existing one. */
@@ -205,6 +219,7 @@ export class FileTransaction {
       }
     }
     this.journal.length = 0;
+    this.backups.clear();
   }
 }
 

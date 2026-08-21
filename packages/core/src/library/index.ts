@@ -3,10 +3,14 @@ import path from 'node:path';
 import type { GameProfile, Registry } from '../types.ts';
 import { scanLibrary, detectGame, type ScanOptions } from '../detect/index.ts';
 import { defaultDataDir } from '../install/download.ts';
+import { t } from '../i18n/index.ts';
+import { isNativeLoader } from '../registry/index.ts';
 import { ensureDir, pathExists } from '../util/fsx.ts';
 
 export interface LauncherConfig {
   roots: string[];
+  /** UI language: a locale code, or `system` to follow the environment. */
+  locale: string;
   defaults: {
     targetLanguage: string;
     sourceLanguage: string;
@@ -23,6 +27,7 @@ export interface LibraryIndex {
 
 const DEFAULT_CONFIG: LauncherConfig = {
   roots: [],
+  locale: 'system',
   defaults: { targetLanguage: 'en', sourceLanguage: 'ja', endpoint: 'GoogleTranslate' },
   scanDepth: 2,
 };
@@ -102,7 +107,7 @@ export async function refreshLibrary(reg: Registry, options: RefreshOptions = {}
   const config = await loadConfig(dataDir);
   const roots = options.roots ?? config.roots;
   if (roots.length === 0) {
-    throw new Error('No library roots configured. Add one with `indiedeck root add <path>`.');
+    throw new Error(t('core.error.no-roots', {}, 'No library roots configured. Add one with `indiedeck root add <path>`.'));
   }
 
   const scanOptions: ScanOptions = { depth: options.depth ?? config.scanDepth };
@@ -152,15 +157,26 @@ export async function resolveGameArg(
     const detectOptions: { deep?: boolean } = {};
     if (options.deep !== undefined) detectOptions.deep = options.deep;
     const profile = detectGame(reg, arg, detectOptions);
-    if (!profile) throw new Error(`No known engine detected in ${path.resolve(arg)}.`);
+    if (!profile) {
+      throw new Error(t('core.error.no-engine', { path: path.resolve(arg) }, `No known engine detected in ${path.resolve(arg)}.`));
+    }
     return profile;
   }
 
   const index = await loadLibrary(dataDir);
   const matches = findGames(index, arg);
-  if (matches.length === 0) throw new Error(`No game matching "${arg}" - run \`indiedeck scan\` first, or pass a folder path.`);
+  if (matches.length === 0) {
+    throw new Error(
+      t('core.error.no-match', { query: arg }, `No game matching "${arg}" - run \`indiedeck scan\` first, or pass a folder path.`),
+    );
+  }
   if (matches.length > 1) {
-    throw new Error(`"${arg}" matches ${matches.length} games:\n  ${matches.slice(0, 10).map((m) => m.name).join('\n  ')}`);
+    throw new Error(
+      `${t('core.error.ambiguous', { query: arg, count: matches.length }, `"${arg}" matches ${matches.length} games:`)}\n  ${matches
+        .slice(0, 10)
+        .map((m) => m.name)
+        .join('\n  ')}`,
+    );
   }
   // Re-detect so the profile reflects the folder as it is right now.
   const detectOptions: { deep?: boolean } = {};
@@ -176,7 +192,7 @@ export interface LibraryStats {
   byBackend: Record<string, number>;
 }
 
-export function libraryStats(index: LibraryIndex): LibraryStats {
+export function libraryStats(index: LibraryIndex, reg?: Registry): LibraryStats {
   const byEngine = new Map<string, { engineName: string; count: number }>();
   const byBackend: Record<string, number> = {};
   let withTranslator = 0;
@@ -187,7 +203,10 @@ export function libraryStats(index: LibraryIndex): LibraryStats {
     entry.count += 1;
     byEngine.set(game.engineId, entry);
     if (game.installedTranslators.length > 0) withTranslator += 1;
-    if (game.installedLoaders.some((l) => l.loaderId !== 'renpy-native' && l.loaderId !== 'rpgmaker-plugins')) withLoader += 1;
+    const hasRealLoader = game.installedLoaders.some((l) =>
+      reg ? !isNativeLoader(reg, l.loaderId) : l.loaderId !== 'renpy-native' && l.loaderId !== 'rpgmaker-plugins',
+    );
+    if (hasRealLoader) withLoader += 1;
     if (game.unity) byBackend[game.unity.backend] = (byBackend[game.unity.backend] ?? 0) + 1;
   }
 

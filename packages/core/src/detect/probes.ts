@@ -260,6 +260,9 @@ const PROBES: Record<string, (ctx: ProbeContext) => ProbeResult> = {
   peArch: () => ({}),
 };
 
+/** Probe ids an engine definition may reference. Exported so validateRegistry can reject a typo. */
+export const PROBE_IDS = Object.keys(PROBES);
+
 export function runProbes(ctx: ProbeContext, probeIds: string[]): ProbeResult {
   const merged: ProbeResult = { notes: [], extra: {} };
   for (const id of probeIds) {

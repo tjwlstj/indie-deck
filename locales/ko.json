@@ -1,0 +1,655 @@
+{
+  "_meta": {
+    "code": "ko",
+    "label": "한국어",
+    "note": "en.json의 키를 그대로 따라갑니다. 빠진 키는 영어로 표시되므로 번역이 늦어도 앱은 정상 동작합니다. compat.* / registry.* / configSchema.* 는 registry/ JSON의 영어 원문을 덮어쓰는 키입니다."
+  },
+  "core": {
+    "audit": {
+      "font-bundle-mismatch": {
+        "message": "TMP 폰트 번들({installed})이 있지만 이 게임의 Unity {unityVersion}과 맞는 것이 없습니다 — 번역문이 빈 네모로 표시됩니다.",
+        "fix": "{bundle}을(를) 설치하고 FallbackFontTextMeshPro가 그것을 가리키게 하세요."
+      },
+      "font-bundle-clutter": {
+        "message": "다른 Unity 버전용 TMP 폰트 번들 {count}개가 게임 폴더에 남아 있습니다 ({unused}).",
+        "fix": "여기서 실제로 쓰이는 것은 {bundle} 하나뿐이고 나머지는 불필요합니다."
+      },
+      "loaders-stacked": {
+        "message": "모드 로더가 {count}개 동시에 설치돼 있습니다: {loaders}.",
+        "fix": "번역기가 실제로 쓰는 것 하나만 남기세요. 특히 ReiPatcher는 다른 플러그인 매니저와 호환되지 않는다고 문서에 명시돼 있습니다."
+      },
+      "translator-payload-orphaned": {
+        "message": "\"{variant}\" 방식의 {translator} 파일이 설치돼 있지만, \"{capability}\"를 제공하는 로더가 없어 아무것도 로드되지 않습니다.",
+        "fix": "맞는 로더를 설치하거나, 남은 파일을 지우고 지금 있는 로더에 맞는 방식으로 다시 설치하세요."
+      },
+      "translator-outdated": {
+        "message": "{translator} {installed}이(가) 설치돼 있습니다. 알려진 최신 릴리스는 {latest}입니다.",
+        "fix": "indiedeck install {game} --translator {translator} --version {latest}"
+      },
+      "translator-endpoint-too-old": {
+        "message": "{translator} {installed}은(는) 5.5.2의 DeepL 인증 수정 이전 버전이라, 현재 DeepL API가 요청을 거부합니다.",
+        "fix": "5.5.2 이상으로 올리거나 다른 엔드포인트를 쓰세요."
+      },
+      "translator-input-system-too-old": {
+        "message": "{translator} {installed}은(는) 5.5.1의 UnityInput 변경 이전 버전이라, 신형 Input System 게임에서는 게임 내 단축키가 동작하지 않습니다.",
+        "fix": "5.5.1 이상으로 올리세요."
+      },
+      "engine-version-unknown": {
+        "message": "Unity 버전을 읽지 못했습니다. 이 게임에서는 버전 기준 호환성 검사가 참고용으로만 표시됩니다."
+      }
+    },
+    "plan": {
+      "variant-backend-mismatch": "{variant}은(는) {targets} 대상인데 이 게임은 {backend}입니다.",
+      "variant-unity-range": "{variant}은(는) Unity {min} ~ {max}가 필요한데 이 게임은 {version}입니다.",
+      "loader-unavailable": "이 게임에 \"{capability}\"를 제공하는 등록된 로더가 없습니다.",
+      "translator-dormant": "{translator}은(는) 더 이상 활발히 유지보수되지 않습니다.",
+      "font-bundle-unresolved": "CJK 폴백 폰트가 필요하지만 이 Unity 버전에 맞는 TMP 번들이 없습니다 — TextMeshPro 3.2+ 의 시스템 폰트 옵션을 쓰세요."
+    },
+    "step": {
+      "download-loader": "{loader} {version} 다운로드 ({arch})",
+      "extract-loader": "{loader}을(를) 게임 폴더에 압축 해제",
+      "loader-manual": "{loader}에 {arch}용 다운로드 자산이 없습니다 — 먼저 직접 설치하세요 ({url})",
+      "loader-reuse": "이미 설치된 {loader} {version} 재사용",
+      "backup-managed": "ReiPatcher가 덮어쓰기 전에 게임 어셈블리 스냅샷 생성",
+      "download-translator": "{translator} {version} 다운로드 ({variant})",
+      "extract-translator": "{translator}을(를) 게임 폴더에 압축 해제",
+      "extract-translator-into": "{translator}을(를) {dest}에 압축 해제",
+      "run-setup": "{exe} 실행 후, 생성된 \"(Patch and Run)\" 바로가기로 한 번 실행",
+      "install-tool": "{translator}을(를) IndieDeck 도구 폴더에 설치",
+      "translator-manual": "{translator}은(는) 직접 설치해야 합니다 ({url})",
+      "download-fonts": "TMP 폰트 번들 아카이브 다운로드 ({asset})",
+      "copy-font": "{file}을(를) 게임 폴더로 복사",
+      "write-config": "{path} 작성 (없으면 첫 실행 때 생성됨)"
+    },
+    "config": {
+      "warning": {
+        "file-missing": "{path}이(가) 아직 없습니다 — 플러그인이 설치된 상태로 게임을 처음 실행할 때 생성됩니다. 지금 저장한 값은 파일이 생길 때 반영됩니다.",
+        "version-unknown": "설치된 버전을 확인하지 못해 가장 최신 설정 레이아웃을 가정했습니다.",
+        "version-from-tag": "버전 {version}은(는) 설치된 어셈블리가 아니라 설정 파일의 Migrations 태그에서 읽은 값입니다 — 참고 정보로만 보세요."
+      },
+      "validation": {
+        "unknown-credential": "알 수 없는 인증 항목 \"{id}\".",
+        "unknown-setting": "알 수 없는 설정 \"{id}\".",
+        "setting-unavailable": "{label}은(는) 버전 {version}에 존재하지 않습니다.",
+        "no-location": "{label}의 설정 위치를 알 수 없습니다.",
+        "assumed-mapping": "{label}을(를) [{section}] {key}에 씁니다. 설치된 버전이 불분명해 최신 레이아웃을 가정한 위치입니다.",
+        "deprecated": "{label}은(는) 상류에서 더 이상 권장하지 않습니다.",
+        "unknown-provider": "\"{endpoint}\"은(는) IndieDeck이 아는 번역 엔진이 아니라 인증 항목을 검사할 수 없습니다.",
+        "provider-version": "{provider}에는 번역기 {min} 이상이 필요한데 {installed}이(가) 설치돼 있습니다.",
+        "missing-credential": "{provider}에는 {field}이(가) 필요한데 비어 있습니다. 채우기 전까지 번역이 실패합니다.",
+        "language-unsupported-source": "{provider}의 지원 목록에 원본 언어 \"{language}\"이(가) 없습니다{note}.",
+        "language-unsupported-target": "{provider}의 지원 목록에 번역 언어 \"{language}\"이(가) 없습니다{note}."
+      },
+      "invalid": {
+        "boolean": "True 또는 False여야 합니다",
+        "number": "숫자여야 합니다",
+        "integer": "정수여야 합니다",
+        "min": "{min} 이상이어야 합니다",
+        "max": "{max} 이하여야 합니다",
+        "engine": "\"{value}\"은(는) 알려진 번역 엔진이 아닙니다.",
+        "language": "\"{value}\"은(는) 언어 코드가 아닙니다 (예: ko, ja, zh-CN).",
+        "font-bundle": "\"{value}\"은(는) 게임 폴더에 있는 폰트 번들이 아닙니다 ({bundles})."
+      },
+      "error": {
+        "invalid-plan": "유효하지 않은 설정 변경은 저장하지 않습니다.",
+        "no-schema": "\"{translator}\"에 등록된 설정 스키마가 없습니다.",
+        "no-location": "이 게임에서 {translator}의 설정 파일 위치를 알 수 없습니다."
+      }
+    },
+    "error": {
+      "no-roots": "라이브러리 루트가 설정되지 않았습니다. `indiedeck root add <경로>`로 추가하세요.",
+      "no-engine": "{path}에서 알려진 엔진을 찾지 못했습니다.",
+      "no-match": "\"{query}\"와(과) 일치하는 게임이 없습니다 — 먼저 `indiedeck scan`을 실행하거나 폴더 경로를 넘기세요.",
+      "ambiguous": "\"{query}\"이(가) {count}개 게임과 일치합니다:",
+      "registry-missing": "IndieDeck 레지스트리 폴더를 찾지 못했습니다. engines.json이 있는 폴더를 INDIEDECK_REGISTRY로 지정하세요."
+    }
+  },
+  "ui": {
+    "app": {
+      "search": "게임 검색…",
+      "to": "번역",
+      "from": "원본",
+      "endpointTitle": "번역 엔진",
+      "addFolder": "폴더 추가",
+      "scan": "검색",
+      "language": "언어",
+      "loading": "라이브러리 불러오는 중…",
+      "ready": "준비됨",
+      "counts": "{total}개 중 {shown}개"
+    },
+    "sidebar": {
+      "engines": "엔진",
+      "allEngines": "모든 엔진",
+      "status": "상태",
+      "allGames": "전체",
+      "untranslated": "번역기 없음",
+      "translated": "번역기 있음",
+      "issues": "확인 필요",
+      "roots": "라이브러리 폴더",
+      "noRoots": "설정된 폴더 없음",
+      "stopScanning": "{root} 검색 중지"
+    },
+    "detail": {
+      "emptyTitle": "게임을 선택하세요",
+      "emptyBody": "엔진·백엔드·버전을 읽고, 그 게임에 실제로 맞는 번역기 빌드가 무엇인지 계산합니다.",
+      "play": "실행",
+      "openFolder": "폴더 열기",
+      "uninstall": "IndieDeck이 설치한 항목 제거",
+      "engine": "엔진",
+      "engineValue": "{name} (확신도 {confidence}%)",
+      "backend": "백엔드",
+      "unity": "Unity",
+      "version": "버전",
+      "traits": "특성",
+      "traitTmp": "TextMeshPro: {value}",
+      "traitInput": "신형 Input System: {value}",
+      "yes": "있음",
+      "no": "없음",
+      "executable": "실행 파일",
+      "loaders": "로더",
+      "translators": "번역기",
+      "fontBundles": "폰트 번들",
+      "needsAttention": "확인 필요",
+      "translatorOptions": "번역기 선택지",
+      "noTranslator": "이 엔진을 지원하는 번역기가 레지스트리에 없습니다.",
+      "mods": "모드",
+      "modsWithHosts": "모드 · {hosts}",
+      "noModHost": "아직 모드를 넣을 곳이 없습니다 — 위에서 로더를 먼저 설치하세요.",
+      "addMod": "파일에서 모드 추가",
+      "noMods": "아직 설치된 모드가 없습니다.",
+      "unknownVersion": "버전 불명"
+    },
+    "plan": {
+      "install": "설치",
+      "blocked": "불가",
+      "viaLoader": "{loader} {version} 사용",
+      "alreadyInstalled": "이미 설치됨",
+      "font": "폰트 {file}",
+      "noLoaderNeeded": "로더 불필요"
+    },
+    "config": {
+      "title": "번역 설정",
+      "versionFrom": "출처 {source} · {confidence}",
+      "createdOnLaunch": "첫 실행 시 생성됨",
+      "coverage": "스키마가 전체 {total}개 키 중 {described}개를 설명합니다. 나머지는 건드리지 않고 그대로 둡니다",
+      "credentials": "{provider} 인증 정보",
+      "noCredentials": "이 엔진은 인증 정보가 필요 없습니다.",
+      "plaintextWarning": "플러그인이 그렇게 읽기 때문에 게임 설정 파일에 평문으로 저장됩니다.",
+      "supports": "지원: {source} → {target}",
+      "undescribed": "IndieDeck이 설명하지 않는 키 ({count}개)",
+      "undescribedNote": "절대 수정하지 않습니다. 사라진 것처럼 보이지 않도록 나열합니다.",
+      "preview": "미리보기",
+      "save": "저장",
+      "discard": "되돌리기",
+      "unsavedOne": "저장하지 않은 변경 1개",
+      "unsavedMany": "저장하지 않은 변경 {count}개",
+      "checking": "확인 중…",
+      "none": "(없음)",
+      "inFile": "{value} (파일에 있는 값)",
+      "inFileNotInFolder": "{value} (파일에는 있으나 폴더에 없음)",
+      "deprecated": "비권장",
+      "assumed": "가정됨",
+      "required": "필수",
+      "notWritten": "저장하지 않았습니다 — 위의 오류를 먼저 해결하세요.",
+      "written": "{path}에 설정 {count}개를 저장했습니다",
+      "backedUp": "원본을 {path}에 백업했습니다",
+      "saved": "설정 {count}개 저장됨"
+    },
+    "status": {
+      "reading": "게임 폴더 읽는 중…",
+      "scanning": "검색 중 {path}",
+      "scanningShort": "검색 중…",
+      "downloading": "다운로드 중… {percent}%",
+      "installing": "{translator} {version} 설치 중…",
+      "installed": "설치 완료 — 파일 {count}개 작성",
+      "removing": "제거 중…",
+      "removed": "제거 완료. 폴더가 원래 상태로 돌아갔습니다.",
+      "removedKept": "제거 완료. 직접 수정한 파일 {count}개는 그대로 두었습니다.",
+      "emptyLibrary": "아직 게임이 없습니다 — 폴더를 추가하고 검색하세요."
+    }
+  },
+  "cli": {
+    "tagline": "유니티와 인디게임을 위한 통합 런처",
+    "section": {
+      "library": "라이브러리",
+      "translation": "번역",
+      "mods": "모드",
+      "registry": "레지스트리",
+      "global": "공통"
+    },
+    "heading": {
+      "byEngine": "엔진별",
+      "installed": "설치된 항목",
+      "modHosts": "모드 설치 위치",
+      "receipts": "IndieDeck 설치 기록",
+      "registryCheck": "레지스트리 자체 점검",
+      "upstream": "상류 릴리스",
+      "engines": "엔진",
+      "library": "라이브러리",
+      "roots": "라이브러리 폴더",
+      "dryRun": "실행 예정 (쓰기 없음)",
+      "stillNeedsYou": "직접 해야 하는 일",
+      "plannedChanges": "변경 예정",
+      "changes": "변경",
+      "engineList": "{translator} - 번역 엔진",
+      "undescribed": "IndieDeck이 설명하지 않는 키 ({count}개)",
+      "credentials": "{provider} 인증 정보",
+      "libraryCheck": "라이브러리 점검 - {total}개 중 {count}개 게임에 문제가 있습니다",
+      "issues": "{name} - 문제 {count}개"
+    },
+    "column": {
+      "id": "ID",
+      "engine": "엔진",
+      "games": "게임 수",
+      "game": "게임",
+      "runtime": "런타임",
+      "arch": "아키텍처",
+      "loader": "로더",
+      "translator": "번역기",
+      "mod": "모드",
+      "kind": "종류",
+      "host": "위치",
+      "size": "크기",
+      "issue": "문제",
+      "severity": "심각도",
+      "repo": "저장소",
+      "pinned": "고정됨",
+      "latest": "최신",
+      "loaders": "로더",
+      "translators": "번역기",
+      "requires": "필요 항목",
+      "n": "수"
+    },
+    "msg": {
+      "noRoots": "검색할 폴더가 없습니다.",
+      "passPath": "경로를 넘기거나 `indiedeck root add <경로>`로 등록하세요.",
+      "scanned": "루트 {roots}개를 {seconds}초에 검색 - 게임 {count}개 발견, {path}에 저장",
+      "scanSummary": "번역기 설치됨: {translated}  모드 로더 설치됨: {loaders}",
+      "unityBackends": "unity mono/il2cpp: {mono}/{il2cpp}",
+      "emptyLibrary": "라이브러리가 비어 있습니다.",
+      "runScanFirst": "먼저 `indiedeck scan <경로>`를 실행하세요.",
+      "shownOfTotal": "{total}개 중 {shown}개",
+      "noLoader": "모드 로더 없음",
+      "severalFonts": "TMP 폰트 번들이 여러 개 있습니다 — 이 Unity 라인에 맞는 하나만 실제로 적용됩니다",
+      "nothingToFix": "고칠 것 없음",
+      "noStructuralIssues": "구조적 문제 없음",
+      "registryCounts": "엔진 {engines}, 로더 {loaders}, 번역기 {translators}, 호환성 규칙 {rules}, 폰트 번들 {fonts}",
+      "noViablePlan": "이 게임에 쓸 수 있는 번역기가 없습니다. --all 로 각 선택지가 왜 제외됐는지 볼 수 있습니다.",
+      "installWith": "설치 명령:",
+      "warningsPresent": "위에 경고 {count}개가 있습니다. 그래도 진행하려면 --yes, 미리 보려면 --dry-run 을 쓰세요.",
+      "filesWritten": "파일 {count}개 작성",
+      "receipts": "설치 기록: {list}",
+      "noReceipts": "{name}에 IndieDeck 설치 기록이 없습니다.",
+      "onlyIndieDeck": "IndieDeck으로 설치한 항목만 자동으로 제거할 수 있습니다.",
+      "dryRunNothing": "(미리보기 - 아무것도 삭제하지 않았습니다)",
+      "noModHost": "이 게임에는 모드를 넣을 곳이 없습니다. 먼저 로더를 설치하세요 (`indiedeck plan` 참고).",
+      "installedInto": "{dir}에 설치했습니다 (파일 {count}개)",
+      "toggled": "{mod} {action} ({strategy})",
+      "nothingToShow": "(표시할 항목 없음)",
+      "changeHint": "값 변경: indiedeck config <게임> --set xunity.targetLanguage=ko",
+      "furtherKeys": "그 밖에 키 {count}개가 그대로 보존됩니다 (--expert 로 확인)",
+      "preservedNote": "저장할 때마다 이 값들은 그대로 유지됩니다.",
+      "configWritten": "설정 {count}개 저장",
+      "backedUp": "원본을 {path}에 백업",
+      "dryRunUntouched": "미리보기 - {path}은(는) 수정하지 않았습니다",
+      "reRunWithYes": "그래도 저장하려면 --yes, 미리 보려면 --dry-run 을 쓰세요.",
+      "andMore": "... 그 외 {count}개 (--limit N)",
+      "empty": "(비어 있음)",
+      "nothing": "없음",
+      "none": "없음",
+      "default": "(기본값)",
+      "notCreatedYet": "[아직 생성되지 않음]",
+      "schemaDescribes": "스키마가 파일의 전체 {total}개 키 중 {described}개를 설명합니다",
+      "versionFrom": "버전 {version} (출처 {source}, {confidence})",
+      "cacheAt": "캐시: {path}",
+      "configAt": "설정: {path}",
+      "scannedAt": "게임 {count}개, 검색 시각 {when}",
+      "never": "없음",
+      "unknownCommand": "알 수 없는 명령"
+    },
+    "help": {
+      "scan": "라이브러리 폴더를 검색해 목록을 저장합니다",
+      "list": "저장된 게임 목록을 표시합니다",
+      "info": "게임 하나에 대해 탐지한 모든 정보",
+      "detect": "라이브러리를 건드리지 않고 폴더 하나만 탐지합니다",
+      "stats": "엔진별 라이브러리 통계",
+      "check": "조용히 망가진 설정을 찾습니다: Unity 버전과 안 맞는 TMP 폰트, 중첩된 로더, 로더 없는 플러그인 파일, 구버전 번역기",
+      "root": "라이브러리 폴더를 관리합니다",
+      "plan": "호환성 판정과 함께 번역기 선택지를 순위로 보여줍니다",
+      "install": "가장 적합한 조합을 설치합니다 (로더 + 번역기 + 설정)",
+      "config": "번역기 설정을 의미 있는 id로 읽고 바꿉니다. 실제 설치된 버전 기준으로 검사합니다",
+      "uninstall": "IndieDeck이 설치한 것을 제거하고 백업을 복원합니다",
+      "mods": "모든 호스트의 모드를 보거나, 파일에서 설치하거나, 켜고 끕니다",
+      "registry": "레지스트리를 검증하거나, 엔진별 설치 가능 항목을 봅니다",
+      "locale": "출력 언어 (en, ko). 저장된 설정, 그다음 시스템 언어를 따릅니다.",
+      "json": "기계가 읽을 수 있는 출력",
+      "noColor": "색상 끄기 (또는 NO_COLOR 환경변수)",
+      "help": "이 도움말",
+      "version": "버전",
+      "dataDir": "데이터는 ~/.indiedeck 에 저장됩니다 (INDIEDECK_HOME 으로 변경).",
+      "registryDir": "레지스트리는 ./registry 에 있습니다 (INDIEDECK_REGISTRY 으로 변경).",
+      "localesDir": "번역은 ./locales 에 있습니다 (INDIEDECK_LOCALES 으로 변경)."
+    }
+  },
+  "compat": {
+    "il2cpp-requires-il2cpp-variant": {
+      "message": "이 게임은 IL2CPP 백엔드입니다(GameAssembly.dll). Mono용 패키지는 로드되지 않습니다. BepInEx-IL2CPP 또는 MelonMod-IL2CPP 패키지를 쓰세요."
+    },
+    "mono-requires-mono-variant": {
+      "message": "이 게임은 Mono 백엔드입니다(MonoBleedingEdge / Managed 어셈블리). IL2CPP 패키지는 여기서 로드되지 않습니다."
+    },
+    "bepinex5-no-il2cpp": {
+      "message": "BepInEx 5는 IL2CPP 게임을 지원하지 않습니다('Games built with IL2CPP are not supported at the moment'). BepInEx 6 IL2CPP bleeding-edge 빌드가 필요합니다."
+    },
+    "xuat-il2cpp-min-bepinex-build": {
+      "message": "XUnity.AutoTranslator 5.4.0+ 는 BepInEx bleeding-edge 빌드 704 기준으로 빌드됐습니다. 그보다 낮은 BE 빌드는 IL2CPP에서 크래시가 보고돼 있습니다."
+    },
+    "xuat-il2cpp-min-unity-2017": {
+      "message": "XUnity.AutoTranslator 5.3.0에서 IL2CPP 패키지의 2017 미만 Unity 지원이 중단됐습니다. 2017 미만 IL2CPP 게임은 화면 OCR 번역기가 현실적인 선택지입니다."
+    },
+    "xuat-5.6.0-has-no-reipatcher": {
+      "message": "릴리스 v5.6에는 ReiPatcher 자산이 없습니다. ReiPatcher 방식이 필요하면 5.6.1(또는 5.5.2)로 고정하세요."
+    },
+    "deepl-auth-header-needs-5.5.2": {
+      "message": "DeepL API 인증이 5.5.2에서 Authorization 헤더 방식으로 바뀌었습니다. 이전 버전은 구식 방식으로 요청해 현재 API에서 거부됩니다."
+    },
+    "new-input-system-needs-5.5.1": {
+      "message": "이 게임은 Unity 신형 Input System을 씁니다. XUnity.AutoTranslator 5.5.1에서 두 입력 스택을 모두 지원하도록 UnityInput으로 전환됐고, 그 이전 버전에서는 게임 내 단축키(ALT+0 설정 UI, ALT+T 재번역)가 대체로 동작하지 않습니다."
+    },
+    "reipatcher-conflicts-with-loader": {
+      "message": "이 게임 폴더에 이미 모드 로더가 설치돼 있습니다. README는 ReiPatcher가 '다른 플러그인 매니저가 설치된 상태와 호환되지 않는다'고 경고합니다. 이미 있는 로더에 맞는 패키지를 쓰세요."
+    },
+    "arch-must-match": {
+      "message": "로더 아키텍처는 게임 실행 파일과 같아야 합니다. 32비트 게임이면 x86, 64비트면 x64입니다. IndieDeck은 실행 파일의 PE 헤더를 읽어 판단합니다."
+    },
+    "melonloader-il2cpp-needs-dotnet6": {
+      "message": "IL2CPP에서 MelonLoader는 .NET 6.0 데스크톱 런타임이 필요합니다. Windows 설치기는 자동으로 받아오지만 zip 수동 설치는 그렇지 않을 수 있습니다."
+    },
+    "melonloader-unity-floor-unverified": {
+      "message": "MelonLoader는 흔히 Unity 5.6.1 이상이 필요하다고 알려져 있지만 상류 문서에는 지원 범위가 명시돼 있지 않습니다. 참고용으로만 보세요. 게임이 더 낮은 버전이면 BepInEx 5(문서상 Unity 3부터 지원)를 권합니다."
+    },
+    "old-unity-legacy-texture-hint": {
+      "message": "Unity 5.3 미만에서는 이미지 번역이 동작하려면 AutoTranslatorConfig.ini의 레거시 텍스처 로딩 경로가 필요한 경우가 많습니다."
+    },
+    "cjk-needs-tmp-font": {
+      "message": "TextMeshPro는 게임 자체 폰트 아틀라스로 한글·일본어·중국어 글자를 그리지 못해 번역문이 빈 네모로 나옵니다. 게임의 Unity 버전에 맞는 TMP 폴백 폰트 번들을 설치하고 FallbackFontTextMeshPro를 설정하세요."
+    },
+    "mono-tls-warning": {
+      "message": "구버전 Mono 런타임은 TLS 1.2 문제로 번역 요청이 멈출 수 있습니다. 오류 없이 번역이 멈춘다면 다른 엔드포인트나 ReiPatcher 방식을 시도해 보세요."
+    },
+    "no-inprocess-translator-for-engine": {
+      "message": "이 엔진에는 유지보수되는 인프로세스 텍스트 번역기가 없습니다. 화면 OCR(MORT)이나 후킹+OCR 혼합(LunaTranslator)이 현실적인 방법입니다."
+    },
+    "renpy-archived-scripts": {
+      "message": "이 Ren'Py 빌드에는 .rpa 아카이브 / .rpyc 바이트코드만 있습니다. 오프라인 번역기는 .rpy 원본이 필요하므로 먼저 풀거나(UnRen, rpatool) 화면 OCR을 쓰세요."
+    },
+    "prefer-stable-channel": {
+      "message": "bleeding-edge 로더 빌드는 서명되지 않은 CI 산출물이고 빌드 사이에 회귀가 생길 수 있어, 안정판으로 요구 조건을 만족할 수 없을 때만 선택합니다."
+    },
+    "prefer-installed-loader": {
+      "message": "로더를 하나 더 얹는 대신 게임 폴더에 이미 있는 로더를 재사용합니다."
+    }
+  },
+  "registry": {
+    "engines": {
+      "unity": {
+        "name": "Unity"
+      },
+      "renpy": {
+        "name": "Ren'Py"
+      },
+      "rpgmaker-mz": {
+        "name": "RPG Maker MZ"
+      },
+      "rpgmaker-mv": {
+        "name": "RPG Maker MV"
+      },
+      "rpgmaker-rgss": {
+        "name": "RPG Maker XP/VX/VX Ace"
+      },
+      "wolf-rpg": {
+        "name": "울프 RPG 에디터"
+      },
+      "godot": {
+        "name": "고도 엔진"
+      },
+      "gamemaker": {
+        "name": "게임메이커"
+      },
+      "unreal": {
+        "name": "언리얼 엔진"
+      },
+      "kirikiri": {
+        "name": "키리키리 / KAG"
+      },
+      "nscripter": {
+        "name": "NScripter / ONScripter"
+      },
+      "tyranoscript": {
+        "name": "티라노스크립트"
+      },
+      "love2d": {
+        "name": "LÖVE (Love2D)"
+      },
+      "electron": {
+        "name": "Electron (일반)"
+      },
+      "nwjs": {
+        "name": "NW.js (일반)"
+      },
+      "java": {
+        "name": "자바 (LibGDX / jar)"
+      },
+      "flash": {
+        "name": "플래시 / Adobe AIR"
+      }
+    },
+    "translators": {
+      "xunity-autotranslator": {
+        "summary": "Unity 텍스트 컴포넌트를 런타임에 후킹해 기계 번역이나 캐시된 번역으로 바꿔치기합니다. Unity 게임 번역의 사실상 표준입니다."
+      },
+      "mort": {
+        "summary": "한국어 중심의 실시간 화면 OCR 번역기. 엔진과 무관하게 화면을 읽으므로 인프로세스 후킹이 불가능한 곳에서도 동작합니다."
+      },
+      "lunatranslator": {
+        "summary": "텍스트 후킹·OCR·클립보드 캡처를 결합한 비주얼 노벨 중심 번역기. 다양한 MT/LLM 백엔드를 지원합니다."
+      },
+      "textractor": {
+        "summary": "Win32 비주얼 노벨용 고전 텍스트 후커. 게임 내 텍스트를 뽑아 외부 번역기에 넘깁니다.",
+        "maintenance": {
+          "note": "2024년 3월 이후 상류 활동이 없습니다 — LunaTranslator가 활발히 유지보수되는 대안입니다."
+        }
+      },
+      "renpy-translator": {
+        "summary": "Ren'Py의 tl/ 번역 파일을 오프라인으로 생성합니다. 런타임 후킹 없이 게임이 원래 방식으로 읽는 진짜 번역을 만듭니다."
+      },
+      "projz-renpy-translation": {
+        "summary": "색인 기반 Ren'Py 번역 관리 도구. 문자열을 추출해 게임 업데이트를 넘어 추적하고, 기계 번역이나 사람 번역을 tl/에 반영합니다."
+      },
+      "rpgmaker-mvmz-translator": {
+        "summary": "RPG Maker MV/MZ 데이터 파일을 무료로 자동 번역합니다."
+      },
+      "wolftrans": {
+        "summary": "울프 RPG 에디터 게임용 패치 기반 번역 도구. 원본을 직접 고치지 않고 번역된 사본을 만듭니다.",
+        "maintenance": {
+          "note": "2019년 이후 유지보수가 없습니다. 구버전 울프 RPG에서는 동작하지만 최신 3.x 데이터 형식은 실패할 수 있습니다."
+        }
+      },
+      "mtool": {
+        "summary": "클로즈드 소스 RPG Maker 번역/치트 도구. IndieDeck은 내려받거나 설치하지 않고, 이미 설치된 것을 탐지만 해서 라이브러리 목록이 사실과 맞도록 합니다."
+      },
+      "translator-plus-plus": {
+        "summary": "폭넓은 엔진을 지원하는 클로즈드 소스 번역 작업 도구. 탐지와 링크만 제공합니다."
+      }
+    }
+  },
+  "configSchema": {
+    "xunity-autotranslator": {
+      "categories": {
+        "basic": "번역",
+        "credentials": "서비스 인증 정보",
+        "frameworks": "텍스트 프레임워크",
+        "behaviour": "번역 동작",
+        "font": "UI와 폰트",
+        "files": "캐시와 파일",
+        "debug": "디버그"
+      },
+      "settings": {
+        "xunity.endpoint": {
+          "label": "번역 엔진",
+          "help": "실제로 번역을 수행하는 서비스입니다. 무료 웹 엔드포인트는 키가 필요 없지만 사이트가 바뀌면 동작이 멈출 수 있습니다."
+        },
+        "xunity.fallbackEndpoint": {
+          "label": "대체 엔진",
+          "help": "기본 엔진이 실패했을 때 사용합니다. 쓰지 않으려면 비워 두세요."
+        },
+        "xunity.sourceLanguage": {
+          "label": "원본 언어"
+        },
+        "xunity.targetLanguage": {
+          "label": "번역 언어"
+        },
+        "xunity.enableIMGUI": {
+          "label": "IMGUI",
+          "help": "기본값은 꺼짐입니다. 켜면 모드나 디버그 창까지 번역돼 보통은 방해가 됩니다."
+        },
+        "xunity.enableUGUI": {
+          "label": "uGUI"
+        },
+        "xunity.enableNGUI": {
+          "label": "NGUI"
+        },
+        "xunity.enableTextMeshPro": {
+          "label": "TextMeshPro"
+        },
+        "xunity.enableTextMesh": {
+          "label": "TextMesh (구형)"
+        },
+        "xunity.enableFairyGUI": {
+          "label": "FairyGUI"
+        },
+        "xunity.enableUIElements": {
+          "label": "UIElements",
+          "help": "5.6에서 추가됐습니다. 이전 버전에서는 표시되지 않습니다."
+        },
+        "xunity.maxCharactersPerTranslation": {
+          "label": "요청당 최대 글자 수",
+          "help": "이보다 긴 텍스트는 건너뜁니다. 너무 크게 잡으면 일부 API가 요청을 거부합니다."
+        },
+        "xunity.ignoreWhitespaceInDialogue": {
+          "label": "대사의 공백 무시"
+        },
+        "xunity.minDialogueChars": {
+          "label": "대사 최소 길이"
+        },
+        "xunity.forceSplitTextAfterCharacters": {
+          "label": "N글자마다 강제 줄바꿈",
+          "help": "0이면 사용하지 않습니다."
+        },
+        "xunity.enableBatching": {
+          "label": "요청 묶어 보내기"
+        },
+        "xunity.useStaticTranslations": {
+          "label": "내장 번역 사용"
+        },
+        "xunity.copyToClipboard": {
+          "label": "원문을 클립보드로 복사",
+          "help": "외부 도구가 텍스트를 가져갈 수 있게 합니다."
+        },
+        "xunity.fallbackFontTextMeshPro": {
+          "label": "TMP 폴백 폰트",
+          "help": "덮어쓰기보다 이쪽을 권장합니다. 게임은 자기 폰트를 그대로 쓰고, 그릴 수 없는 글자에서만 이 폰트로 대체합니다. 한국어·일본어·중국어에 필요합니다."
+        },
+        "xunity.overrideFontTextMeshPro": {
+          "label": "TMP 폰트 덮어쓰기",
+          "help": "게임의 모든 TextMeshPro 폰트를 교체합니다. 폴백 방식이 통하지 않을 때만 쓰세요."
+        },
+        "xunity.overrideFont": {
+          "label": "uGUI 폰트 덮어쓰기"
+        },
+        "xunity.overrideFontSize": {
+          "label": "폰트 크기 덮어쓰기"
+        },
+        "xunity.enableUIResizing": {
+          "label": "UI 크기 자동 조정"
+        },
+        "xunity.forceUIResizing": {
+          "label": "UI 크기 강제 조정"
+        },
+        "xunity.translationDirectory": {
+          "label": "번역 폴더"
+        },
+        "xunity.outputFile": {
+          "label": "생성된 번역 파일"
+        },
+        "xunity.substitutionFile": {
+          "label": "치환 파일"
+        },
+        "xunity.enableLegacyTextureLoading": {
+          "label": "레거시 텍스처 로딩",
+          "help": "Unity 5.3 미만에서 이미지 번역이 동작하려면 필요한 경우가 많습니다."
+        },
+        "xunity.enableConsole": {
+          "label": "콘솔 창"
+        },
+        "xunity.enableLog": {
+          "label": "상세 로그"
+        }
+      },
+      "providers": {
+        "GoogleTranslate": {
+          "label": "구글 번역",
+          "note": "무료 웹 엔드포인트입니다. 키가 필요 없지만 사이트가 바뀌면 멈출 수 있습니다."
+        },
+        "GoogleTranslateV2": {
+          "label": "구글 번역 (V2 엔드포인트)"
+        },
+        "GoogleTranslateCompat": {
+          "label": "구글 번역 (호환 모드)"
+        },
+        "GoogleTranslateLegitimate": {
+          "label": "구글 클라우드 번역 API"
+        },
+        "BingTranslate": {
+          "label": "빙 번역"
+        },
+        "BingTranslateLegitimate": {
+          "label": "Azure 번역기"
+        },
+        "DeepLTranslate": {
+          "label": "DeepL (무료 엔드포인트)",
+          "note": "의도적으로 속도를 제한합니다 — 지연 설정은 차단을 피하기 위한 것입니다."
+        },
+        "DeepLTranslateLegitimate": {
+          "label": "DeepL API"
+        },
+        "PapagoTranslate": {
+          "label": "파파고"
+        },
+        "BaiduTranslate": {
+          "label": "바이두 번역"
+        },
+        "YandexTranslate": {
+          "label": "얀덱스 번역"
+        },
+        "WatsonTranslate": {
+          "label": "IBM 왓슨"
+        },
+        "LingoCloudTranslate": {
+          "label": "링고클라우드 (차이윈)"
+        },
+        "ezTransXP": {
+          "label": "ezTrans XP (로컬)",
+          "note": "설치만 하면 완전히 오프라인으로 동작합니다. 일본어 게임을 번역하는 한국어 사용자에게 가장 흔한 선택입니다."
+        },
+        "LecPowerTranslator15": {
+          "label": "LEC Power Translator 15 (로컬)"
+        },
+        "CustomTranslate": {
+          "label": "사용자 지정 엔드포인트",
+          "note": "로컬 HTTP 번역 서버를 가리킵니다 — 직접 띄운 모델이나 브로커에 연결할 때 씁니다."
+        }
+      }
+    }
+  }
+}

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { compareVersions, parseVersion, satisfiesRange, sortDescending, unityMajor } from '../src/util/version.ts';
+import { compareVersions, parseVersion, satisfiesRange, unityMajor } from '../src/util/version.ts';
 
 test('orders plain dotted versions', () => {
   assert.equal(compareVersions('5.4.23.5', '5.4.23.4'), 1);
@@ -39,8 +39,7 @@ test('range checks treat an unknown version as "do not block"', () => {
   assert.equal(satisfiesRange('2018.4.1f1', { min: '2018.1.0', max: '2018.999' }), true);
 });
 
-test('sorts descending and reads the Unity major line', () => {
-  assert.deepEqual(sortDescending(['5.4.6', '5.6.1', '5.5.2']), ['5.6.1', '5.5.2', '5.4.6']);
+test('reads the Unity major line', () => {
   assert.equal(unityMajor('6000.0.58f2'), 6000);
   assert.equal(unityMajor('2021.3.16f1'), 2021);
   assert.equal(unityMajor(undefined), undefined);

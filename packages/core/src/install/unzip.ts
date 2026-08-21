@@ -146,7 +146,3 @@ export async function extractZip(
   return { files, skipped };
 }
 
-/** Lists archive contents without writing anything. */
-export async function listZip(archivePath: string): Promise<ZipEntry[]> {
-  return readZipEntries(await fsp.readFile(archivePath));
-}

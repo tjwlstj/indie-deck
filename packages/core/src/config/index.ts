@@ -1,6 +1,7 @@
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import type { Confidence, GameProfile, Registry } from '../types.ts';
+import { message, t, tRegistry, type Message } from '../i18n/index.ts';
 import { BACKUP_DIR, readReceipts } from '../install/apply.ts';
 import { withTransaction } from '../install/transaction.ts';
 import { pathExists } from '../util/fsx.ts';
@@ -161,7 +162,7 @@ export interface GameConfig {
   unknown: { section: string; key: string; value: string }[];
   /** How much of the file the schema actually describes. */
   coverage: { described: number; total: number };
-  warnings: string[];
+  warnings: Message[];
 }
 
 const SECRET_TYPES = new Set(['secret']);
@@ -184,27 +185,53 @@ export async function readGameConfig(
   options: ReadConfigOptions = {},
 ): Promise<GameConfig> {
   const schema = schemas.get(translatorId);
-  if (!schema) throw new Error(`No config schema is registered for "${translatorId}".`);
+  if (!schema) {
+    throw new Error(
+      t('core.config.error.no-schema', { translator: translatorId }, `No config schema is registered for "${translatorId}".`),
+    );
+  }
 
   const detected = await detectTranslatorVersion(schema, profile);
   const location = await findConfigPath(schema, profile);
-  if (!location) throw new Error(`Could not work out where ${translatorId} keeps its config in this game.`);
+  if (!location) {
+    throw new Error(
+      t(
+        'core.config.error.no-location',
+        { translator: translatorId },
+        `Could not work out where ${translatorId} keeps its config in this game.`,
+      ),
+    );
+  }
 
   const absolute = path.join(profile.path, location.path);
   const text = location.exists ? await fsp.readFile(absolute, 'utf8') : '';
   const data = parseIni(text);
-  const warnings: string[] = [];
+  const warnings: Message[] = [];
 
   if (!location.exists) {
     warnings.push(
-      `${location.path} does not exist yet - it is generated the first time the game runs with the plugin installed. Values written now will be applied when it appears.`,
+      message(
+        'core.config.warning.file-missing',
+        { path: location.path },
+        '{path} does not exist yet - it is generated the first time the game runs with the plugin installed. Values written now will be applied when it appears.',
+      ),
     );
   }
   if (detected.source === 'unknown') {
-    warnings.push('The installed version could not be determined, so the newest known config layout is assumed.');
+    warnings.push(
+      message(
+        'core.config.warning.version-unknown',
+        {},
+        'The installed version could not be determined, so the newest known config layout is assumed.',
+      ),
+    );
   } else if (detected.source === 'config-tag') {
     warnings.push(
-      `Version ${detected.version} was read from the config's own Migrations tag, not from the installed assembly - treat it as a hint.`,
+      message(
+        'core.config.warning.version-from-tag',
+        { version: detected.version },
+        "Version {version} was read from the config's own Migrations tag, not from the installed assembly - treat it as a hint.",
+      ),
     );
   }
 
@@ -222,7 +249,7 @@ export async function readGameConfig(
 
     const entry: ConfigValue = {
       id: setting.id,
-      label: setting.ui.label,
+      label: tRegistry(`configSchema.${schema.translator}.settings.${setting.id}.label`, setting.ui.label),
       category: setting.ui.category,
       type: setting.ui.type,
       value: SECRET_TYPES.has(setting.ui.type) && !options.revealSecrets ? redact(value) : value,
@@ -233,7 +260,7 @@ export async function readGameConfig(
       confidence: mapping.confidence,
       ui: setting.ui,
     };
-    if (setting.help) entry.help = setting.help;
+    if (setting.help) entry.help = tRegistry(`configSchema.${schema.translator}.settings.${setting.id}.help`, setting.help);
     if (setting.ui.deprecated) entry.deprecated = true;
     if (setting.default !== undefined) entry.default = setting.default;
     values.push(entry);
@@ -252,14 +279,25 @@ export async function readGameConfig(
       const raw = provider.section ? (data[provider.section]?.[field.key] ?? '') : '';
       return {
         key: field.key,
-        label: field.label,
+        label: tRegistry(
+          `configSchema.${schema.translator}.providers.${provider.id}.fields.${field.key}.label`,
+          field.label,
+        ),
         type: field.type,
         value: field.type === 'secret' && !options.revealSecrets ? redact(raw) : raw,
         required: field.required === true,
         isSecret: field.type === 'secret',
       };
     });
-    return { provider, selected: provider.id === selectedEndpoint, fields };
+    const label = tRegistry(`configSchema.${schema.translator}.providers.${provider.id}.label`, provider.label);
+    const note = provider.note
+      ? tRegistry(`configSchema.${schema.translator}.providers.${provider.id}.note`, provider.note)
+      : undefined;
+    return {
+      provider: { ...provider, label, ...(note ? { note } : {}) },
+      selected: provider.id === selectedEndpoint,
+      fields,
+    };
   });
 
   const unknown: GameConfig['unknown'] = [];
@@ -272,7 +310,8 @@ export async function readGameConfig(
     }
   }
 
-  const translatorName = reg.translators.find((t) => t.id === translatorId)?.name ?? translatorId;
+  const found = reg.translators.find((entry) => entry.id === translatorId);
+  const translatorName = tRegistry(`registry.translators.${translatorId}.name`, found?.name ?? translatorId);
   return {
     translatorId,
     translatorName,
@@ -297,7 +336,16 @@ export interface ConfigChange {
 export interface ValidationIssue {
   id: string;
   severity: 'error' | 'warn' | 'info';
+  /** Rendered in the active locale. */
   message: string;
+  messageKey?: string;
+  messageParams?: Record<string, string | number | undefined>;
+}
+
+function issueFrom(id: string, severity: ValidationIssue['severity'], msg: Message): ValidationIssue {
+  const out: ValidationIssue = { id, severity, message: msg.text, messageKey: msg.key };
+  if (msg.params) out.messageParams = msg.params;
+  return out;
 }
 
 export interface ConfigPlan {
@@ -345,12 +393,14 @@ export function planConfigChanges(
       const def = providerById(schema, providerRef.providerId);
       const field = def?.fields.find((f) => f.key === providerRef.fieldKey);
       if (!def || !field || !def.section) {
-        issues.push({ id: change.id, severity: 'error', message: `Unknown credential field "${change.id}".` });
+        issues.push(
+          issueFrom(change.id, 'error', message('core.config.validation.unknown-credential', { id: change.id }, 'Unknown credential field "{id}".')),
+        );
         continue;
       }
       const fieldIssue = validateScalar(field.type, change.value, field);
       if (fieldIssue) {
-        issues.push({ id: change.id, severity: 'error', message: `${field.label}: ${fieldIssue}` });
+        issues.push(issueFrom(change.id, 'error', message(fieldIssue.key, { ...fieldIssue.params, label: field.label }, `{label}: ${fieldIssue.text}`)));
         continue;
       }
       const before = current.providers.find((p) => p.provider.id === def.id)?.fields.find((f) => f.key === field.key);
@@ -368,37 +418,61 @@ export function planConfigChanges(
 
     const setting = settingById(schema, change.id);
     if (!setting) {
-      issues.push({ id: change.id, severity: 'error', message: `Unknown setting "${change.id}".` });
+      issues.push(issueFrom(change.id, 'error', message('core.config.validation.unknown-setting', { id: change.id }, 'Unknown setting "{id}".')));
       continue;
     }
     if (!isAvailable(setting, current.detected.version)) {
-      issues.push({
-        id: change.id,
-        severity: 'error',
-        message: `${setting.ui.label} does not exist in version ${current.detected.version}.`,
-      });
+      issues.push(
+        issueFrom(
+          change.id,
+          'error',
+          message(
+            'core.config.validation.setting-unavailable',
+            { label: setting.ui.label, version: current.detected.version },
+            '{label} does not exist in version {version}.',
+          ),
+        ),
+      );
       continue;
     }
     const mapping = resolveMapping(setting, current.detected.version);
     if (!mapping) {
-      issues.push({ id: change.id, severity: 'error', message: `No config location known for ${setting.ui.label}.` });
+      issues.push(
+        issueFrom(
+          change.id,
+          'error',
+          message('core.config.validation.no-location', { label: setting.ui.label }, 'No config location known for {label}.'),
+        ),
+      );
       continue;
     }
 
     const problem = validateSetting(setting, change.value, schema, context);
     if (problem) {
-      issues.push({ id: change.id, severity: 'error', message: problem });
+      issues.push(issueFrom(change.id, 'error', problem));
       continue;
     }
     if (mapping.assumed) {
-      issues.push({
-        id: change.id,
-        severity: 'warn',
-        message: `${setting.ui.label} is being written to [${mapping.section}] ${mapping.key}, assumed from the newest known layout because the installed version is unclear.`,
-      });
+      issues.push(
+        issueFrom(
+          change.id,
+          'warn',
+          message(
+            'core.config.validation.assumed-mapping',
+            { label: setting.ui.label, section: mapping.section, key: mapping.key },
+            '{label} is being written to [{section}] {key}, assumed from the newest known layout because the installed version is unclear.',
+          ),
+        ),
+      );
     }
     if (setting.ui.deprecated) {
-      issues.push({ id: change.id, severity: 'info', message: `${setting.ui.label} is deprecated upstream.` });
+      issues.push(
+        issueFrom(
+          change.id,
+          'info',
+          message('core.config.validation.deprecated', { label: setting.ui.label }, '{label} is deprecated upstream.'),
+        ),
+      );
     }
 
     const before = current.values.find((v) => v.id === setting.id);
@@ -417,11 +491,17 @@ export function planConfigChanges(
   if (provider) {
     issues.push(...validateProviderFit(provider, schema, current, changes));
   } else if (targetEndpoint) {
-    issues.push({
-      id: 'xunity.endpoint',
-      severity: 'warn',
-      message: `"${targetEndpoint}" is not a provider IndieDeck knows about; its credential fields cannot be checked.`,
-    });
+    issues.push(
+      issueFrom(
+        'xunity.endpoint',
+        'warn',
+        message(
+          'core.config.validation.unknown-provider',
+          { endpoint: targetEndpoint },
+          '"{endpoint}" is not a provider IndieDeck knows about; its credential fields cannot be checked.',
+        ),
+      ),
+    );
   }
 
   return { changes: planned, issues, patch, valid: !issues.some((i) => i.severity === 'error') };
@@ -431,18 +511,24 @@ function validateScalar(
   type: string,
   value: string,
   bounds: { min?: number; max?: number } = {},
-): string | undefined {
+): Message | undefined {
   if (type === 'boolean') {
-    if (!/^(true|false)$/i.test(value)) return 'must be True or False';
+    if (!/^(true|false)$/i.test(value)) return message('core.config.invalid.boolean', {}, 'must be True or False');
     return undefined;
   }
   if (type === 'integer' || type === 'number') {
     if (value === '') return undefined;
     const parsed = Number(value);
-    if (!Number.isFinite(parsed)) return 'must be a number';
-    if (type === 'integer' && !Number.isInteger(parsed)) return 'must be a whole number';
-    if (bounds.min !== undefined && parsed < bounds.min) return `must be at least ${bounds.min}`;
-    if (bounds.max !== undefined && parsed > bounds.max) return `must be at most ${bounds.max}`;
+    if (!Number.isFinite(parsed)) return message('core.config.invalid.number', {}, 'must be a number');
+    if (type === 'integer' && !Number.isInteger(parsed)) {
+      return message('core.config.invalid.integer', {}, 'must be a whole number');
+    }
+    if (bounds.min !== undefined && parsed < bounds.min) {
+      return message('core.config.invalid.min', { min: bounds.min }, 'must be at least {min}');
+    }
+    if (bounds.max !== undefined && parsed > bounds.max) {
+      return message('core.config.invalid.max', { max: bounds.max }, 'must be at most {max}');
+    }
   }
   return undefined;
 }
@@ -452,22 +538,34 @@ function validateSetting(
   value: string,
   schema: ConfigSchema,
   context: { fontBundles?: string[] },
-): string | undefined {
+): Message | undefined {
   const ui = setting.ui;
 
   if (ui.type === 'provider-select') {
     if (value === '' && ui.allowEmpty) return undefined;
-    if (!providerById(schema, value)) return `"${value}" is not a known translation engine.`;
+    if (!providerById(schema, value)) {
+      return message('core.config.invalid.engine', { value }, '"{value}" is not a known translation engine.');
+    }
     return undefined;
   }
   if (ui.type === 'language') {
-    if (!/^[a-z]{2,3}(-[A-Za-z]{2,4})?$/.test(value)) return `"${value}" is not a language code (expected e.g. ko, ja, zh-CN).`;
+    if (!/^[a-z]{2,3}(-[A-Za-z]{2,4})?$/.test(value)) {
+      return message(
+        'core.config.invalid.language',
+        { value },
+        '"{value}" is not a language code (expected e.g. ko, ja, zh-CN).',
+      );
+    }
     return undefined;
   }
   if (ui.type === 'font-bundle') {
     if (value === '') return undefined;
     if (context.fontBundles && context.fontBundles.length > 0 && !context.fontBundles.includes(value)) {
-      return `"${value}" is not among the font bundles present in the game folder (${context.fontBundles.join(', ')}).`;
+      return message(
+        'core.config.invalid.font-bundle',
+        { value, bundles: context.fontBundles.join(', ') },
+        '"{value}" is not among the font bundles present in the game folder ({bundles}).',
+      );
     }
     return undefined;
   }
@@ -487,13 +585,24 @@ function validateProviderFit(
 
   if (provider.requiresTranslatorVersion && current.detected.version) {
     if (!satisfiesRange(current.detected.version, provider.requiresTranslatorVersion)) {
-      issues.push({
-        id: 'xunity.endpoint',
-        severity: 'warn',
-        message:
-          provider.requiresTranslatorVersion.reason ??
-          `${provider.label} needs translator ${provider.requiresTranslatorVersion.min ?? ''} or newer; ${current.detected.version} is installed.`,
-      });
+      const reasonKey = `configSchema.${schema.translator}.providers.${provider.id}.requiresTranslatorVersion.reason`;
+      issues.push(
+        issueFrom(
+          'xunity.endpoint',
+          'warn',
+          provider.requiresTranslatorVersion.reason
+            ? { key: reasonKey, text: tRegistry(reasonKey, provider.requiresTranslatorVersion.reason) }
+            : message(
+                'core.config.validation.provider-version',
+                {
+                  provider: provider.label,
+                  min: provider.requiresTranslatorVersion.min ?? '',
+                  installed: current.detected.version,
+                },
+                '{provider} needs translator {min} or newer; {installed} is installed.',
+              ),
+        ),
+      );
     }
   }
 
@@ -502,11 +611,17 @@ function validateProviderFit(
     const changed = changes.find((c) => c.id === `provider:${provider.id}:${field.key}`)?.value;
     const existing = current.providers.find((p) => p.provider.id === provider.id)?.fields.find((f) => f.key === field.key)?.value;
     if (!changed && !existing) {
-      issues.push({
-        id: `provider:${provider.id}:${field.key}`,
-        severity: 'warn',
-        message: `${provider.label} needs ${field.label}, which is not set. Translation will fail until it is.`,
-      });
+      issues.push(
+        issueFrom(
+          `provider:${provider.id}:${field.key}`,
+          'warn',
+          message(
+            'core.config.validation.missing-credential',
+            { provider: provider.label, field: field.label },
+            '{provider} needs {field}, which is not set. Translation will fail until it is.',
+          ),
+        ),
+      );
     }
   }
 
@@ -514,18 +629,30 @@ function validateProviderFit(
     const source = valueOf('xunity.sourceLanguage');
     const target = valueOf('xunity.targetLanguage');
     if (source && !provider.languages.source.includes(source)) {
-      issues.push({
-        id: 'xunity.sourceLanguage',
-        severity: 'warn',
-        message: `${provider.label} does not list "${source}" as a source language${provider.languages.note ? ` - ${provider.languages.note}` : ''}.`,
-      });
+      issues.push(
+        issueFrom(
+          'xunity.sourceLanguage',
+          'warn',
+          message(
+            'core.config.validation.language-unsupported-source',
+            { provider: provider.label, language: source, note: provider.languages.note ? ` - ${provider.languages.note}` : '' },
+            '{provider} does not list "{language}" as a source language{note}.',
+          ),
+        ),
+      );
     }
     if (target && !provider.languages.target.includes(target)) {
-      issues.push({
-        id: 'xunity.targetLanguage',
-        severity: 'warn',
-        message: `${provider.label} does not list "${target}" as a target language${provider.languages.note ? ` - ${provider.languages.note}` : ''}.`,
-      });
+      issues.push(
+        issueFrom(
+          'xunity.targetLanguage',
+          'warn',
+          message(
+            'core.config.validation.language-unsupported-target',
+            { provider: provider.label, language: target, note: provider.languages.note ? ` - ${provider.languages.note}` : '' },
+            '{provider} does not list "{language}" as a target language{note}.',
+          ),
+        ),
+      );
     }
   }
 
@@ -554,7 +681,7 @@ export async function writeGameConfig(
   plan: ConfigPlan,
   options: { dryRun?: boolean } = {},
 ): Promise<WriteConfigResult> {
-  if (!plan.valid) throw new Error('Refusing to write an invalid config plan.');
+  if (!plan.valid) throw new Error(t('core.config.error.invalid-plan', {}, 'Refusing to write an invalid config plan.'));
   if (plan.changes.length === 0) {
     return { path: config.location.path, changed: 0, diff: [] };
   }

@@ -1,28 +1,17 @@
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import type { GameProfile, InstallReceipt, LoaderDef, Registry } from '../types.ts';
+import type { GameProfile, InstallReceipt, LoaderDef, ModLayout, Registry } from '../types.ts';
+
 import { ensureDir, pathExists } from '../util/fsx.ts';
 import type { Logger } from '../util/log.ts';
 import { silentLogger } from '../util/log.ts';
+import { isNativeLoader } from '../registry/index.ts';
 import { BACKUP_DIR, writeReceipt } from '../install/apply.ts';
 import { withTransaction } from '../install/transaction.ts';
 import { extractZip } from '../install/unzip.ts';
 
-export interface ModLayout {
-  dir: string;
-  altDir?: string;
-  entry: 'dll' | 'dll-or-folder' | 'folder' | 'js' | 'rpy';
-  disable: 'rename-suffix' | 'move-to-disabled' | 'registry-flag';
-  disabledSuffix?: string;
-  disabledDir?: string;
-  registryFile?: string;
-  altRegistryFile?: string;
-  manifest?: string;
-  extraDirs?: string[];
-  filePrefix?: string;
-  note?: string;
-}
+export type { ModLayout };
 
 export interface ModEntry {
   id: string;
@@ -63,12 +52,12 @@ export function modHosts(reg: Registry, profile: GameProfile): ModHost[] {
   const installedIds = new Set(profile.installedLoaders.map((l) => l.loaderId));
 
   for (const loader of reg.loaders) {
-    const layout = (loader as LoaderDef & { modLayout?: ModLayout }).modLayout;
+    const layout = loader.modLayout;
     if (!layout) continue;
     if (!engineLoaders.includes(loader.id)) continue;
     // Native hosts (RPG Maker plugins, Ren'Py game/) always apply; external
     // loaders only count once they are actually installed.
-    const isNative = loader.install.kind === 'native';
+    const isNative = isNativeLoader(reg, loader.id);
     if (!isNative && !installedIds.has(loader.id)) continue;
 
     const primary = substitute(layout.dir, profile);
@@ -88,6 +77,20 @@ function existsRelSync(profile: GameProfile, rel: string): boolean {
   } catch {
     return false;
   }
+}
+
+/* -------------------------------------------------------- registry formats */
+
+/** A mod as recorded in a loader's own registry file. */
+export interface RegistryRecord {
+  name: string;
+  status: boolean;
+}
+
+export interface RegistryFormat {
+  parse(text: string): RegistryRecord[];
+  setStatus(text: string, name: string, status: boolean): string;
+  append(text: string, name: string): string;
 }
 
 /* ------------------------------------------------------- RPG Maker plugins.js */
@@ -128,6 +131,50 @@ export function appendPlugin(text: string, name: string): string {
   return `${before}${needsComma ? ',\n' : '\n'}${entry}\n${text.slice(close)}`;
 }
 
+/* ------------------------------------------------------------ UE4SS mods.txt */
+
+/**
+ * UE4SS keeps one mod per line: `ModName : 1` enabled, `ModName : 0` disabled.
+ * A different file format from RPG Maker's plugins.js - parsing it with the
+ * plugins.js regex simply found nothing, which is why the format is declared in
+ * the registry rather than inferred from the disable strategy.
+ */
+export function parseModsTxt(text: string): RegistryRecord[] {
+  const records: RegistryRecord[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith(';') || trimmed.startsWith('#')) continue;
+    const m = /^(.+?)\s*:\s*([01])\s*$/.exec(trimmed);
+    if (m) records.push({ name: m[1]!.trim(), status: m[2] === '1' });
+  }
+  return records;
+}
+
+export function setModsTxtStatus(text: string, name: string, status: boolean): string {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`^(\\s*${escaped}\\s*:\\s*)[01](\\s*)$`, 'm');
+  if (!re.test(text)) return text;
+  return text.replace(re, `$1${status ? '1' : '0'}$2`);
+}
+
+export function appendModsTxt(text: string, name: string): string {
+  const needsNewline = text.length > 0 && !text.endsWith('\n');
+  return `${text}${needsNewline ? '\n' : ''}${name} : 1\n`;
+}
+
+/**
+ * Registry-file formats, keyed by the `registryFormat` a modLayout declares.
+ * Adding a loader with its own manifest format is one entry here.
+ */
+export const REGISTRY_FORMATS: Record<string, RegistryFormat> = {
+  'plugins-js': { parse: parsePluginsJs, setStatus: setPluginStatus, append: appendPlugin },
+  lines: { parse: parseModsTxt, setStatus: setModsTxtStatus, append: appendModsTxt },
+};
+
+function formatFor(host: ModHost): RegistryFormat {
+  return REGISTRY_FORMATS[host.layout.registryFormat ?? 'plugins-js'] ?? REGISTRY_FORMATS['plugins-js']!;
+}
+
 /* ------------------------------------------------------------------- listing */
 
 export async function listMods(reg: Registry, profile: GameProfile): Promise<ModEntry[]> {
@@ -145,17 +192,27 @@ export async function listMods(reg: Registry, profile: GameProfile): Promise<Mod
     if (host.layout.disable === 'registry-flag' && host.registryFile) {
       const registryPath = path.join(profile.path, host.registryFile);
       const text = (await pathExists(registryPath)) ? await fsp.readFile(registryPath, 'utf8') : '';
-      const records = new Map(parsePluginsJs(text).map((r) => [r.name, r.status]));
-      for (const name of names.filter((n) => n.toLowerCase().endsWith('.js'))) {
-        const id = name.replace(/\.js$/i, '');
+      const records = new Map(formatFor(host).parse(text).map((r) => [r.name, r.status]));
+      const wanted = EXT_BY_ENTRY[host.layout.entry];
+
+      for (const name of names) {
+        const full = path.join(absDir, name);
+        const stat = await fsp.stat(full).catch(() => undefined);
+        if (!stat) continue;
+        // A folder-entry host (UE4SS) lists directories; a js-entry host
+        // (RPG Maker) lists .js files.
+        if (host.layout.entry === 'folder' ? !stat.isDirectory() : !wanted.some((e) => name.toLowerCase().endsWith(e))) {
+          continue;
+        }
+        const id = wanted.length > 0 ? name.replace(/\.[^.]+$/, '') : name;
         out.push({
           id,
           name: id,
           file: `${host.dir}/${name}`,
           enabled: records.get(id) ?? false,
-          isDirectory: false,
+          isDirectory: stat.isDirectory(),
           loaderId: host.loader.id,
-          managedByIndieDeck: id.startsWith('indiedeck_'),
+          managedByIndieDeck: id.startsWith(host.layout.filePrefix ?? 'indiedeck_'),
         });
       }
       continue;
@@ -230,7 +287,7 @@ export async function setModEnabled(
   if (host.layout.disable === 'registry-flag' && host.registryFile) {
     const registryPath = path.join(profile.path, host.registryFile);
     const text = await fsp.readFile(registryPath, 'utf8');
-    const updated = setPluginStatus(text, mod.id, enabled);
+    const updated = formatFor(host).setStatus(text, mod.id, enabled);
     if (updated === text) throw new Error(`${mod.id} is not registered in ${host.registryFile}.`);
     if (!options.dryRun) {
       // Only the first toggle snapshots the file: overwriting the backup each
@@ -315,20 +372,30 @@ export async function installModFromFile(
       // file belongs to the game, so it is patched - never replaced wholesale -
       // and the original is kept for uninstall.
       if (host.layout.disable === 'registry-flag' && host.registryFile) {
-        const jsFiles = written
-          .map((entry) => entry.path)
-          .filter((file) => file.toLowerCase().endsWith('.js'))
-          .map((file) => path.basename(file, '.js'));
+        // Whatever the host's entry kind is: .js files for RPG Maker, top-level
+        // folder names for UE4SS.
+        const wanted = EXT_BY_ENTRY[host.layout.entry];
+        const names = [
+          ...new Set(
+            written
+              .map((entry) => entry.path.slice(host.dir.length + 1))
+              .filter((rel) => rel.length > 0)
+              .map((rel) => (wanted.length > 0 ? rel : rel.split('/')[0]!))
+              .filter((rel) => (wanted.length > 0 ? wanted.some((e) => rel.toLowerCase().endsWith(e)) : true))
+              .map((rel) => (wanted.length > 0 ? path.basename(rel, path.extname(rel)) : rel)),
+          ),
+        ];
 
-        if (jsFiles.length > 0) {
+        if (names.length > 0) {
+          const format = formatFor(host);
           const patched = await tx.patch(host.registryFile, (text) => {
             let updated = text;
-            for (const plugin of jsFiles) {
-              if (!parsePluginsJs(updated).some((r) => r.name === plugin)) updated = appendPlugin(updated, plugin);
+            for (const name of names) {
+              if (!format.parse(updated).some((r) => r.name === name)) updated = format.append(updated, name);
             }
             return updated;
           });
-          if (patched) log.info(`Registered ${jsFiles.join(', ')} in ${host.registryFile}`);
+          if (patched) log.info(`Registered ${names.join(', ')} in ${host.registryFile}`);
         }
       }
 

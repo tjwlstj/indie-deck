@@ -10,6 +10,11 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
+    <!--
+      Every user-visible string carries data-i18n (text) or data-i18n-attr
+      (attribute), so applyStaticTranslations() in app.js can re-render the whole
+      chrome after a language switch without touching this file again.
+    -->
     <header class="topbar">
       <div class="brand">
         <span class="mark">▚</span>
@@ -17,12 +22,19 @@
       </div>
 
       <div class="search">
-        <input id="search" type="search" placeholder="Search games…" autocomplete="off" spellcheck="false" />
+        <input
+          id="search"
+          type="search"
+          data-i18n-attr="placeholder:ui.app.search"
+          placeholder="Search games…"
+          autocomplete="off"
+          spellcheck="false"
+        />
       </div>
 
       <div class="topbar-actions">
         <label class="lang">
-          <span>to</span>
+          <span data-i18n="ui.app.to">to</span>
           <select id="targetLanguage">
             <option value="ko">한국어</option>
             <option value="en">English</option>
@@ -31,7 +43,7 @@
           </select>
         </label>
         <label class="lang">
-          <span>from</span>
+          <span data-i18n="ui.app.from">from</span>
           <select id="sourceLanguage">
             <option value="ja">日本語</option>
             <option value="en">English</option>
@@ -39,29 +51,35 @@
             <option value="ko">한국어</option>
           </select>
         </label>
-        <select id="endpoint" class="endpoint" title="Translation endpoint"></select>
-        <button id="addRoot" class="ghost">Add folder</button>
-        <button id="scan" class="primary">Scan</button>
+        <select id="endpoint" class="endpoint" data-i18n-attr="title:ui.app.endpointTitle" title="Translation engine"></select>
+        <select id="uiLocale" class="locale" data-i18n-attr="title:ui.app.language" title="Language"></select>
+        <button id="addRoot" class="ghost" data-i18n="ui.app.addFolder">Add folder</button>
+        <button id="scan" class="primary" data-i18n="ui.app.scan">Scan</button>
       </div>
     </header>
 
     <main class="shell">
       <nav class="sidebar">
         <div class="sidebar-section">
-          <h2>Engines</h2>
+          <h2 data-i18n="ui.sidebar.engines">Engines</h2>
           <ul id="engineFilters" class="filters"></ul>
         </div>
         <div class="sidebar-section">
-          <h2>Status</h2>
+          <h2 data-i18n="ui.sidebar.status">Status</h2>
           <ul id="statusFilters" class="filters">
-            <li><button data-status="all" class="active">All games</button></li>
-            <li><button data-status="untranslated">No translator</button></li>
-            <li><button data-status="translated">Has translator</button></li>
-            <li><button data-status="issues">Needs attention <span id="issueCount" class="pill warn">0</span></button></li>
+            <li><button data-status="all" class="active" data-i18n="ui.sidebar.allGames">All games</button></li>
+            <li><button data-status="untranslated" data-i18n="ui.sidebar.untranslated">No translator</button></li>
+            <li><button data-status="translated" data-i18n="ui.sidebar.translated">Has translator</button></li>
+            <li>
+              <button data-status="issues">
+                <span data-i18n="ui.sidebar.issues">Needs attention</span>
+                <span id="issueCount" class="pill warn">0</span>
+              </button>
+            </li>
           </ul>
         </div>
         <div class="sidebar-section roots">
-          <h2>Roots</h2>
+          <h2 data-i18n="ui.sidebar.roots">Roots</h2>
           <ul id="rootList" class="roots-list"></ul>
         </div>
       </nav>
@@ -70,19 +88,14 @@
         <div id="gameList" class="game-list"></div>
       </section>
 
-      <section id="detail" class="detail">
-        <div class="empty">
-          <p class="empty-title">Pick a game</p>
-          <p>IndieDeck reads its engine, backend and version, then works out which translator build actually fits it.</p>
-        </div>
-      </section>
+      <section id="detail" class="detail"></section>
     </main>
 
     <footer class="statusbar">
-      <span id="status">Loading library…</span>
+      <span id="status" data-i18n="ui.app.loading">Loading library…</span>
       <span id="counts" class="muted"></span>
     </footer>
 
-    <script src="app.js"></script>
+    <script type="module" src="app.js"></script>
   </body>
 </html>

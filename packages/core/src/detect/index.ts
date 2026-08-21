@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { GameProfile, InstalledLoader, InstalledTranslator, Registry } from '../types.ts';
+import { tRegistry } from '../i18n/index.ts';
 import { dirSize, FsProbe, matchesGlob } from '../util/fsx.ts';
 import { peVersionString } from '../util/pe.ts';
 import { rankEngines } from './rules.ts';
@@ -171,6 +172,22 @@ export function detectInstalledFontBundles(reg: Registry, probe: FsProbe): strin
   return reg.fonts.bundles.filter((b) => names.some((n) => n.toLowerCase() === b.file.toLowerCase())).map((b) => b.id);
 }
 
+/**
+ * Re-renders the display strings on a stored profile in the active locale.
+ *
+ * The library index is written once at scan time, so the engine name baked into
+ * it is in whatever language was active then. The registry - not the stored
+ * profile - is the fallback, so switching back to English recovers the English
+ * name rather than keeping the translated one.
+ */
+export function localiseProfile(reg: Registry, profile: GameProfile): GameProfile {
+  const def = reg.engines.find((e) => e.id === profile.engineId);
+  return {
+    ...profile,
+    engineName: tRegistry(`registry.engines.${profile.engineId}.name`, def?.displayName ?? def?.name ?? profile.engineName),
+  };
+}
+
 /** Full profile for one game folder. Returns undefined when nothing matches. */
 export function detectGame(reg: Registry, gamePath: string, options: DetectOptions = {}): GameProfile | undefined {
   const abs = path.resolve(gamePath);
@@ -211,7 +228,7 @@ export function detectGame(reg: Registry, gamePath: string, options: DetectOptio
     path: abs,
     name: folderName,
     engineId: engineDef.id,
-    engineName: engineDef.displayName ?? engineDef.name,
+    engineName: tRegistry(`registry.engines.${engineDef.id}.name`, engineDef.displayName ?? engineDef.name),
     confidence: Math.min(100, Math.round((best.score / Math.max(engineDef.minScore, 1)) * 60)),
     alternatives: ranked.filter((m) => m.engineId !== best.engineId).slice(0, 3).map((m) => ({ engineId: m.engineId, score: m.score })),
     arch: probed.arch ?? 'unknown',

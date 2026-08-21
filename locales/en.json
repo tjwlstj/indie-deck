@@ -1,0 +1,334 @@
+{
+  "_meta": {
+    "code": "en",
+    "label": "English",
+    "note": "The reference catalogue. Every key here should exist in every other locale; `indiedeck locales check` reports the gaps. Registry-sourced text (compat rule messages, engine names, config setting labels) is NOT listed here - it lives in registry/ in English and other locales override it under the compat.* / registry.* / configSchema.* prefixes."
+  },
+  "core": {
+    "audit": {
+      "font-bundle-mismatch": {
+        "message": "TMP font bundle(s) present ({installed}) but none matches Unity {unityVersion} - translated text will render as blank boxes.",
+        "fix": "Install {bundle} and point FallbackFontTextMeshPro at it."
+      },
+      "font-bundle-clutter": {
+        "message": "{count} TMP font bundle(s) for other Unity versions are sitting in the game folder ({unused}).",
+        "fix": "Only {bundle} is used here; the rest are dead weight."
+      },
+      "loaders-stacked": {
+        "message": "{count} mod loaders are installed at once: {loaders}.",
+        "fix": "Keep the one the translator actually uses; ReiPatcher in particular is documented as incompatible with other plugin managers."
+      },
+      "translator-payload-orphaned": {
+        "message": "{translator} files for the \"{variant}\" variant are installed, but no loader providing \"{capability}\" is present - nothing will load them.",
+        "fix": "Install the matching loader, or remove the stray files and install the variant that fits the loader you have."
+      },
+      "translator-outdated": {
+        "message": "{translator} {installed} installed; {latest} is the newest known release.",
+        "fix": "indiedeck install {game} --translator {translator} --version {latest}"
+      },
+      "translator-endpoint-too-old": {
+        "message": "{translator} {installed} predates the 5.5.2 DeepL auth fix; the DeepL API will reject its requests.",
+        "fix": "Upgrade to 5.5.2 or newer, or switch endpoint."
+      },
+      "translator-input-system-too-old": {
+        "message": "{translator} {installed} predates the UnityInput change in 5.5.1; in-game hotkeys will not respond in this new-Input-System game.",
+        "fix": "Upgrade to 5.5.1 or newer."
+      },
+      "engine-version-unknown": {
+        "message": "Unity version could not be read, so version-gated compatibility checks are advisory only for this game."
+      }
+    },
+    "plan": {
+      "variant-backend-mismatch": "{variant} targets {targets}, but this game is {backend}.",
+      "variant-unity-range": "{variant} requires Unity {min} - {max}; this game is {version}.",
+      "loader-unavailable": "No registered loader provides \"{capability}\" for this game.",
+      "translator-dormant": "{translator} is no longer actively maintained.",
+      "font-bundle-unresolved": "A CJK fallback font is needed but no TMP bundle matches this Unity version - use the TextMeshPro 3.2+ system-font option instead."
+    },
+    "step": {
+      "download-loader": "Download {loader} {version} ({arch})",
+      "extract-loader": "Extract {loader} into the game folder",
+      "loader-manual": "{loader} has no downloadable asset for {arch} - install it manually first ({url})",
+      "loader-reuse": "Reuse the {loader} install already present {version}",
+      "backup-managed": "Snapshot the game assemblies before ReiPatcher rewrites them",
+      "download-translator": "Download {translator} {version} ({variant})",
+      "extract-translator": "Extract {translator} into the game folder",
+      "extract-translator-into": "Extract {translator} into {dest}",
+      "run-setup": "Run {exe} and then launch through the generated \"(Patch and Run)\" shortcut once",
+      "install-tool": "Install {translator} into the IndieDeck tools folder",
+      "translator-manual": "{translator} must be installed by hand ({url})",
+      "download-fonts": "Download the TMP font bundle archive ({asset})",
+      "copy-font": "Copy {file} into the game folder",
+      "write-config": "Write {path} (created on first launch if missing)"
+    },
+    "config": {
+      "warning": {
+        "file-missing": "{path} does not exist yet - it is generated the first time the game runs with the plugin installed. Values written now will be applied when it appears.",
+        "version-unknown": "The installed version could not be determined, so the newest known config layout is assumed.",
+        "version-from-tag": "Version {version} was read from the config's own Migrations tag, not from the installed assembly - treat it as a hint."
+      },
+      "validation": {
+        "unknown-credential": "Unknown credential field \"{id}\".",
+        "unknown-setting": "Unknown setting \"{id}\".",
+        "setting-unavailable": "{label} does not exist in version {version}.",
+        "no-location": "No config location known for {label}.",
+        "assumed-mapping": "{label} is being written to [{section}] {key}, assumed from the newest known layout because the installed version is unclear.",
+        "deprecated": "{label} is deprecated upstream.",
+        "unknown-provider": "\"{endpoint}\" is not a provider IndieDeck knows about; its credential fields cannot be checked.",
+        "provider-version": "{provider} needs translator {min} or newer; {installed} is installed.",
+        "missing-credential": "{provider} needs {field}, which is not set. Translation will fail until it is.",
+        "language-unsupported-source": "{provider} does not list \"{language}\" as a source language{note}.",
+        "language-unsupported-target": "{provider} does not list \"{language}\" as a target language{note}."
+      },
+      "invalid": {
+        "boolean": "must be True or False",
+        "number": "must be a number",
+        "integer": "must be a whole number",
+        "min": "must be at least {min}",
+        "max": "must be at most {max}",
+        "engine": "\"{value}\" is not a known translation engine.",
+        "language": "\"{value}\" is not a language code (expected e.g. ko, ja, zh-CN).",
+        "font-bundle": "\"{value}\" is not among the font bundles present in the game folder ({bundles})."
+      },
+      "error": {
+        "invalid-plan": "Refusing to write an invalid config plan.",
+        "no-schema": "No config schema is registered for \"{translator}\".",
+        "no-location": "Could not work out where {translator} keeps its config in this game."
+      }
+    },
+    "error": {
+      "no-roots": "No library roots configured. Add one with `indiedeck root add <path>`.",
+      "no-engine": "No known engine detected in {path}.",
+      "no-match": "No game matching \"{query}\" - run `indiedeck scan` first, or pass a folder path.",
+      "ambiguous": "\"{query}\" matches {count} games:",
+      "registry-missing": "Could not locate the IndieDeck registry directory. Set INDIEDECK_REGISTRY to the folder holding engines.json."
+    }
+  },
+  "ui": {
+    "app": {
+      "search": "Search games…",
+      "to": "to",
+      "from": "from",
+      "endpointTitle": "Translation engine",
+      "addFolder": "Add folder",
+      "scan": "Scan",
+      "language": "Language",
+      "loading": "Loading library…",
+      "ready": "Ready",
+      "counts": "{shown} of {total} games"
+    },
+    "sidebar": {
+      "engines": "Engines",
+      "allEngines": "All engines",
+      "status": "Status",
+      "allGames": "All games",
+      "untranslated": "No translator",
+      "translated": "Has translator",
+      "issues": "Needs attention",
+      "roots": "Roots",
+      "noRoots": "none configured",
+      "stopScanning": "Stop scanning {root}"
+    },
+    "detail": {
+      "emptyTitle": "Pick a game",
+      "emptyBody": "IndieDeck reads its engine, backend and version, then works out which translator build actually fits it.",
+      "play": "Play",
+      "openFolder": "Open folder",
+      "uninstall": "Uninstall IndieDeck changes",
+      "engine": "Engine",
+      "engineValue": "{name} ({confidence}% confidence)",
+      "backend": "Backend",
+      "unity": "Unity",
+      "version": "Version",
+      "traits": "Traits",
+      "traitTmp": "TextMeshPro: {value}",
+      "traitInput": "new Input System: {value}",
+      "yes": "yes",
+      "no": "no",
+      "executable": "Executable",
+      "loaders": "Loaders",
+      "translators": "Translators",
+      "fontBundles": "Font bundles",
+      "needsAttention": "Needs attention",
+      "translatorOptions": "Translator options",
+      "noTranslator": "No translator in the registry targets this engine.",
+      "mods": "Mods",
+      "modsWithHosts": "Mods · {hosts}",
+      "noModHost": "No mod host yet — install a loader above first.",
+      "addMod": "Add mod from file",
+      "noMods": "Nothing installed here yet.",
+      "unknownVersion": "unknown version"
+    },
+    "plan": {
+      "install": "Install",
+      "blocked": "blocked",
+      "viaLoader": "via {loader} {version}",
+      "alreadyInstalled": "already installed",
+      "font": "font {file}",
+      "noLoaderNeeded": "no loader needed"
+    },
+    "config": {
+      "title": "Translation settings",
+      "versionFrom": "from {source} · {confidence}",
+      "createdOnLaunch": "created on first launch",
+      "coverage": "schema describes {described} of {total} keys; the rest are preserved untouched",
+      "credentials": "{provider} credentials",
+      "noCredentials": "This engine needs no credentials.",
+      "plaintextWarning": "Stored in the game config as plain text - that is how the plugin reads it.",
+      "supports": "Supports {source} → {target}",
+      "undescribed": "Keys IndieDeck does not describe ({count})",
+      "undescribedNote": "Never modified. Listed so nothing looks lost.",
+      "preview": "Preview",
+      "save": "Save",
+      "discard": "Discard",
+      "unsavedOne": "1 unsaved change",
+      "unsavedMany": "{count} unsaved changes",
+      "checking": "Checking…",
+      "none": "(none)",
+      "inFile": "{value} (in file)",
+      "inFileNotInFolder": "{value} (in file, not in folder)",
+      "deprecated": "deprecated",
+      "assumed": "assumed",
+      "required": "required",
+      "notWritten": "Nothing written - fix the errors above.",
+      "written": "{count} setting(s) written to {path}",
+      "backedUp": "original backed up to {path}",
+      "saved": "{count} setting(s) saved"
+    },
+    "status": {
+      "reading": "Reading game folder…",
+      "scanning": "Scanning {path}",
+      "scanningShort": "Scanning…",
+      "downloading": "Downloading… {percent}%",
+      "installing": "Installing {translator} {version}…",
+      "installed": "Installed — {count} files written",
+      "removing": "Removing…",
+      "removed": "Removed. Folder restored to what it was.",
+      "removedKept": "Removed. {count} hand-edited file(s) were left alone.",
+      "emptyLibrary": "No games yet — add a folder and scan."
+    }
+  },
+  "cli": {
+    "tagline": "one launcher for Unity and other indie games",
+    "section": {
+      "library": "LIBRARY",
+      "translation": "TRANSLATION",
+      "mods": "MODS",
+      "registry": "REGISTRY",
+      "global": "GLOBAL"
+    },
+    "heading": {
+      "byEngine": "By engine",
+      "installed": "Installed",
+      "modHosts": "Mod hosts",
+      "receipts": "IndieDeck receipts",
+      "registryCheck": "Registry self-check",
+      "upstream": "Upstream releases",
+      "engines": "Engines",
+      "library": "Library",
+      "roots": "Library roots",
+      "dryRun": "Dry run",
+      "stillNeedsYou": "Still needs you",
+      "plannedChanges": "Planned changes",
+      "changes": "Changes",
+      "engineList": "{translator} - translation engines",
+      "undescribed": "Keys IndieDeck does not describe ({count})",
+      "credentials": "{provider} credentials",
+      "libraryCheck": "Library check - {count} of {total} games need attention",
+      "issues": "{name} - {count} issue(s)"
+    },
+    "column": {
+      "id": "ID",
+      "engine": "ENGINE",
+      "games": "GAMES",
+      "game": "GAME",
+      "runtime": "RUNTIME",
+      "arch": "ARCH",
+      "loader": "LOADER",
+      "translator": "TRANSLATOR",
+      "mod": "MOD",
+      "kind": "KIND",
+      "host": "HOST",
+      "size": "SIZE",
+      "issue": "ISSUE",
+      "severity": "SEVERITY",
+      "repo": "REPO",
+      "pinned": "PINNED",
+      "latest": "LATEST",
+      "loaders": "LOADERS",
+      "translators": "TRANSLATORS",
+      "requires": "REQUIRES",
+      "n": "N"
+    },
+    "msg": {
+      "noRoots": "No roots to scan.",
+      "passPath": "Pass a path, or register one with `indiedeck root add <path>`.",
+      "scanned": "Scanned {roots} root(s) in {seconds}s - {count} games found, saved to {path}",
+      "scanSummary": "translator installed: {translated}  mod loader installed: {loaders}",
+      "unityBackends": "unity mono/il2cpp: {mono}/{il2cpp}",
+      "emptyLibrary": "Library is empty.",
+      "runScanFirst": "Run `indiedeck scan <path>` first.",
+      "shownOfTotal": "{shown} of {total} games",
+      "noLoader": "no mod loader",
+      "severalFonts": "several TMP font bundles are present - only the one matching this Unity line will render",
+      "nothingToFix": "nothing to fix",
+      "noStructuralIssues": "no structural issues",
+      "registryCounts": "{engines} engines, {loaders} loaders, {translators} translators, {rules} compat rules, {fonts} font bundles",
+      "noViablePlan": "No viable translator for this game. Try --all to see why each option was rejected.",
+      "installWith": "install it with:",
+      "warningsPresent": "{count} warning(s) above. Re-run with --yes to proceed, or --dry-run to preview.",
+      "filesWritten": "{count} files written",
+      "receipts": "receipts: {list}",
+      "noReceipts": "No IndieDeck receipts in {name}.",
+      "onlyIndieDeck": "Only components installed through IndieDeck can be removed automatically.",
+      "dryRunNothing": "(dry run - nothing was deleted)",
+      "noModHost": "No mod host for this game. Install a loader first (see `indiedeck plan`).",
+      "installedInto": "Installed into {dir} ({count} files)",
+      "toggled": "{action} {mod} ({strategy})",
+      "nothingToShow": "(nothing to show)",
+      "changeHint": "change one with: indiedeck config <game> --set xunity.targetLanguage=ko",
+      "furtherKeys": "{count} further keys are preserved untouched (--expert to list them)",
+      "preservedNote": "These are preserved exactly as they are on every write.",
+      "configWritten": "{count} setting(s) written",
+      "backedUp": "original backed up to {path}",
+      "dryRunUntouched": "dry run - {path} was not touched",
+      "reRunWithYes": "Re-run with --yes to write these anyway, or --dry-run to preview.",
+      "andMore": "... and {count} more (--limit N)",
+      "empty": "(empty)",
+      "nothing": "nothing",
+      "none": "none",
+      "default": "(default)",
+      "notCreatedYet": "[not created yet]",
+      "schemaDescribes": "schema describes {described} of {total} keys in the file",
+      "versionFrom": "version {version} (from {source}, {confidence})",
+      "cacheAt": "cache: {path}",
+      "configAt": "config: {path}",
+      "scannedAt": "{count} games, scanned {when}",
+      "never": "never",
+      "unknownCommand": "unknown command"
+    },
+    "help": {
+      "scan": "Scan roots for games and save the index",
+      "list": "List indexed games",
+      "info": "Everything detected about one game",
+      "detect": "Detect a folder without touching the library",
+      "stats": "Library breakdown by engine",
+      "check": "Find broken setups: wrong TMP font for the Unity version, stacked loaders, orphaned plugin files, outdated translator versions",
+      "root": "Manage library roots",
+      "plan": "Rank translator options with compatibility findings",
+      "install": "Install the best plan (loader + translator + config)",
+      "config": "Read or change translator settings by semantic id, checked against the version actually installed",
+      "uninstall": "Remove what IndieDeck installed, restore backups",
+      "mods": "List mods across every host, install one from a file, or toggle one",
+      "registry": "Validate the registry, or list engines and what can be installed on them",
+      "locale": "Output language (en, ko). Defaults to the saved preference, then the system language.",
+      "json": "Machine-readable output",
+      "noColor": "Disable colour (or set NO_COLOR)",
+      "help": "This text",
+      "version": "Version",
+      "dataDir": "Data lives in ~/.indiedeck (override with INDIEDECK_HOME).",
+      "registryDir": "Registry lives in ./registry (override with INDIEDECK_REGISTRY).",
+      "localesDir": "Translations live in ./locales (override with INDIEDECK_LOCALES)."
+    }
+  }
+}

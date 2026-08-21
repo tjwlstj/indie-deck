@@ -1,5 +1,6 @@
 import path from 'node:path';
 import type { DetectionRule, EngineDef, EngineMatch } from '../types.ts';
+import { tRegistry } from '../i18n/index.ts';
 import { FsProbe, matchesGlob } from '../util/fsx.ts';
 
 /** Expands `$capture` references inside a rule path. Returns undefined when unresolved. */
@@ -133,7 +134,13 @@ export function scoreEngine(probe: FsProbe, engine: EngineDef, exeNames: string[
     if (rule.capture) captures[rule.capture] = hit;
   }
 
-  return { engineId: engine.id, name: engine.displayName ?? engine.name, score, matched, captures };
+  return {
+    engineId: engine.id,
+    name: tRegistry(`registry.engines.${engine.id}.name`, engine.displayName ?? engine.name),
+    score,
+    matched,
+    captures,
+  };
 }
 
 /** Ranks every engine definition; highest score first, `priority` breaks ties. */

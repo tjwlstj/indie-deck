@@ -170,6 +170,47 @@ process already knows about" - not "extract this archive into C:\Windows" or
 added through the OS folder picker opened by the main process, and
 `shell.openExternal` accepts `https:` only.
 
+## i18n
+
+`packages/core/src/i18n` loads `locales/*.json` and renders every string core
+produces. Two properties matter more than the mechanism:
+
+- **English is the fallback, not a requirement.** Every `t(key, params, english)`
+  call carries its source text, so a new message works before it is translated
+  and a broken catalogue degrades to English instead of to keys.
+- **Messages carry their key and params.** `AuditIssue`, `PlanFinding`,
+  `PlanStep` and `ValidationIssue` all expose `messageKey` / `messageParams`
+  next to the rendered `message`, so the launcher re-renders after a language
+  switch without recomputing the thing that produced them.
+
+Registry-sourced text (compat rule messages, engine names, config setting
+labels) stays in `registry/` in English; a locale file overrides it under
+`compat.*`, `registry.*` and `configSchema.*`. So a contributor adds a rule and
+a translator adds a key, independently.
+
+The renderer has no filesystem access, so the main process ships it a flattened
+catalogue over IPC and `renderer/i18n.js` does the lookups. Static chrome opts in
+with `data-i18n` attributes, which is why a language switch does not need
+index.html touched.
+
+Nothing keys off English prose. The CI smoke test waits on
+`document.body.dataset.libraryState`, not on the words in the status bar.
+
+## Extension points
+
+| To add | Edit | Guarded by |
+| --- | --- | --- |
+| engine | `registry/engines.json` | probe ids and engine↔translator agreement |
+| translator | `registry/translators.json` | cross-reference + `--online` asset check |
+| mod loader | `registry/loaders.json` `modLayout` | entry/disable/registryFile validation |
+| compat rule | `registry/compat.json` | declared predicate list, unverified-cannot-block |
+| config schema | `registry/configs/*.json` | `registry/schema/config.schema.json` |
+| CLI command | `packages/cli/src/registry.ts` | help and dispatch both render from it |
+| launcher panel | `packages/desktop/renderer/panels/index.js` | one `SECTIONS` entry |
+| language | `locales/*.json` | `auditCatalogs()` + a test |
+
+Full walkthrough: [extending.md](extending.md).
+
 ## Dependency stance
 
 Core has no runtime dependencies, and the only dev dependencies are TypeScript

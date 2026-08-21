@@ -9,7 +9,9 @@
 export type IniData = Record<string, Record<string, string>>;
 
 export function parseIni(text: string): IniData {
-  const out: IniData = {};
+  // Null-prototype records: an INI in a game folder is untrusted input, and a
+  // key literally named __proto__ must not reach Object.prototype.
+  const out: IniData = Object.create(null) as IniData;
   let section = '';
   for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.trim();
@@ -17,14 +19,14 @@ export function parseIni(text: string): IniData {
     const sec = /^\[(.+?)\]$/.exec(line);
     if (sec) {
       section = sec[1]!.trim();
-      out[section] ??= {};
+      out[section] ??= Object.create(null) as Record<string, string>;
       continue;
     }
     const eq = line.indexOf('=');
     if (eq < 0) continue;
     const key = line.slice(0, eq).trim();
     const value = line.slice(eq + 1).split(';')[0]!.trim();
-    out[section] ??= {};
+    out[section] ??= Object.create(null) as Record<string, string>;
     out[section]![key] = value;
   }
   return out;
@@ -71,28 +73,30 @@ export function applyIni(text: string, changes: IniData): string {
     wanted.delete(match);
   }
 
-  // Insert leftovers: into an existing section if it exists, else append one.
-  for (const [section, kv] of [...pending.entries()].reverse()) {
+  // Insert leftovers. Every insertion is resolved against the ORIGINAL line
+  // numbers first and then applied from the bottom up, because splicing into an
+  // earlier section shifts every index after it - which used to drop a key into
+  // whichever section happened to follow.
+  const insertions: { at: number; lines: string[] }[] = [];
+  const appended: string[] = [];
+
+  for (const [section, kv] of pending.entries()) {
     if (kv.size === 0) continue;
-    const at = sectionEnd.get(section);
     const additions = [...kv.entries()].map(([k, v]) => `${k}=${v}`);
+    const at = sectionEnd.get(section);
     if (at === undefined) {
       const original = Object.keys(changes).find((s) => s.toLowerCase() === section) ?? section;
-      lines.push('', `[${original}]`, ...additions);
+      appended.push('', `[${original}]`, ...additions);
     } else {
-      lines.splice(at + 1, 0, ...additions);
+      insertions.push({ at, lines: additions });
     }
   }
+
+  for (const insertion of insertions.sort((a, b) => b.at - a.at)) {
+    lines.splice(insertion.at + 1, 0, ...insertion.lines);
+  }
+  lines.push(...appended);
 
   return lines.join(eol);
 }
 
-export function stringifyIni(data: IniData): string {
-  const out: string[] = [];
-  for (const [section, kv] of Object.entries(data)) {
-    out.push(`[${section}]`);
-    for (const [k, v] of Object.entries(kv)) out.push(`${k}=${v}`);
-    out.push('');
-  }
-  return out.join('\r\n');
-}

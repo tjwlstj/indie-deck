@@ -1,74 +1,70 @@
 #!/usr/bin/env node
 import path from 'node:path';
 import process from 'node:process';
-import { loadRegistry } from '@indiedeck/core';
+import { loadConfig, loadRegistry, setLocale, t } from '@indiedeck/core';
 import { setColorEnabled } from './ansi.ts';
-import { c } from './ui.ts';
-import {
-  cmdCheck,
-  cmdConfig,
-  cmdDetect,
-  cmdInfo,
-  cmdInstall,
-  cmdList,
-  cmdMods,
-  cmdPlan,
-  cmdRegistry,
-  cmdRoot,
-  cmdScan,
-  cmdStats,
-  cmdUninstall,
-  type Ctx,
-  type Flags,
-} from './commands.ts';
+import { COMMANDS, commandMap, groupLabel, type CommandGroup } from './registry.ts';
+import { c, pad, width } from './ui.ts';
+import type { Flags } from './commands.ts';
 
 const VERSION = '0.1.0';
 
-const HELP = `
-${c.bold('indiedeck')} ${c.dim(`v${VERSION}`)} - one launcher for Unity and other indie games
+/**
+ * Help is rendered from the command table, not hand-aligned - which is what
+ * keeps it honest when a command is added, and lets it lay out correctly when
+ * the summaries are translated into a language with double-width characters.
+ */
+function renderHelp(): string {
+  const lines: string[] = ['', `${c.bold('indiedeck')} ${c.dim(`v${VERSION}`)} - ${t('cli.tagline', undefined, 'one launcher for Unity and other indie games')}`];
 
-${c.bold('LIBRARY')}
-  scan [path...]              Scan roots for games and save the index
-                              ${c.dim('--depth N --deep --size --merge')}
-  list [query]                List indexed games
-                              ${c.dim('--engine unity --backend il2cpp --translated --untranslated')}
-  info <game|path>            Everything detected about one game
-  detect <path>               Detect a folder without touching the library
-  stats                       Library breakdown by engine
-  check [game]                Find broken setups: wrong TMP font for the Unity
-                              version, stacked loaders, orphaned plugin files,
-                              outdated translator versions ${c.dim('--verbose --limit N')}
-  root add|remove|list <path> Manage library roots
+  const signature = (command: (typeof COMMANDS)[number]): string =>
+    command.args ? `${command.name} ${command.args}` : command.name;
+  const column = Math.max(...COMMANDS.map((command) => width(signature(command)))) + 2;
+  const indent = ' '.repeat(column + 2);
 
-${c.bold('TRANSLATION')}
-  plan <game|path>            Rank translator options with compatibility findings
-                              ${c.dim('--lang ko --from ja --endpoint DeepLTranslate --all --limit N')}
-  install <game|path>         Install the best plan (loader + translator + config)
-                              ${c.dim('--translator id --variant id --version v --dry-run --yes --allow-run')}
-  config <game>               Read or change translator settings by semantic id,
-                              checked against the version actually installed
-                              ${c.dim('--set id=value --dry-run --expert --reveal --providers')}
-  uninstall <game> [component] Remove what IndieDeck installed, restore backups
-                              ${c.dim('--dry-run')}
+  const groups: CommandGroup[] = ['library', 'translation', 'mods', 'registry'];
+  for (const group of groups) {
+    lines.push('', c.bold(groupLabel(group)));
+    for (const command of COMMANDS.filter((x) => x.group === group)) {
+      const summary = t(command.summaryKey, undefined, command.summary);
+      lines.push(`  ${pad(signature(command), column)}${wrap(summary, indent)}`);
+      if (command.flags) lines.push(`${indent}${c.dim(command.flags)}`);
+    }
+  }
 
-${c.bold('MODS')}
-  mods list <game>            List mods across every host for that game
-  mods add <game> <file>      Install a .zip/.dll/.js mod into the right folder
-  mods enable|disable <game> <mod>
+  lines.push(
+    '',
+    c.bold(t('cli.section.global', undefined, 'GLOBAL')),
+    `  ${pad('--locale <code>', column)}${t('cli.help.locale', undefined, 'Output language (en, ko). Defaults to the saved preference, then the system language.')}`,
+    `  ${pad('--json', column)}${t('cli.help.json', undefined, 'Machine-readable output')}`,
+    `  ${pad('--no-color', column)}${t('cli.help.noColor', undefined, 'Disable colour (or set NO_COLOR)')}`,
+    `  ${pad('-h, --help', column)}${t('cli.help.help', undefined, 'This text')}`,
+    `  ${pad('-v, --version', column)}${t('cli.help.version', undefined, 'Version')}`,
+    '',
+    c.dim(t('cli.help.dataDir', undefined, 'Data lives in ~/.indiedeck (override with INDIEDECK_HOME).')),
+    c.dim(t('cli.help.registryDir', undefined, 'Registry lives in ./registry (override with INDIEDECK_REGISTRY).')),
+    c.dim(t('cli.help.localesDir', undefined, 'Translations live in ./locales (override with INDIEDECK_LOCALES).')),
+    '',
+  );
+  return lines.join('\n');
+}
 
-${c.bold('REGISTRY')}
-  registry check              Validate the registry ${c.dim('--online  compare pinned vs upstream releases')}
-  registry show               Engines and what can be installed on them
-
-${c.bold('GLOBAL')}
-  --json                      Machine-readable output
-  --no-color                  Disable colour (or set NO_COLOR)
-  -h, --help                  This text
-  -v, --version               Version
-
-${c.dim('Data lives in ~/.indiedeck (override with INDIEDECK_HOME).')}
-${c.dim('Registry lives in ./registry (override with INDIEDECK_REGISTRY).')}
-`;
+/** Wraps a summary at ~62 visible columns, continuing under the same indent. */
+function wrap(text: string, indent: string, limit = 62): string {
+  const words = text.split(' ');
+  const lines: string[] = [];
+  let current = '';
+  for (const word of words) {
+    if (current && width(current) + width(word) + 1 > limit) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = current ? `${current} ${word}` : word;
+    }
+  }
+  if (current) lines.push(current);
+  return lines.join(`\n${indent}`);
+}
 
 export function parseArgs(argv: string[]): { command: string; args: string[]; flags: Flags } {
   const flags: Flags = {};
@@ -111,43 +107,32 @@ export function parseArgs(argv: string[]): { command: string; args: string[]; fl
   return { command, args, flags };
 }
 
-const COMMANDS: Record<string, (ctx: Ctx) => Promise<number>> = {
-  scan: cmdScan,
-  list: cmdList,
-  ls: cmdList,
-  info: cmdInfo,
-  detect: cmdDetect,
-  plan: cmdPlan,
-  install: cmdInstall,
-  uninstall: cmdUninstall,
-  remove: cmdUninstall,
-  mods: cmdMods,
-  root: cmdRoot,
-  registry: cmdRegistry,
-  stats: cmdStats,
-  config: cmdConfig,
-  check: cmdCheck,
-  doctor: cmdCheck,
-};
-
 export async function main(argv: string[]): Promise<number> {
   const { command, args, flags } = parseArgs(argv);
 
   if (flags['no-color'] === true || flags['json'] === true) setColorEnabled(false);
   else if (flags['color'] === true) setColorEnabled(true);
 
+  // Language: --locale wins, then the saved preference, then the environment.
+  const localeFlag = typeof flags['locale'] === 'string' ? (flags['locale'] as string) : undefined;
+  try {
+    setLocale(localeFlag ?? (await loadConfig()).locale);
+  } catch {
+    setLocale(localeFlag);
+  }
+
   if (flags['version']) {
     console.log(VERSION);
     return 0;
   }
   if (!command || flags['help'] || command === 'help') {
-    console.log(HELP);
+    console.log(renderHelp());
     return command && command !== 'help' ? 1 : 0;
   }
 
-  const run = COMMANDS[command];
-  if (!run) {
-    console.error(`${c.red('unknown command')} "${command}" - run \`indiedeck --help\``);
+  const found = commandMap().get(command);
+  if (!found) {
+    console.error(`${c.red(t('cli.msg.unknownCommand', undefined, 'unknown command'))} "${command}" - run \`indiedeck --help\``);
     return 2;
   }
 
@@ -160,7 +145,7 @@ export async function main(argv: string[]): Promise<number> {
   }
 
   try {
-    return await run({ reg, args, flags, json: flags['json'] === true });
+    return await found.run({ reg, args, flags, json: flags['json'] === true });
   } catch (err) {
     const message = (err as Error).message;
     if (flags['json'] === true) console.log(JSON.stringify({ error: message }, null, 2));

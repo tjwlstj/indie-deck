@@ -66,6 +66,35 @@ The feature that removes the last hand-editing step. How it works:
 - [ ] Schemas for BepInEx, MelonLoader and UE4SS configs (the engine is already
       translator-agnostic - these are data files, not code)
 
+## P1 — Localisation  ✅ done
+
+- [x] Message catalogue in `locales/`, English as the fallback rather than a
+      requirement
+- [x] Korean for the launcher chrome, core findings, audit messages, install
+      steps, config labels and the CLI
+- [x] Messages carry key + params, so a language switch re-renders without
+      re-resolving
+- [x] Registry text overridden per locale instead of duplicated
+- [x] Language picker in the launcher, `--locale` in the CLI, system detection
+- [x] `auditCatalogs()` and a test that Korean has no gaps
+- [ ] Japanese and Chinese catalogues (the mechanism is done; these are data)
+
+## P1.5 — Structure  ✅ done
+
+Cleanups that make the layers above cheaper to add to.
+
+- [x] Renderer split into modules; a launcher panel is one `SECTIONS` entry
+- [x] CLI command table: help and dispatch render from one array
+- [x] `registry check` rejects misspelled rule predicates, unknown probe ids,
+      engine↔translator disagreements and unusable mod layouts
+- [x] `modLayout` typed on `LoaderDef`; `Registry.configSchemas` typed honestly
+- [x] Mod registry-file *format* separated from the disable *strategy*, which
+      fixes the UE4SS host
+- [x] `isNativeLoader()` replaces four duplicated hardcoded lists
+- [x] Dead exports removed
+- [ ] Split `packages/cli/src/commands.ts` by group
+- [ ] Shared test fixtures module
+
 ## P1 — GameSession
 
 - [ ] `beforeLaunch` → compatibility check → launch → `afterLaunch`
