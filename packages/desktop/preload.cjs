@@ -53,7 +53,7 @@ contextBridge.exposeInMainWorld('indiedeck', {
   },
 
   translatorConfig: {
-    read: (gameId, translatorId, options) => call('config:read', gameId, translatorId, options ?? {}),
+    read: (gameId, translatorId) => call('config:read', gameId, translatorId),
     plan: (gameId, translatorId, changes) => call('config:plan', gameId, translatorId, changes),
     write: (gameId, translatorId, changes) => call('config:write', gameId, translatorId, changes),
   },

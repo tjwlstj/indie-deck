@@ -75,7 +75,26 @@ translator versions that predate a fix the chosen endpoint needs.
 
 ## Install
 
-Requires Node 22.6+ (24+ recommended). No native dependencies.
+### Windows app
+
+On Windows 10 or 11 x64, download the current version from
+[GitHub Releases](https://github.com/tjwlstj/indie-deck/releases/latest):
+
+- **`IndieDeck-Setup-…-x64.exe`** — recommended. Installs per user, creates
+  Start Menu and desktop shortcuts, and checks published GitHub Releases for
+  app updates. IndieDeck blocks a normal close while an install or config edit
+  is pending; a downloaded update is applied after a later clean exit.
+- **`IndieDeck-Portable-…-x64.exe`** — a single-file launcher that does not
+  install. Portable builds are updated manually by replacing the executable.
+
+The first release is not code-signed, so Windows SmartScreen may show an
+"unknown publisher" warning. Verify the download against `SHA256SUMS.txt` on
+the same release before running it. The project does not currently provide
+32-bit or ARM64 Windows builds.
+
+### Source and CLI
+
+Requires Node 22.12+ (24+ recommended). No native dependencies.
 
 ```bash
 git clone https://github.com/tjwlstj/indie-deck.git
@@ -98,6 +117,9 @@ library, the compatibility findings for the selected game, and installs with one
 click. It runs with context isolation on and no node integration in the
 renderer; the only bridge is a fixed list of IPC channels in
 [`preload.cjs`](packages/desktop/preload.cjs).
+
+Maintainers can find the versioning, tag, artifact, signing and updater procedure
+in [docs/releasing.md](docs/releasing.md).
 
 ## Use
 
@@ -221,9 +243,10 @@ runs them directly without a build step.
 
 ## Roadmap
 
-Safety (transactional installs, download integrity, the desktop trust boundary)
-and the versioned config manager are done. Next up: a portable Windows build, a
-game session layer, and mod profiles. See [docs/roadmap.md](docs/roadmap.md).
+Safety (transactional installs, download integrity, the desktop trust boundary),
+the versioned config manager and Windows distribution are in place. Next up: a
+game session layer, mod profiles and independently refreshable registry data.
+See [docs/roadmap.md](docs/roadmap.md).
 
 ## Extending it
 

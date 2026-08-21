@@ -117,6 +117,14 @@
       "ready": "Ready",
       "counts": "{shown} of {total} games"
     },
+    "update": {
+      "readyTitle": "IndieDeck update ready",
+      "readyBody": "The update will be installed after you close IndieDeck."
+    },
+    "busy": {
+      "closeTitle": "IndieDeck is still working",
+      "closeBody": "Wait for the current file operation to finish before closing IndieDeck."
+    },
     "sidebar": {
       "engines": "Engines",
       "allEngines": "All engines",

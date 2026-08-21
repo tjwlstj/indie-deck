@@ -6,8 +6,10 @@ scan-*.json
 # --- node ---
 node_modules/
 dist/
-build/
+build/*
+!build/icon.svg
 out/
+release/
 *.tsbuildinfo
 npm-debug.log*
 .npm/

@@ -1,4 +1,5 @@
 import { BrowserWindow, app, dialog, ipcMain, shell } from 'electron';
+import electronUpdater from 'electron-updater';
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
@@ -17,12 +18,15 @@ import {
   loadConfig,
   loadLibrary,
   loadRegistry,
+  loadCatalogs,
   tRegistry,
+  t,
   availableLocales,
   getCatalog,
   getLocale,
   setLocale,
   planConfigChanges,
+  redactConfigPlan,
   readGameConfig,
   writeGameConfig,
   modHosts,
@@ -44,9 +48,15 @@ import {
 } from '@indiedeck/core';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+const { autoUpdater } = electronUpdater;
+const APP_ID = 'io.github.tjwlstj.indiedeck';
+
+if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
 
 let registry: Registry;
 let mainWindow: BrowserWindow | undefined;
+let pendingMutations = 0;
+let mutationQueue: Promise<void> = Promise.resolve();
 
 /* ------------------------------------------------------- trust boundary */
 
@@ -115,7 +125,7 @@ function createWindow(): void {
       preload: path.join(here, '..', 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   });
 
@@ -130,20 +140,45 @@ function createWindow(): void {
   // Anything that wants to leave the app goes to the real browser, never to a
   // new Electron window with node access.
   window.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//.test(url)) void shell.openExternal(url);
+    if (/^https:\/\//i.test(url)) void shell.openExternal(url);
     return { action: 'deny' };
   });
 
-  // The renderer only ever loads its own local files.
-  window.webContents.on('will-navigate', (event, url) => {
-    if (!url.startsWith('file://')) event.preventDefault();
+  // loadFile() above is the one navigation the app initiates.  Any later page
+  // navigation is renderer-controlled and must be denied: a different local
+  // HTML file would otherwise inherit this window's privileged preload bridge.
+  window.webContents.on('will-navigate', (event) => event.preventDefault());
+
+  // Closing a window while a download, install, uninstall or config write is
+  // in flight could interrupt its rollback journal.  Mutations are counted in
+  // main (not trusted renderer state), so a normal quit—and therefore an
+  // updater install—cannot begin until every queued write has settled.
+  let closeNoticeOpen = false;
+  window.on('close', (event) => {
+    if (pendingMutations === 0) return;
+    event.preventDefault();
+    if (closeNoticeOpen) return;
+    closeNoticeOpen = true;
+    void dialog
+      .showMessageBox(window, {
+        type: 'info',
+        title: t('ui.busy.closeTitle', undefined, 'IndieDeck is still working'),
+        message: t(
+          'ui.busy.closeBody',
+          undefined,
+          'Wait for the current file operation to finish before closing IndieDeck.',
+        ),
+      })
+      .finally(() => {
+        closeNoticeOpen = false;
+      });
   });
 
   // INDIEDECK_DEBUG=1 pipes renderer console output to the terminal, which is
   // the only way to see a renderer error when devtools are closed.
   if (process.env['INDIEDECK_DEBUG']) {
-    window.webContents.on('console-message', (_event, level, message, line, sourceId) => {
-      console.log(`[renderer:${level}] ${message}  (${sourceId}:${line})`);
+    window.webContents.on('console-message', (details) => {
+      console.log(`[renderer:${details.level}] ${details.message}  (${details.sourceId}:${details.lineNumber})`);
     });
     window.webContents.on('did-fail-load', (_event, code, description) => {
       console.error(`[renderer] failed to load: ${description} (${code})`);
@@ -175,6 +210,12 @@ async function runSmokeTest(window: BrowserWindow): Promise<void> {
     // Waits on a data attribute, not on English prose - the launcher is
     // translated, so the status line is not a stable signal.
     if (report.ready && report.engines > 0) {
+      const localeReports = availableLocales();
+      if (localeReports.some((locale) => locale.keys === 0)) {
+        console.error(`[smoke] packaged locale catalogue missing: ${localeReports.filter((locale) => locale.keys === 0).map((locale) => locale.code).join(', ')}`);
+        app.exit(1);
+        return;
+      }
       console.log(`[smoke] rendered ${report.games} game rows, ${report.engines} engine filters - ${report.counts || report.status}`);
       const detail = (await window.webContents.executeJavaScript(
         `(async () => {
@@ -220,6 +261,39 @@ async function runSmokeTest(window: BrowserWindow): Promise<void> {
 
   console.error('[smoke] renderer did not finish loading within 20s');
   app.exit(1);
+}
+
+/* ------------------------------------------------------------ updates */
+
+/**
+ * Installed builds update from the NSIS artifact attached to GitHub Releases.
+ * Portable builds deliberately opt out: there is no stable install location to
+ * replace, so users update those by downloading the next portable executable.
+ */
+function configureAutoUpdates(): void {
+  if (
+    !app.isPackaged ||
+    process.env['INDIEDECK_DISABLE_UPDATES'] === '1' ||
+    process.env['PORTABLE_EXECUTABLE_DIR']
+  ) {
+    return;
+  }
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.on('error', (err) => console.error(`[updater] ${(err as Error).message}`));
+
+  // Do not interrupt a translator/mod transaction with an updater-driven quit.
+  // The update downloads in the background, shows a system notification, and
+  // installs only after the user later exits the app normally.
+  setTimeout(() => {
+    void autoUpdater
+      .checkForUpdatesAndNotify({
+        title: t('ui.update.readyTitle', undefined, 'IndieDeck update ready'),
+        body: t('ui.update.readyBody', undefined, 'The update will be installed after you close IndieDeck.'),
+      })
+      .catch((err: unknown) => console.error(`[updater] ${(err as Error).message}`));
+  }, 8_000);
 }
 
 /* ------------------------------------------------------------- config */
@@ -277,6 +351,21 @@ function handle<T>(channel: string, fn: (...args: never[]) => Promise<T> | T): v
   });
 }
 
+/** Serialises every filesystem mutation and makes pending work quit-visible. */
+function handleMutation<T>(channel: string, fn: (...args: never[]) => Promise<T> | T): void {
+  handle(channel, (...args: never[]) => {
+    pendingMutations += 1;
+    const result = mutationQueue.then(() => fn(...args));
+    mutationQueue = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result.finally(() => {
+      pendingMutations -= 1;
+    });
+  });
+}
+
 function register(): void {
   handle('registry:get', () => ({
     engines: registry.engines.map((e) => ({ id: e.id, name: e.displayName ?? e.name })),
@@ -297,7 +386,7 @@ function register(): void {
   }));
 
   handle('config:get', () => loadConfig());
-  handle('config:set', async (config: LauncherConfig) => {
+  handleMutation('config:set', async (config: LauncherConfig) => {
     // Only the fields the UI owns are honoured; roots are managed separately so
     // a config round-trip cannot quietly add a scan root.
     const current = await loadConfig();
@@ -317,11 +406,11 @@ function register(): void {
     return loadConfig();
   });
 
-  handle('root:remove', async (root: string) => removeRoot(String(root)));
+  handleMutation('root:remove', async (root: string) => removeRoot(String(root)));
 
   // Adding a root always goes through the OS picker: the path comes from the
   // user via a native dialog, never from the renderer.
-  handle('root:pick', async () => {
+  handleMutation('root:pick', async () => {
     const result = await dialog.showOpenDialog({ properties: ['openDirectory'], title: 'Add a library root' });
     if (result.canceled || result.filePaths.length === 0) return undefined;
     await addRoot(result.filePaths[0]!);
@@ -333,7 +422,7 @@ function register(): void {
     return libraryPayload(index);
   });
 
-  handle('library:scan', async (options: { depth?: number; deep?: boolean }) => {
+  handleMutation('library:scan', async (options: { depth?: number; deep?: boolean }) => {
     const scanOptions: Parameters<typeof refreshLibrary>[1] = {
       onProgress: (current) => mainWindow?.webContents.send('scan:progress', current),
     };
@@ -369,7 +458,7 @@ function register(): void {
     };
   });
 
-  handle('game:install', async (gameId: string, planId: string, options: { dryRun?: boolean }) => {
+  handleMutation('game:install', async (gameId: string, planId: string, options: { dryRun?: boolean }) => {
     requireGamePath(gameId);
     const plan = requirePlan(gameId, planId);
     return applyPlan(plan, {
@@ -386,7 +475,7 @@ function register(): void {
     });
   });
 
-  handle('game:uninstall', async (gameId: string, componentId?: string) => {
+  handleMutation('game:uninstall', async (gameId: string, componentId?: string) => {
     const gamePath = requireGamePath(gameId);
     const receipts = await readReceipts(gamePath);
     const selected = componentId ? receipts.filter((r) => r.componentId === componentId) : receipts;
@@ -395,7 +484,7 @@ function register(): void {
     return results;
   });
 
-  handle('mods:toggle', async (gameId: string, modId: string, enabled: boolean) => {
+  handleMutation('mods:toggle', async (gameId: string, modId: string, enabled: boolean) => {
     const gamePath = requireGamePath(gameId);
     const profile = detectGame(registry, gamePath);
     if (!profile) throw new Error('Game folder is gone.');
@@ -403,7 +492,7 @@ function register(): void {
     return listMods(registry, profile);
   });
 
-  handle('mods:add', async (gameId: string) => {
+  handleMutation('mods:add', async (gameId: string) => {
     const gamePath = requireGamePath(gameId);
     const profile = detectGame(registry, gamePath);
     if (!profile) throw new Error('Game folder is gone.');
@@ -430,15 +519,16 @@ function register(): void {
     return profile.executable;
   });
 
-  handle('config:read', async (gameId: string, translatorId: string, options: { revealSecrets?: boolean }) => {
+  handle('config:read', async (gameId: string, translatorId: string) => {
     const gamePath = requireGamePath(gameId);
     const profile = detectGame(registry, gamePath, { deep: true });
     if (!profile) throw new Error('Game folder is gone.');
     const schemas = registry.configSchemas as Map<string, ConfigSchema>;
     const id = pickTranslator(schemas, profile, translatorId);
-    const config = await readGameConfig(registry, schemas, profile, id, {
-      revealSecrets: options?.revealSecrets === true,
-    });
+    // Renderer reads are always redacted.  Main-side planning below may read
+    // the raw file so unchanged credentials are preserved, but those values
+    // never cross the IPC boundary.
+    const config = await readGameConfig(registry, schemas, profile, id);
     const schema = schemas.get(id);
     return {
       config,
@@ -452,18 +542,22 @@ function register(): void {
 
   handle('config:plan', async (gameId: string, translatorId: string, changes: ConfigChange[]) => {
     const { schema, config, profile } = await configContext(gameId, translatorId);
-    return planConfigChanges(schema, config, sanitiseChanges(changes), { fontBundles: profile.installedFontBundles });
+    const plan = planConfigChanges(schema, config, sanitiseChanges(changes), {
+      fontBundles: profile.installedFontBundles,
+    });
+    return redactConfigPlan(plan);
   });
 
-  handle('config:write', async (gameId: string, translatorId: string, changes: ConfigChange[]) => {
+  handleMutation('config:write', async (gameId: string, translatorId: string, changes: ConfigChange[]) => {
     const { schema, config, profile } = await configContext(gameId, translatorId);
     const plan = planConfigChanges(schema, config, sanitiseChanges(changes), {
       fontBundles: profile.installedFontBundles,
     });
-    if (!plan.valid) return { plan, result: undefined };
+    if (!plan.valid) return { plan: redactConfigPlan(plan), result: undefined };
     // The plan is rebuilt here from the current file rather than trusting one
     // the renderer held on to, so a stale form cannot overwrite newer values.
-    return { plan, result: await writeGameConfig(profile, config, plan) };
+    const result = await writeGameConfig(profile, config, plan);
+    return { plan: redactConfigPlan(plan), result };
   });
 
   handle('shell:openGameFolder', async (gameId: string) => shell.openPath(requireGamePath(gameId)));
@@ -480,8 +574,9 @@ void app.whenReady().then(async () => {
   try {
     // Language before anything else: the registry load itself can throw a
     // translated error.
+    if (app.isPackaged) loadCatalogs(path.join(app.getAppPath(), 'locales'));
     setLocale((await loadConfig()).locale);
-    registry = loadRegistry();
+    registry = loadRegistry(app.isPackaged ? path.join(app.getAppPath(), 'registry') : undefined);
   } catch (err) {
     dialog.showErrorBox('Registry not found', (err as Error).message);
     app.quit();
@@ -489,6 +584,7 @@ void app.whenReady().then(async () => {
   }
   register();
   createWindow();
+  configureAutoUpdates();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

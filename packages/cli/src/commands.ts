@@ -8,6 +8,7 @@ import {
   summariseAudit,
   readGameConfig,
   planConfigChanges,
+  redactConfigPlan,
   writeGameConfig,
   type ConfigSchema,
   createLogger,
@@ -897,6 +898,7 @@ export async function cmdConfig(ctx: Ctx): Promise<number> {
   }
 
   const plan = planConfigChanges(schema, config, sets, { fontBundles: profile.installedFontBundles });
+  const publicPlan = redactConfigPlan(plan);
   const dryRun = bool(ctx.flags, 'dry-run');
 
   if (!ctx.json) {
@@ -913,7 +915,7 @@ export async function cmdConfig(ctx: Ctx): Promise<number> {
   }
 
   if (!plan.valid) {
-    if (ctx.json) console.log(JSON.stringify({ plan, written: false }, null, 2));
+    if (ctx.json) console.log(JSON.stringify({ plan: publicPlan, written: false }, null, 2));
     return 1;
   }
   if (plan.issues.some((i) => i.severity === 'warn') && !bool(ctx.flags, 'yes') && !dryRun) {
@@ -922,7 +924,7 @@ export async function cmdConfig(ctx: Ctx): Promise<number> {
   }
 
   const result = await writeGameConfig(profile, config, plan, { dryRun });
-  out(ctx, { plan, result }, () => {
+  out(ctx, { plan: publicPlan, result }, () => {
     if (dryRun) {
       console.log(c.dim('\n  ' + t('cli.msg.dryRunUntouched', { path: config.location.path }, 'dry run - {path} was not touched')));
       return;

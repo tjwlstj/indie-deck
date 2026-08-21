@@ -4,7 +4,13 @@ import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
-import { planConfigChanges, readGameConfig, writeGameConfig, resolveMapping } from '../src/config/index.ts';
+import {
+  planConfigChanges,
+  readGameConfig,
+  redactConfigPlan,
+  writeGameConfig,
+  resolveMapping,
+} from '../src/config/index.ts';
 import type { ConfigSchema, SettingDef } from '../src/config/schema.ts';
 import { detectGame } from '../src/detect/index.ts';
 import { loadRegistry } from '../src/registry/index.ts';
@@ -167,6 +173,20 @@ test('credentials are redacted on read and in the change diff', async () => {
   assert.equal(diffEntry.isSecret, true);
   assert.equal(diffEntry.to.includes('another-secret'), false, 'the diff shown to the user is redacted');
   assert.equal(plan.patch['DeepLLegitimate']?.['ApiKey'], 'another-secret-value-9876', 'but the real value is written');
+
+  const rawPlan = planConfigChanges(schema, revealed, [
+    { id: 'provider:DeepLTranslateLegitimate:ApiKey', value: 'replacement-secret-5678' },
+  ]);
+  assert.equal(rawPlan.changes[0]?.from, 'super-secret-key-1234', 'main keeps the raw value only for applying the patch');
+
+  const publicPlan = redactConfigPlan(rawPlan);
+  assert.equal('patch' in publicPlan, false, 'the executable patch never leaves the privileged boundary');
+  assert.equal(JSON.stringify(publicPlan).includes('super-secret-key-1234'), false);
+  assert.equal(JSON.stringify(publicPlan).includes('replacement-secret-5678'), false);
+
+  const dryRun = await writeGameConfig(profile, revealed, rawPlan, { dryRun: true });
+  assert.equal(JSON.stringify(dryRun).includes('super-secret-key-1234'), false, 'write results redact the old credential');
+  assert.equal(JSON.stringify(dryRun).includes('replacement-secret-5678'), false, 'write results redact the new credential');
 });
 
 /* ------------------------------------------------------------- validation */

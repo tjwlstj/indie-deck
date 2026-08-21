@@ -66,6 +66,7 @@ export { runProbes, type ProbeContext, type ProbeResult } from './detect/probes.
 export {
   readGameConfig,
   planConfigChanges,
+  redactConfigPlan,
   writeGameConfig,
   restoreConfigBackup,
   detectTranslatorVersion,
@@ -78,6 +79,7 @@ export {
   type GameConfig,
   type ConfigChange,
   type ConfigPlan,
+  type PublicConfigPlan,
   type ConfigValue,
   type ProviderDef,
   type SettingDef,

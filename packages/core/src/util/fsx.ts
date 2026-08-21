@@ -24,7 +24,13 @@ export class FsProbe {
     const key = rel.replace(/\\/g, '/').toLowerCase();
     const hit = this.cache.get(key);
     if (hit) return hit;
-    const abs = rel ? path.join(this.root, rel) : this.root;
+    // Resolve each segment through the already case-insensitive index before
+    // touching the filesystem.  On a case-sensitive host, asking for `Data`
+    // when the directory is really `data` used to cache an empty listing under
+    // the shared lowercase key `data`.  A later correctly-cased lookup then hit
+    // that poisoned cache entry.  `real()` only asks for parent listings, so it
+    // is safe to use here while the requested directory itself is uncached.
+    const abs = rel ? (this.real(rel) ?? path.join(this.root, rel)) : this.root;
     let index: DirIndex;
     try {
       const entries = fs.readdirSync(abs, { withFileTypes: true });
@@ -163,5 +169,4 @@ export function dirSize(dir: string, capBytes = 8 * 1024 * 1024 * 1024): number 
   }
   return total;
 }
-
 

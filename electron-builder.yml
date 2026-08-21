@@ -1,0 +1,46 @@
+appId: io.github.tjwlstj.indiedeck
+productName: IndieDeck
+asar: true
+
+directories:
+  buildResources: build
+  output: release
+
+# Keep the runtime surface explicit. package.json and production node_modules
+# are included automatically by electron-builder in addition to these files.
+files:
+  - packages/desktop/dist/**
+  - packages/desktop/preload.cjs
+  - packages/desktop/renderer/**
+  - packages/core/dist/**
+  - registry/**
+  - locales/**
+  - LICENSE
+
+win:
+  executableName: IndieDeck
+  icon: build/icon.svg
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+
+nsis:
+  artifactName: IndieDeck-Setup-${version}-${arch}.${ext}
+  oneClick: true
+  perMachine: false
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  deleteAppDataOnUninstall: false
+
+portable:
+  artifactName: IndieDeck-Portable-${version}-${arch}.${ext}
+
+publish:
+  provider: github
+  owner: tjwlstj
+  repo: indie-deck
+  releaseType: release

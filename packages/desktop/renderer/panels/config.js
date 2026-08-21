@@ -347,7 +347,7 @@ async function load() {
   const host = $('configPanel');
   if (!host || !state.selected) return;
   try {
-    config.data = await api.translatorConfig.read(state.selected, config.data?.config.translatorId, {});
+    config.data = await api.translatorConfig.read(state.selected, config.data?.config.translatorId);
     render();
   } catch (err) {
     host.replaceChildren(el('div', 'cfg-help', err.message));

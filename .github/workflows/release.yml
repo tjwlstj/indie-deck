@@ -1,0 +1,293 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    permissions:
+      contents: read
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: ['22.x', '24.x']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify annotated tag provenance
+        if: matrix.os == 'ubuntu-latest' && matrix.node == '24.x'
+        shell: bash
+        run: |
+          if [ "$(git cat-file -t "$GITHUB_REF")" != "tag" ]; then
+            echo "Release tags must be annotated." >&2
+            exit 1
+          fi
+          release_commit="$(git rev-list -n 1 "$GITHUB_REF")"
+          git merge-base --is-ancestor "$release_commit" origin/main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+      - name: Verify tag and package versions
+        run: npm run release:check
+      - run: npm run verify
+
+      - name: Desktop smoke test (Linux)
+        if: runner.os == 'Linux'
+        env:
+          INDIEDECK_SMOKE: '1'
+          INDIEDECK_HOME: ${{ runner.temp }}/indiedeck-release-smoke
+          INDIEDECK_DISABLE_UPDATES: '1'
+        run: xvfb-run --auto-servernum npx electron packages/desktop
+
+      - name: Desktop smoke test (Windows)
+        if: runner.os == 'Windows'
+        env:
+          INDIEDECK_SMOKE: '1'
+          INDIEDECK_HOME: ${{ runner.temp }}/indiedeck-release-smoke
+          INDIEDECK_DISABLE_UPDATES: '1'
+        run: npx electron packages/desktop
+
+  windows-release:
+    needs: verify
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Verify tag and package versions
+        run: npm run release:check -- "$env:GITHUB_REF_NAME"
+
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+
+      # dist:win runs the TypeScript build, tests and registry self-check before
+      # electron-builder is allowed to create either Windows distribution.
+      - name: Verify and package Windows distributions
+        run: npm run dist:win
+
+      - name: Assert packaged runtime and updater metadata
+        run: npm run package:check
+
+      - name: Smoke test packaged application
+        shell: pwsh
+        run: |
+          $smokeHome = Join-Path $env:RUNNER_TEMP 'indiedeck-packaged-smoke'
+          $screenshot = Join-Path $env:RUNNER_TEMP 'indiedeck-packaged-smoke.png'
+          New-Item -ItemType Directory -Force -Path $smokeHome | Out-Null
+
+          $env:INDIEDECK_SMOKE = '1'
+          $env:INDIEDECK_HOME = $smokeHome
+          $env:INDIEDECK_SCREENSHOT = $screenshot
+          $env:INDIEDECK_DISABLE_UPDATES = '1'
+
+          $process = Start-Process -FilePath (Join-Path $PWD 'release\win-unpacked\IndieDeck.exe') -PassThru -Wait -WindowStyle Hidden
+          if ($process.ExitCode -ne 0) {
+            throw "Packaged smoke test exited with $($process.ExitCode)"
+          }
+          if (-not (Test-Path -LiteralPath $screenshot)) {
+            throw 'Packaged smoke test did not render a screenshot'
+          }
+
+      - name: Smoke test portable executable
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not read package version' }
+          $smokeHome = Join-Path $env:RUNNER_TEMP 'indiedeck-portable-smoke'
+          $screenshot = Join-Path $env:RUNNER_TEMP 'indiedeck-portable-smoke.png'
+          New-Item -ItemType Directory -Force -Path $smokeHome | Out-Null
+
+          $env:INDIEDECK_SMOKE = '1'
+          $env:INDIEDECK_HOME = $smokeHome
+          $env:INDIEDECK_SCREENSHOT = $screenshot
+
+          $portable = Join-Path $PWD "release\IndieDeck-Portable-$version-x64.exe"
+          $process = Start-Process -FilePath $portable -PassThru -Wait -WindowStyle Hidden
+          if ($process.ExitCode -ne 0) {
+            throw "Portable smoke test exited with $($process.ExitCode)"
+          }
+          if (-not (Test-Path -LiteralPath $screenshot)) {
+            throw 'Portable smoke test did not render a screenshot'
+          }
+
+      - name: Smoke test installer lifecycle
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not read package version' }
+          $installDir = Join-Path $env:RUNNER_TEMP 'indiedeck-nsis-install'
+          if (Test-Path -LiteralPath $installDir) {
+            throw "Refusing to reuse installer smoke directory: $installDir"
+          }
+
+          $installer = Join-Path $PWD "release\IndieDeck-Setup-$version-x64.exe"
+          $install = Start-Process -FilePath $installer -ArgumentList '/S', "/D=$installDir" -PassThru -Wait -WindowStyle Hidden
+          if ($install.ExitCode -ne 0) {
+            throw "Installer exited with $($install.ExitCode)"
+          }
+
+          $installedExe = Join-Path $installDir 'IndieDeck.exe'
+          if (-not (Test-Path -LiteralPath $installedExe)) {
+            throw "Installed executable is missing: $installedExe"
+          }
+
+          $smokeHome = Join-Path $env:RUNNER_TEMP 'indiedeck-installed-smoke'
+          $screenshot = Join-Path $env:RUNNER_TEMP 'indiedeck-installed-smoke.png'
+          New-Item -ItemType Directory -Force -Path $smokeHome | Out-Null
+          $env:INDIEDECK_SMOKE = '1'
+          $env:INDIEDECK_HOME = $smokeHome
+          $env:INDIEDECK_SCREENSHOT = $screenshot
+          $env:INDIEDECK_DISABLE_UPDATES = '1'
+
+          $run = Start-Process -FilePath $installedExe -PassThru -Wait -WindowStyle Hidden
+          if ($run.ExitCode -ne 0) {
+            throw "Installed application exited with $($run.ExitCode)"
+          }
+          if (-not (Test-Path -LiteralPath $screenshot)) {
+            throw 'Installed application did not render a screenshot'
+          }
+
+          $uninstaller = Get-ChildItem -LiteralPath $installDir -File | Where-Object Name -Like '*ninstall*.exe' | Select-Object -First 1
+          if (-not $uninstaller) { throw 'Installer did not create an uninstaller' }
+          $uninstall = Start-Process -FilePath $uninstaller.FullName -ArgumentList '/S' -PassThru -Wait -WindowStyle Hidden
+          if ($uninstall.ExitCode -ne 0) {
+            throw "Uninstaller exited with $($uninstall.ExitCode)"
+          }
+          for ($i = 0; $i -lt 30 -and (Test-Path -LiteralPath $installDir); $i++) {
+            Start-Sleep -Milliseconds 500
+          }
+          if (Test-Path -LiteralPath $installDir) {
+            throw 'Uninstaller left the installation directory behind'
+          }
+
+      - name: Create checksums
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not read package version' }
+
+          $names = @(
+            "IndieDeck-Setup-$version-x64.exe"
+            "IndieDeck-Setup-$version-x64.exe.blockmap"
+            "IndieDeck-Portable-$version-x64.exe"
+            'latest.yml'
+          )
+          $files = foreach ($name in $names) {
+            $path = Join-Path $PWD "release\$name"
+            if (-not (Test-Path -LiteralPath $path)) {
+              throw "Missing release artifact: $name"
+            }
+            Get-Item -LiteralPath $path
+          }
+
+          $lines = foreach ($file in ($files | Sort-Object Name)) {
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $file.FullName).Hash.ToLowerInvariant()
+            "$hash  $($file.Name)"
+          }
+          $checksumPath = Join-Path $PWD 'release\SHA256SUMS.txt'
+          [IO.File]::WriteAllLines($checksumPath, $lines, [Text.UTF8Encoding]::new($false))
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $generated = @(gh api --method POST "repos/$env:GITHUB_REPOSITORY/releases/generate-notes" -f "tag_name=$tag" --jq '.body')
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Could not generate release notes'
+          }
+
+          $version = node -p "require('./package.json').version"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not read package version' }
+          $installerPath = Join-Path $PWD "release\IndieDeck-Setup-$version-x64.exe"
+          $signature = Get-AuthenticodeSignature -LiteralPath $installerPath
+          if ($signature.Status -eq 'Valid') {
+            $signatureNotice = @'
+          > [!NOTE]
+          > The installer has a valid Authenticode signature. Confirm the
+          > publisher shown by Windows before running it.
+          '@
+          } else {
+            $signatureNotice = @'
+          > [!WARNING]
+          > This release is not code-signed, so Windows SmartScreen may show an
+          > unknown-publisher warning. Verify the file with SHA256SUMS.txt.
+          '@
+          }
+
+          $intro = @"
+          ## Windows downloads
+
+          Use the **Setup** executable for automatic application updates. Use
+          **Portable** when you want a single file and will replace it manually.
+
+          $($signatureNotice.Trim())
+
+          Installed updater metadata is included. Metadata presence alone does
+          not prove an end-to-end upgrade; tested version pairs, if any, are
+          listed in the generated notes below.
+          "@
+          $notesPath = Join-Path $env:RUNNER_TEMP 'indiedeck-release-notes.md'
+          $body = $intro.Trim() + "`n`n" + ($generated -join "`n")
+          [IO.File]::WriteAllText($notesPath, $body, [Text.UTF8Encoding]::new($false))
+
+          $assets = @(
+            Get-Item -LiteralPath "release\IndieDeck-Setup-$version-x64.exe"
+            Get-Item -LiteralPath "release\IndieDeck-Setup-$version-x64.exe.blockmap"
+            Get-Item -LiteralPath "release\IndieDeck-Portable-$version-x64.exe"
+            Get-Item -LiteralPath 'release\latest.yml'
+            Get-Item -LiteralPath 'release\SHA256SUMS.txt'
+          )
+          $assetPaths = @($assets | ForEach-Object FullName)
+
+          # Keep the release invisible to electron-updater until every asset is
+          # attached. Publishing is the final operation.
+          gh release create "$tag" @assetPaths --draft --verify-tag --title "IndieDeck $tag" --notes-file $notesPath
+          if ($LASTEXITCODE -ne 0) { throw 'Could not create draft release' }
+
+          $draft = gh release view "$tag" --json isDraft,assets | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or -not $draft.isDraft) {
+            throw 'Release is not an inspectable draft before publication'
+          }
+          $expectedNames = @($assets | ForEach-Object Name | Sort-Object)
+          $actualNames = @($draft.assets | ForEach-Object Name | Sort-Object)
+          if (Compare-Object $expectedNames $actualNames) {
+            throw 'Draft release asset names do not exactly match the local release set'
+          }
+          foreach ($asset in $assets) {
+            $remote = $draft.assets | Where-Object name -eq $asset.Name
+            if (-not $remote -or $remote.size -ne $asset.Length) {
+              throw "Draft release asset size mismatch: $($asset.Name)"
+            }
+          }
+
+          gh release edit "$tag" --draft=false
+          if ($LASTEXITCODE -ne 0) { throw 'Could not publish release' }

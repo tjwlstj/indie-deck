@@ -117,6 +117,14 @@
       "ready": "준비됨",
       "counts": "{total}개 중 {shown}개"
     },
+    "update": {
+      "readyTitle": "IndieDeck 업데이트 준비됨",
+      "readyBody": "IndieDeck을 종료하면 업데이트가 설치됩니다."
+    },
+    "busy": {
+      "closeTitle": "IndieDeck이 작업 중입니다",
+      "closeBody": "현재 파일 작업이 끝난 뒤 IndieDeck을 종료해 주세요."
+    },
     "sidebar": {
       "engines": "엔진",
       "allEngines": "모든 엔진",

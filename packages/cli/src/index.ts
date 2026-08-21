@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import process from 'node:process';
 import { loadConfig, loadRegistry, setLocale, t } from '@indiedeck/core';
@@ -7,7 +8,8 @@ import { COMMANDS, commandMap, groupLabel, type CommandGroup } from './registry.
 import { c, pad, width } from './ui.ts';
 import type { Flags } from './commands.ts';
 
-const VERSION = '0.1.0';
+const require = createRequire(import.meta.url);
+const { version: VERSION } = require('../package.json') as { version: string };
 
 /**
  * Help is rendered from the command table, not hand-aligned - which is what

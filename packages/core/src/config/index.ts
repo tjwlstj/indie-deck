@@ -356,6 +356,21 @@ export interface ConfigPlan {
   valid: boolean;
 }
 
+/** A renderer/log-safe plan. The executable INI patch never crosses the boundary. */
+export type PublicConfigPlan = Omit<ConfigPlan, 'patch'>;
+
+export function redactConfigPlan(plan: ConfigPlan): PublicConfigPlan {
+  return {
+    changes: plan.changes.map((change) => ({
+      ...change,
+      from: change.isSecret ? redact(change.from) : change.from,
+      to: change.isSecret ? redact(change.to) : change.to,
+    })),
+    issues: plan.issues,
+    valid: plan.valid,
+  };
+}
+
 function parseProviderChangeId(id: string): { providerId: string; fieldKey: string } | undefined {
   const parts = id.split(':');
   if (parts.length !== 3 || parts[0] !== 'provider') return undefined;
@@ -690,9 +705,11 @@ export async function writeGameConfig(
   const existing = (await pathExists(absolute)) ? await fsp.readFile(absolute, 'utf8') : '';
   const updated = applyIni(existing, plan.patch);
 
-  const diff = plan.changes.map(
-    (change) => `[${change.section}] ${change.key}: ${change.from || '(empty)'} -> ${change.to || '(empty)'}`,
-  );
+  const diff = plan.changes.map((change) => {
+    const from = change.isSecret ? redact(change.from) : change.from;
+    const to = change.isSecret ? redact(change.to) : change.to;
+    return `[${change.section}] ${change.key}: ${from || '(empty)'} -> ${to || '(empty)'}`;
+  });
 
   if (options.dryRun) return { path: config.location.path, changed: plan.changes.length, diff };
 

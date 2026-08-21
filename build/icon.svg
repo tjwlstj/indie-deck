@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="IndieDeck">
+  <defs>
+    <linearGradient id="bg" x1="128" y1="96" x2="896" y2="928" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#24283A"/>
+      <stop offset="1" stop-color="#11131B"/>
+    </linearGradient>
+    <linearGradient id="face" x1="274" y1="245" x2="752" y2="788" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#252B3D"/>
+      <stop offset="1" stop-color="#181C28"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="32" y="32" width="960" height="960" rx="224" fill="url(#bg)"/>
+  <path d="M284 258h430c42 0 76 34 76 76v430" fill="none" stroke="#F2A55F" stroke-width="52" stroke-linecap="round" opacity=".72"/>
+  <path d="M244 302h430c42 0 76 34 76 76v430" fill="none" stroke="#5AD7D1" stroke-width="52" stroke-linecap="round" opacity=".82"/>
+  <rect x="198" y="346" width="508" height="478" rx="92" fill="url(#face)" stroke="#F2F5FA" stroke-opacity=".16" stroke-width="12"/>
+
+  <path d="M308 690V548l116-68v142L308 690Z" fill="#5AD7D1"/>
+  <path d="M454 606V464l116-68v142l-116 68Z" fill="#F2F5FA"/>
+  <path d="M454 690v-52l116-68v52l-116 68Z" fill="#F2A55F"/>
+</svg>

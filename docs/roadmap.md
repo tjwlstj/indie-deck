@@ -21,8 +21,8 @@ The foundation: nothing else matters if installing can lose data.
       latter backs up the displaced original first. `rollback()` undoes a failed
       install completely.
 - [x] **`plugins.js` is patched, never owned.** Removing an RPG Maker plugin
-      restores the game's own registry file byte for byte. *(This was a real
-      data-loss bug in 0.1.0.)*
+      restores the game's own registry file byte for byte. *(This fixed a real
+      data-loss bug in the pre-release implementation.)*
 - [x] **Mod overwrite is reversible.** A mod landing on an existing file backs it
       up; uninstall restores it instead of deleting it.
 - [x] **Hand edits are respected.** Uninstall leaves a file alone when its hash
@@ -35,10 +35,17 @@ The foundation: nothing else matters if installing can lose data.
 
 ## P0.5 — Distribution
 
-Right now a user needs git and Node. That is the biggest adoption barrier.
+Windows users can install or run the launcher without git or Node. Distribution
+remains deliberately small while the application is pre-1.0.
 
-- [ ] Windows portable ZIP and installer via `electron-builder`
-- [ ] Release CI: tag → build → test → package → checksum → GitHub Release
+- [x] Windows per-user NSIS installer and single-file portable executable via
+      `electron-builder`
+- [x] Release CI: tag → version check → build → test → audit → package →
+      packaged-app smoke test → checksum → GitHub Release
+- [x] Installed-app update checks through GitHub Releases. The updater never
+      forces a restart, and a normal close is blocked while writes are queued;
+      portable builds remain manual. The updater packaging path is verified,
+      while a real `N → N+1` upgrade remains to be exercised when 0.1.1 exists.
 - [ ] In-app registry update check (the data ages faster than the code)
 
 ## P1 — Config Manager  ✅ done
