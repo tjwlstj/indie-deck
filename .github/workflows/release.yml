@@ -56,9 +56,13 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          sudo chown root:root node_modules/electron/dist/chrome-sandbox
-          sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
-          test "$(stat -c '%U:%G %a' node_modules/electron/dist/chrome-sandbox)" = "root:root 4755"
+          electron_dir="$(node -p "require('path').dirname(require.resolve('electron'))")"
+          node "$electron_dir/install.js"
+          sandbox_path="$electron_dir/dist/chrome-sandbox"
+          test -f "$sandbox_path"
+          sudo chown root:root "$sandbox_path"
+          sudo chmod 4755 "$sandbox_path"
+          test "$(stat -c '%U:%G %a' "$sandbox_path")" = "root:root 4755"
 
       - name: Desktop smoke test (Linux)
         if: runner.os == 'Linux'
