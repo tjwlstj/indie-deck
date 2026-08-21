@@ -32,11 +32,21 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && matrix.node == '24.x'
         shell: bash
         run: |
-          if [ "$(git cat-file -t "$GITHUB_REF")" != "tag" ]; then
+          tag_ref="refs/tags/$GITHUB_REF_NAME"
+
+          # checkout resolves an annotated tag to GITHUB_SHA and may replace
+          # the local tag ref with that peeled commit. Restore the remote tag
+          # object before checking whether the release tag is annotated.
+          git fetch --force --no-tags origin "$tag_ref:$tag_ref"
+          if [ "$(git cat-file -t "$tag_ref")" != "tag" ]; then
             echo "Release tags must be annotated." >&2
             exit 1
           fi
-          release_commit="$(git rev-list -n 1 "$GITHUB_REF")"
+          release_commit="$(git rev-list -n 1 "$tag_ref")"
+          if [ "$release_commit" != "$GITHUB_SHA" ]; then
+            echo "Release tag does not resolve to the triggering commit." >&2
+            exit 1
+          fi
           git merge-base --is-ancestor "$release_commit" origin/main
 
       - uses: actions/setup-node@v5

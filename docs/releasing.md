@@ -67,8 +67,10 @@ and complete removal of the isolated install directory.
 
 If a run fails after its draft was created, inspect the draft and failed job,
 delete only that unpublished draft in the GitHub UI, and rerun the tag workflow.
-Do not move or reuse a tag after its release has become public; fix forward with
-a new patch version.
+If workflow logic itself must be fixed before the first publication, land and
+verify that fix on `main`; an unpublished tag with no Release may then be
+recreated at the new green commit. Do not move or reuse a tag after its Release
+has become public; fix forward with a new patch version.
 
 ## Signing status
 
