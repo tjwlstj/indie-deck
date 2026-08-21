@@ -35,6 +35,13 @@ export interface DownloadResult {
   sha256: string;
   fromCache: boolean;
   url: string;
+  /**
+   * `verified` - matched the checksum pinned in the registry.
+   * `mismatch` - did not (the download is discarded and this never returns).
+   * `unverified` - no checksum is published upstream, so there is nothing to
+   * compare against; the hash is still reported and recorded in the receipt.
+   */
+  integrity: 'verified' | 'unverified' | 'mismatch';
 }
 
 interface GithubAsset {
@@ -101,6 +108,38 @@ function cacheKey(url: string, name: string): string {
   return `${hash}-${name}`;
 }
 
+/** Hashes a file without holding it in memory. */
+async function hashFile(file: string): Promise<{ sha256: string; bytes: number }> {
+  const hash = crypto.createHash('sha256');
+  let bytes = 0;
+  const handle = await fsp.open(file, 'r');
+  try {
+    const buffer = Buffer.alloc(1024 * 1024);
+    for (;;) {
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, null);
+      if (bytesRead === 0) break;
+      hash.update(buffer.subarray(0, bytesRead));
+      bytes += bytesRead;
+    }
+  } finally {
+    await handle.close();
+  }
+  return { sha256: hash.digest('hex'), bytes };
+}
+
+function checkIntegrity(expected: string | undefined, actual: string): DownloadResult['integrity'] {
+  if (!expected) return 'unverified';
+  return expected.toLowerCase() === actual.toLowerCase() ? 'verified' : 'mismatch';
+}
+
+/**
+ * Downloads an asset into the content cache.
+ *
+ * The body is streamed to a `.part` file and hashed as it arrives, so a 128 MB
+ * archive never sits in memory, and a partial or corrupted transfer can never
+ * be mistaken for a finished one: the file is only renamed into place after the
+ * hash is known and, when the registry pins a checksum, only if it matches.
+ */
 export async function downloadAsset(source: AssetSource, options: DownloadOptions = {}): Promise<DownloadResult> {
   const log = options.logger ?? silentLogger;
   const cacheDir = options.cacheDir ?? defaultCacheDir();
@@ -108,9 +147,16 @@ export async function downloadAsset(source: AssetSource, options: DownloadOption
   const target = path.join(cacheDir, cacheKey(url, name));
 
   if (!options.force && (await pathExists(target))) {
-    const buf = await fsp.readFile(target);
-    log.debug(`cache hit: ${name}`);
-    return { path: target, bytes: buf.length, sha256: sha256(buf), fromCache: true, url };
+    const { sha256: digest, bytes } = await hashFile(target);
+    const integrity = checkIntegrity(source.sha256, digest);
+    if (integrity === 'mismatch') {
+      // A cached file that no longer matches the pinned checksum is not usable.
+      log.warn(`cached ${name} failed its checksum - re-downloading`);
+      await fsp.rm(target, { force: true });
+    } else {
+      log.debug(`cache hit: ${name}`);
+      return { path: target, bytes, sha256: digest, fromCache: true, url, integrity };
+    }
   }
 
   await ensureDir(cacheDir);
@@ -122,26 +168,48 @@ export async function downloadAsset(source: AssetSource, options: DownloadOption
   if (!response.ok) throw new Error(`Download failed: HTTP ${response.status} for ${url}`);
 
   const total = Number(response.headers.get('content-length')) || size;
-  const chunks: Buffer[] = [];
+  const partial = `${target}.part`;
+  const hash = crypto.createHash('sha256');
   let received = 0;
 
-  if (response.body) {
-    for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
-      const buf = Buffer.from(chunk);
-      chunks.push(buf);
-      received += buf.length;
-      options.onProgress?.(received, total);
+  const handle = await fsp.open(partial, 'w');
+  try {
+    if (response.body) {
+      for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
+        const buf = Buffer.from(chunk);
+        hash.update(buf);
+        await handle.write(buf);
+        received += buf.length;
+        options.onProgress?.(received, total);
+      }
+    } else {
+      const buf = Buffer.from(await response.arrayBuffer());
+      hash.update(buf);
+      await handle.write(buf);
+      received = buf.length;
     }
-  } else {
-    chunks.push(Buffer.from(await response.arrayBuffer()));
+  } catch (err) {
+    await handle.close();
+    await fsp.rm(partial, { force: true });
+    throw err;
+  }
+  await handle.close();
+
+  const digest = hash.digest('hex');
+  const integrity = checkIntegrity(source.sha256, digest);
+  if (integrity === 'mismatch') {
+    await fsp.rm(partial, { force: true });
+    throw new Error(
+      `Checksum mismatch for ${name}: expected ${source.sha256}, got ${digest}. The download was discarded.`,
+    );
+  }
+  if (total && received !== total) {
+    await fsp.rm(partial, { force: true });
+    throw new Error(`Truncated download for ${name}: expected ${total} bytes, got ${received}.`);
   }
 
-  const data = Buffer.concat(chunks);
-  const tmp = `${target}.part`;
-  await fsp.writeFile(tmp, data);
-  await fsp.rename(tmp, target);
-
-  return { path: target, bytes: data.length, sha256: sha256(data), fromCache: false, url };
+  await fsp.rename(partial, target);
+  return { path: target, bytes: received, sha256: digest, fromCache: false, url, integrity };
 }
 
 export function sha256(buf: Buffer): string {

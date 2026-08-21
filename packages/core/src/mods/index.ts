@@ -5,7 +5,8 @@ import type { GameProfile, InstallReceipt, LoaderDef, Registry } from '../types.
 import { ensureDir, pathExists } from '../util/fsx.ts';
 import type { Logger } from '../util/log.ts';
 import { silentLogger } from '../util/log.ts';
-import { writeReceipt } from '../install/apply.ts';
+import { BACKUP_DIR, writeReceipt } from '../install/apply.ts';
+import { withTransaction } from '../install/transaction.ts';
 import { extractZip } from '../install/unzip.ts';
 
 export interface ModLayout {
@@ -232,7 +233,10 @@ export async function setModEnabled(
     const updated = setPluginStatus(text, mod.id, enabled);
     if (updated === text) throw new Error(`${mod.id} is not registered in ${host.registryFile}.`);
     if (!options.dryRun) {
-      await fsp.copyFile(registryPath, `${registryPath}.indiedeck.bak`);
+      // Only the first toggle snapshots the file: overwriting the backup each
+      // time would lose the pristine original after one flip.
+      const backup = `${registryPath}.indiedeck.bak`;
+      if (!(await pathExists(backup))) await fsp.copyFile(registryPath, backup);
       await fsp.writeFile(registryPath, updated, 'utf8');
     }
     log.info(`${enabled ? 'Enabled' : 'Disabled'} ${mod.id} in ${host.registryFile}`);
@@ -290,52 +294,55 @@ export async function installModFromFile(
 
   const destDir = path.join(profile.path, host.dir);
   const name = options.name ?? path.basename(sourcePath).replace(/\.(zip|dll|js|rpy)$/i, '');
-  let files: string[] = [];
+  const isZip = sourcePath.toLowerCase().endsWith('.zip');
 
-  if (options.dryRun) {
-    if (sourcePath.toLowerCase().endsWith('.zip')) {
-      files = (await extractZip(sourcePath, destDir, { dryRun: true })).files.map((f) => `${host.dir}/${f}`);
-    } else {
-      files = [`${host.dir}/${path.basename(sourcePath)}`];
-    }
-    return { files, host };
-  }
+  // Everything below runs in one transaction: a mod archive that lands on a
+  // file the game (or another mod) owns backs that file up first, and any
+  // failure puts the folder back exactly as it was.
+  const { result, entries } = await withTransaction(
+    {
+      root: profile.path,
+      backupDir: BACKUP_DIR,
+      logger: log,
+      ...(options.dryRun !== undefined ? { dryRun: options.dryRun } : {}),
+    },
+    async (tx) => {
+      const written = isZip
+        ? await tx.extract(sourcePath, host.dir)
+        : [await tx.copyIn(sourcePath, `${host.dir}/${path.basename(sourcePath)}`)];
 
-  await ensureDir(destDir);
-  if (sourcePath.toLowerCase().endsWith('.zip')) {
-    const extracted = await extractZip(sourcePath, destDir);
-    files = extracted.files.map((f) => `${host.dir}/${f}`);
-  } else {
-    const target = path.join(destDir, path.basename(sourcePath));
-    await fsp.copyFile(sourcePath, target);
-    files = [`${host.dir}/${path.basename(sourcePath)}`];
-  }
+      // RPG Maker plugins only take effect once registered in plugins.js. That
+      // file belongs to the game, so it is patched - never replaced wholesale -
+      // and the original is kept for uninstall.
+      if (host.layout.disable === 'registry-flag' && host.registryFile) {
+        const jsFiles = written
+          .map((entry) => entry.path)
+          .filter((file) => file.toLowerCase().endsWith('.js'))
+          .map((file) => path.basename(file, '.js'));
 
-  // RPG Maker plugins must also be registered in plugins.js to take effect.
-  if (host.layout.disable === 'registry-flag' && host.registryFile) {
-    const registryPath = path.join(profile.path, host.registryFile);
-    if (await pathExists(registryPath)) {
-      const text = await fsp.readFile(registryPath, 'utf8');
-      const jsFiles = files.filter((f) => f.toLowerCase().endsWith('.js')).map((f) => path.basename(f, '.js'));
-      let updated = text;
-      for (const plugin of jsFiles) {
-        if (!parsePluginsJs(updated).some((r) => r.name === plugin)) updated = appendPlugin(updated, plugin);
+        if (jsFiles.length > 0) {
+          const patched = await tx.patch(host.registryFile, (text) => {
+            let updated = text;
+            for (const plugin of jsFiles) {
+              if (!parsePluginsJs(updated).some((r) => r.name === plugin)) updated = appendPlugin(updated, plugin);
+            }
+            return updated;
+          });
+          if (patched) log.info(`Registered ${jsFiles.join(', ')} in ${host.registryFile}`);
+        }
       }
-      if (updated !== text) {
-        await fsp.copyFile(registryPath, `${registryPath}.indiedeck.bak`);
-        await fsp.writeFile(registryPath, updated, 'utf8');
-        files.push(host.registryFile);
-        log.info(`Registered ${jsFiles.join(', ')} in ${host.registryFile}`);
-      }
-    }
-  }
+
+      return written.map((entry) => entry.path);
+    },
+  );
+
+  if (options.dryRun) return { files: result, host };
 
   const receipt = await writeReceipt(profile.path, {
     kind: 'mod',
     componentId: name,
     version: 'local',
-    files,
-    backups: [],
+    entries,
   });
-  return { receipt, files, host };
+  return { receipt, files: result, host };
 }

@@ -236,7 +236,7 @@ export async function cmdInfo(ctx: Ctx): Promise<number> {
     }
     if (receipts.length > 0) {
       console.log(heading('IndieDeck receipts'));
-      for (const r of receipts) console.log(bullet(`${r.kind} ${r.componentId} ${r.version} ${c.dim(`${r.files.length} files, ${r.installedAt.slice(0, 10)}`)}`));
+      for (const r of receipts) console.log(bullet(`${r.kind} ${r.componentId} ${r.version} ${c.dim(`${r.entries.length} files, ${r.installedAt.slice(0, 10)}`)}`));
     }
     for (const note of profile.notes) console.log(bullet(c.dim(note), 'info'));
   });

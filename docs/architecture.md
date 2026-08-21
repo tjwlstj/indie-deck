@@ -65,11 +65,35 @@ Two deliberate properties:
 
 ## install
 
-`applyPlan` walks the steps:
+Every write goes through a **file transaction** (`install/transaction.ts`). The
+distinction it enforces is the one that makes uninstall safe:
 
-- **download** — content-addressed cache under `~/.indiedeck/cache`, SHA-256
-  reported. GitHub release assets are resolved through the API; `GITHUB_TOKEN` is
-  used when present to avoid rate limits.
+| operation | meaning | what uninstall does |
+| --- | --- | --- |
+| `create` | the file did not exist | delete it |
+| `modify` | it did, and was displaced | restore the backup |
+| `snapshot` | copied before an external patcher ran | restore the backup |
+
+Deleting a file we merely overwrote destroys data that was never ours - a game's
+own `plugins.js`, or a file another mod owns. The transaction resolves an
+archive's file list *before* extracting so anything it is about to land on is
+backed up first, and `rollback()` walks the journal backwards if any step
+throws, leaving the folder byte-for-byte as it was.
+
+Uninstall also refuses to delete a file whose hash no longer matches what
+IndieDeck wrote: if the user hand-edited it afterwards, it is reported as
+`keptModified` and left alone.
+
+`applyPlan` walks the steps inside that transaction:
+
+- **download** — streamed to a `.part` file and hashed as it arrives, so a
+  128 MB archive never sits in memory and a truncated transfer can never be
+  mistaken for a finished one. The file is renamed into the content-addressed
+  cache under `~/.indiedeck/cache` only after the hash is known, and only if it
+  matches when the registry pins a `sha256`. Integrity is reported as
+  `verified` / `unverified` (nothing published upstream to compare against) /
+  `mismatch` (discarded, never cached). GitHub release assets are resolved
+  through the API; `GITHUB_TOKEN` is used when present to avoid rate limits.
 - **extract** — the ZIP reader in `install/unzip.ts` handles stored and deflate
   entries over `node:zlib`, rejects Zip64 with a clear message, and refuses
   absolute paths and `..` traversal before writing anything.
@@ -83,9 +107,11 @@ Two deliberate properties:
   unknown key and the file's line endings, because upstream regenerates that file
   with its documentation inline.
 
-Each install writes a **receipt** to `<game>/.indiedeck/receipts/` listing every
-file written and every file displaced. `uninstallReceipt` removes exactly those
-files, restores the backups, and prunes the directories it emptied.
+Each install writes a **receipt** to `<game>/.indiedeck/receipts/` holding the
+typed entry list above. `uninstallReceipt` reverses it newest-first and prunes
+the directories it emptied. Receipts written by 0.1.0 (a flat `files[]` plus a
+separate `backups[]`) are migrated on read, so installs made by the first
+release stay removable.
 
 ## audit
 
@@ -116,6 +142,33 @@ One model over very different hosts, driven by `modLayout` in `loaders.json`:
 
 External loaders only appear as hosts once actually installed; native hosts
 (RPG Maker, Ren'Py) always apply.
+
+## The desktop trust boundary
+
+The renderer is treated as untrusted even though it is our own code. It never
+hands the main process a path, an executable or a plan object - it works in
+opaque ids:
+
+```
+renderer                     main process
+--------                     ------------
+game.detail(gameId)     ->   resolve id -> path (own table)
+                             re-detect the folder
+                             resolve plans, cache them main-side
+                        <-   profile + plans, each with an id
+
+game.install(gameId,         look up ITS OWN cached plan
+             planId)    ->   verify the plan targets that game
+                             applyPlan(plan)
+
+game.launch(gameId)     ->   re-detect, use the detected executable
+```
+
+So the worst a compromised renderer can ask for is "act on a game the main
+process already knows about" - not "extract this archive into C:\Windows" or
+"spawn this binary". Config writes are field-filtered, scan roots can only be
+added through the OS folder picker opened by the main process, and
+`shell.openExternal` accepts `https:` only.
 
 ## Dependency stance
 

@@ -68,6 +68,8 @@ export interface AssetSource {
   assetPattern?: string;
   url?: string;
   size?: number;
+  /** Pinned checksum. When absent the download reports integrity "unverified". */
+  sha256?: string;
 }
 
 export interface LoaderVersion {
@@ -319,16 +321,38 @@ export interface ResolveOptions {
 
 /* ------------------------------------------------------------------ receipts */
 
+/**
+ * One file touched by an install.
+ *
+ * "create" means the file did not exist, so removing it restores the folder.
+ * "modify" means it did exist, so `backup` holds the displaced original and
+ * uninstall must put it back rather than delete it. "snapshot" records a copy
+ * taken before an external patcher ran, with no write of our own.
+ */
+export interface ReceiptEntry {
+  path: string;
+  operation: 'create' | 'modify' | 'snapshot';
+  /** Relative path of the displaced original, for modify/snapshot. */
+  backup?: string;
+  /** Hash of what we wrote, so uninstall can spot later hand edits. */
+  sha256?: string;
+}
+
 export interface InstallReceipt {
   id: string;
+  /** 1 = the original files[]/backups[] shape, 2 = typed entries[]. */
+  schemaVersion?: number;
   gamePath: string;
   kind: 'loader' | 'translator' | 'mod' | 'font';
   componentId: string;
   variantId?: string;
   version: string;
   installedAt: string;
-  files: string[];
-  backups: { original: string; backup: string }[];
+  entries: ReceiptEntry[];
+  /** @deprecated schemaVersion 1 shape, still read so old installs stay removable. */
+  files?: string[];
+  /** @deprecated schemaVersion 1 shape. */
+  backups?: { original: string; backup: string }[];
   source?: AssetSource;
   planFindings?: PlanFinding[];
 }

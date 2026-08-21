@@ -63,8 +63,11 @@ export {
 export { extract7z, find7zExtractor, findExtractedEntry, type Extractor } from './install/sevenzip.ts';
 export { extractZip, listZip, readZipEntries, readEntryData, safeJoin, type ZipEntry } from './install/unzip.ts';
 
+export { FileTransaction, withTransaction, type TransactionOptions } from './install/transaction.ts';
+
 export {
   applyPlan,
+  normaliseReceipt,
   writeReceipt,
   readReceipts,
   uninstallReceipt,
@@ -73,6 +76,7 @@ export {
   type ApplyOptions,
   type ApplyResult,
   type UninstallResult,
+  type UninstallOptions,
 } from './install/apply.ts';
 
 export {

@@ -1,5 +1,6 @@
 import { BrowserWindow, app, dialog, ipcMain, shell } from 'electron';
 import { spawn } from 'node:child_process';
+import crypto from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -36,6 +37,60 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 let registry: Registry;
 let mainWindow: BrowserWindow | undefined;
 
+/* ------------------------------------------------------- trust boundary */
+
+/**
+ * The renderer never hands the main process a path, an executable or a plan.
+ *
+ * It gets opaque ids and hands them back; the main process resolves each id
+ * against its own tables and rebuilds the privileged object itself. A renderer
+ * that somehow ran attacker-controlled script still cannot say "install this
+ * archive into C:\Windows" or "launch this exe" - it can only name a game the
+ * main process already knows about.
+ */
+const gamePathsById = new Map<string, string>();
+const plansById = new Map<string, TranslatorPlan>();
+
+function idFor(gamePath: string): string {
+  return crypto.createHash('sha1').update(path.resolve(gamePath).toLowerCase()).digest('hex').slice(0, 16);
+}
+
+function rememberGames(profiles: GameProfile[]): void {
+  for (const profile of profiles) gamePathsById.set(idFor(profile.path), path.resolve(profile.path));
+}
+
+function requireGamePath(gameId: unknown): string {
+  if (typeof gameId !== 'string' || !/^[0-9a-f]{16}$/.test(gameId)) throw new Error('Malformed game id.');
+  const resolved = gamePathsById.get(gameId);
+  if (!resolved) throw new Error('Unknown game - rescan the library and try again.');
+  return resolved;
+}
+
+function withId<T extends { path: string }>(profile: T): T & { id: string } {
+  return { ...profile, id: idFor(profile.path) };
+}
+
+/** Recomputes plans for a game and keeps the authoritative copies main-side. */
+function cachePlans(gameId: string, plans: TranslatorPlan[]): (TranslatorPlan & { id: string })[] {
+  for (const key of [...plansById.keys()]) if (key.startsWith(`${gameId}:`)) plansById.delete(key);
+  return plans.map((plan, index) => {
+    const id = `${gameId}:${index}`;
+    plansById.set(id, plan);
+    return { ...plan, id };
+  });
+}
+
+function requirePlan(gameId: string, planId: unknown): TranslatorPlan {
+  if (typeof planId !== 'string' || !planId.startsWith(`${gameId}:`)) throw new Error('Plan does not belong to this game.');
+  const plan = plansById.get(planId);
+  if (!plan) throw new Error('That plan is stale - reopen the game and try again.');
+  // Belt and braces: the cached plan must still point at the game it was made for.
+  if (path.resolve(plan.gamePath) !== requireGamePath(gameId)) throw new Error('Plan target mismatch.');
+  return plan;
+}
+
+/* ------------------------------------------------------------- window */
+
 function createWindow(): void {
   const window = new BrowserWindow({
     width: 1360,
@@ -66,6 +121,11 @@ function createWindow(): void {
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//.test(url)) void shell.openExternal(url);
     return { action: 'deny' };
+  });
+
+  // The renderer only ever loads its own local files.
+  window.webContents.on('will-navigate', (event, url) => {
+    if (!url.startsWith('file://')) event.preventDefault();
   });
 
   // INDIEDECK_DEBUG=1 pipes renderer console output to the terminal, which is
@@ -102,7 +162,6 @@ async function runSmokeTest(window: BrowserWindow): Promise<void> {
 
     if (report.engines > 0 && !report.status.startsWith('Loading')) {
       console.log(`[smoke] rendered ${report.games} game rows, ${report.engines} engine filters - ${report.counts || report.status}`);
-      // Exercise the detail panel too: that is where core does the real work.
       const detail = (await window.webContents.executeJavaScript(
         `(async () => {
           const first = document.querySelector('#gameList .game');
@@ -120,8 +179,6 @@ async function runSmokeTest(window: BrowserWindow): Promise<void> {
       if (detail.skipped) console.log('[smoke] no games indexed - detail panel not exercised');
       else console.log(`[smoke] detail for "${detail.title}": ${detail.facts} facts, ${detail.plans} translator plans`);
 
-      // INDIEDECK_SCREENSHOT=<path> captures the live window, which is how the
-      // README image is produced - no external capture tool involved.
       const shot = process.env['INDIEDECK_SCREENSHOT'];
       if (shot) {
         const image = await window.webContents.capturePage();
@@ -138,6 +195,8 @@ async function runSmokeTest(window: BrowserWindow): Promise<void> {
   console.error('[smoke] renderer did not finish loading within 20s');
   app.exit(1);
 }
+
+/* ---------------------------------------------------------------- ipc */
 
 /** Wraps a handler so renderer errors arrive as data, not as unhandled rejections. */
 function handle<T>(channel: string, fn: (...args: never[]) => Promise<T> | T): void {
@@ -165,12 +224,24 @@ function register(): void {
 
   handle('config:get', () => loadConfig());
   handle('config:set', async (config: LauncherConfig) => {
-    await saveConfig(config);
+    // Only the fields the UI owns are honoured; roots are managed separately so
+    // a config round-trip cannot quietly add a scan root.
+    const current = await loadConfig();
+    await saveConfig({
+      ...current,
+      defaults: {
+        targetLanguage: String(config?.defaults?.targetLanguage ?? current.defaults.targetLanguage),
+        sourceLanguage: String(config?.defaults?.sourceLanguage ?? current.defaults.sourceLanguage),
+        endpoint: String(config?.defaults?.endpoint ?? current.defaults.endpoint),
+      },
+    });
     return loadConfig();
   });
-  handle('root:add', async (root: string) => addRoot(root));
-  handle('root:remove', async (root: string) => removeRoot(root));
 
+  handle('root:remove', async (root: string) => removeRoot(String(root)));
+
+  // Adding a root always goes through the OS picker: the path comes from the
+  // user via a native dialog, never from the renderer.
   handle('root:pick', async () => {
     const result = await dialog.showOpenDialog({ properties: ['openDirectory'], title: 'Add a library root' });
     if (result.canceled || result.filePaths.length === 0) return undefined;
@@ -180,36 +251,59 @@ function register(): void {
 
   handle('library:load', async () => {
     const index = await loadLibrary();
-    return { index, stats: libraryStats(index), audits: auditLibrary(registry, index.games) };
+    rememberGames(index.games);
+    return {
+      index: { ...index, games: index.games.map(withId) },
+      stats: libraryStats(index),
+      audits: auditLibrary(registry, index.games).map((a) => ({ ...a, id: idFor(a.path) })),
+    };
   });
 
   handle('library:scan', async (options: { depth?: number; deep?: boolean }) => {
     const scanOptions: Parameters<typeof refreshLibrary>[1] = {
       onProgress: (current) => mainWindow?.webContents.send('scan:progress', current),
     };
-    if (options?.depth !== undefined) scanOptions.depth = options.depth;
-    if (options?.deep !== undefined) scanOptions.deep = options.deep;
+    if (typeof options?.depth === 'number') scanOptions.depth = options.depth;
+    if (typeof options?.deep === 'boolean') scanOptions.deep = options.deep;
     const index = await refreshLibrary(registry, scanOptions);
-    return { index, stats: libraryStats(index), audits: auditLibrary(registry, index.games) };
+    rememberGames(index.games);
+    return {
+      index: { ...index, games: index.games.map(withId) },
+      stats: libraryStats(index),
+      audits: auditLibrary(registry, index.games).map((a) => ({ ...a, id: idFor(a.path) })),
+    };
   });
 
-  handle('game:detail', async (gamePath: string, options: ResolveOptions) => {
+  handle('game:detail', async (gameId: string, options: ResolveOptions) => {
+    const gamePath = requireGamePath(gameId);
     const profile = detectGame(registry, gamePath, { deep: true });
-    if (!profile) throw new Error(`No known engine detected in ${gamePath}`);
-    const plans = summarisePlans(resolvePlans(registry, profile, { ...options, includeNonViable: true }));
+    if (!profile) throw new Error('No known engine detected here any more - the folder may have changed.');
+
+    const safeOptions: ResolveOptions = {
+      targetLanguage: String(options?.targetLanguage ?? 'en'),
+      sourceLanguage: String(options?.sourceLanguage ?? 'ja'),
+      endpoint: String(options?.endpoint ?? 'GoogleTranslate'),
+      includeNonViable: true,
+    };
+
     return {
-      profile,
-      plans,
-      audit: auditGame(registry, profile, { targetLanguage: options?.targetLanguage, endpoint: options?.endpoint }),
+      profile: withId(profile),
+      plans: cachePlans(gameId, summarisePlans(resolvePlans(registry, profile, safeOptions))),
+      audit: auditGame(registry, profile, {
+        targetLanguage: safeOptions.targetLanguage,
+        endpoint: safeOptions.endpoint,
+      }),
       receipts: await readReceipts(profile.path),
       mods: await listMods(registry, profile),
       hosts: modHosts(registry, profile).map((h) => ({ loaderId: h.loader.id, name: h.loader.name, dir: h.dir })),
     };
   });
 
-  handle('game:install', async (plan: TranslatorPlan, options: { dryRun?: boolean }) =>
-    applyPlan(plan, {
-      dryRun: options?.dryRun ?? false,
+  handle('game:install', async (gameId: string, planId: string, options: { dryRun?: boolean }) => {
+    requireGamePath(gameId);
+    const plan = requirePlan(gameId, planId);
+    return applyPlan(plan, {
+      dryRun: options?.dryRun === true,
       logger: {
         level: 'info',
         debug: () => {},
@@ -218,12 +312,12 @@ function register(): void {
         error: (msg: string) => mainWindow?.webContents.send('install:progress', msg),
         child: () => ({}) as never,
       },
-      onProgress: (received, total) =>
-        mainWindow?.webContents.send('install:bytes', { received, total: total ?? 0 }),
-    }),
-  );
+      onProgress: (received, total) => mainWindow?.webContents.send('install:bytes', { received, total: total ?? 0 }),
+    });
+  });
 
-  handle('game:uninstall', async (gamePath: string, componentId?: string) => {
+  handle('game:uninstall', async (gameId: string, componentId?: string) => {
+    const gamePath = requireGamePath(gameId);
     const receipts = await readReceipts(gamePath);
     const selected = componentId ? receipts.filter((r) => r.componentId === componentId) : receipts;
     const results = [];
@@ -231,14 +325,16 @@ function register(): void {
     return results;
   });
 
-  handle('mods:toggle', async (gamePath: string, modId: string, enabled: boolean) => {
+  handle('mods:toggle', async (gameId: string, modId: string, enabled: boolean) => {
+    const gamePath = requireGamePath(gameId);
     const profile = detectGame(registry, gamePath);
     if (!profile) throw new Error('Game folder is gone.');
-    await setModEnabled(registry, profile, modId, enabled);
+    await setModEnabled(registry, profile, String(modId), enabled === true);
     return listMods(registry, profile);
   });
 
-  handle('mods:add', async (gamePath: string) => {
+  handle('mods:add', async (gameId: string) => {
+    const gamePath = requireGamePath(gameId);
     const profile = detectGame(registry, gamePath);
     if (!profile) throw new Error('Game folder is gone.');
     const picked = await dialog.showOpenDialog({
@@ -251,17 +347,25 @@ function register(): void {
     return listMods(registry, profile);
   });
 
-  handle('game:launch', async (gamePath: string, executable: string) => {
-    const target = path.join(gamePath, executable);
+  // The executable is resolved main-side from the detected profile: the
+  // renderer cannot name an arbitrary binary to spawn.
+  handle('game:launch', async (gameId: string) => {
+    const gamePath = requireGamePath(gameId);
+    const profile = detectGame(registry, gamePath);
+    if (!profile?.executable) throw new Error('No launchable executable was detected in this folder.');
+    const target = path.join(gamePath, profile.executable);
+    if (!target.startsWith(gamePath + path.sep)) throw new Error('Refusing to launch outside the game folder.');
     const child = spawn(target, { cwd: gamePath, detached: true, stdio: 'ignore' });
     child.unref();
-    return true;
+    return profile.executable;
   });
 
-  handle('shell:openPath', async (target: string) => shell.openPath(target));
+  handle('shell:openGameFolder', async (gameId: string) => shell.openPath(requireGamePath(gameId)));
+
   handle('shell:openExternal', async (url: string) => {
-    if (!/^https?:\/\//.test(url)) throw new Error('Only http(s) links can be opened.');
-    await shell.openExternal(url);
+    const value = String(url);
+    if (!/^https:\/\//i.test(value)) throw new Error('Only https links can be opened.');
+    await shell.openExternal(value);
     return true;
   });
 }

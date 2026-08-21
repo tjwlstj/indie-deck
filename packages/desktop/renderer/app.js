@@ -52,7 +52,7 @@ function visibleGames() {
 
     if (state.statusFilter === 'untranslated' && game.installedTranslators.length > 0) return false;
     if (state.statusFilter === 'translated' && game.installedTranslators.length === 0) return false;
-    if (state.statusFilter === 'issues' && !state.audits.has(game.path.toLowerCase())) return false;
+    if (state.statusFilter === 'issues' && !state.audits.has(game.id)) return false;
 
     if (query) {
       const haystack = `${game.name} ${game.title ?? ''} ${game.engineName}`.toLowerCase();
@@ -110,7 +110,7 @@ function renderSidebar() {
 }
 
 function healthDot(game) {
-  const audit = state.audits.get(game.path.toLowerCase());
+  const audit = state.audits.get(game.id);
   if (!audit) return game.installedTranslators.length > 0 ? 'ok' : 'none';
   return audit.issues.some((i) => i.severity === 'warn' || i.severity === 'block') ? 'warn' : 'ok';
 }
@@ -122,7 +122,7 @@ function renderGameList() {
 
   for (const game of games) {
     const row = el('div', 'game');
-    row.classList.toggle('selected', state.selected === game.path);
+    row.classList.toggle('selected', state.selected === game.id);
 
     row.append(el('div', 'name', game.title && game.title !== game.name ? `${game.name} — ${game.title}` : game.name));
     row.append(el('span', `dot ${healthDot(game)}`));
@@ -144,7 +144,7 @@ function renderGameList() {
     }
     row.append(meta);
 
-    row.addEventListener('click', () => selectGame(game.path));
+    row.addEventListener('click', () => selectGame(game.id));
     container.append(row);
   }
 
@@ -224,20 +224,32 @@ function renderDetail() {
   const actions = el('div', 'actions');
   if (profile.executable) {
     const play = el('button', 'primary', '▶  Play');
-    play.addEventListener('click', () => api.game.launch(profile.path, profile.executable));
+    play.addEventListener('click', async () => {
+      try {
+        await api.game.launch(profile.id);
+      } catch (err) {
+        setStatus(err.message, 'err');
+      }
+    });
     actions.append(play);
   }
   const openFolder = el('button', 'ghost', 'Open folder');
-  openFolder.addEventListener('click', () => api.open.folder(profile.path));
+  openFolder.addEventListener('click', () => api.game.openFolder(profile.id));
   actions.append(openFolder);
 
   if (receipts.length > 0) {
     const remove = el('button', 'ghost', 'Uninstall IndieDeck changes');
     remove.addEventListener('click', async () => {
       setStatus('Removing…');
-      await api.game.uninstall(profile.path);
-      setStatus('Removed. Folder restored to what it was.', 'ok');
-      await selectGame(profile.path, true);
+      const results = await api.game.uninstall(profile.id);
+      const kept = results.flatMap((r) => r.keptModified ?? []);
+      setStatus(
+        kept.length > 0
+          ? `Removed. ${kept.length} hand-edited file(s) were left alone.`
+          : 'Removed. Folder restored to what it was.',
+        'ok',
+      );
+      await selectGame(profile.id, true);
     });
     actions.append(remove);
   }
@@ -292,7 +304,7 @@ function renderDetail() {
   } else {
     const addMod = el('button', 'ghost', '+  Add mod from file');
     addMod.addEventListener('click', async () => {
-      const updated = await api.mods.add(profile.path);
+      const updated = await api.mods.add(profile.id);
       if (updated) {
         state.detail.mods = updated;
         renderDetail();
@@ -307,7 +319,7 @@ function renderDetail() {
       toggle.title = mod.enabled ? 'Disable' : 'Enable';
       toggle.addEventListener('click', async () => {
         try {
-          state.detail.mods = await api.mods.toggle(profile.path, mod.id, !mod.enabled);
+          state.detail.mods = await api.mods.toggle(profile.id, mod.id, !mod.enabled);
           renderDetail();
         } catch (err) {
           setStatus(err.message, 'err');
@@ -326,13 +338,13 @@ function renderDetail() {
 
 /* ----------------------------------------------------------------- actions */
 
-async function selectGame(gamePath, keepScroll) {
-  state.selected = gamePath;
+async function selectGame(gameId, keepScroll) {
+  state.selected = gameId;
   if (!keepScroll) $('detail').scrollTop = 0;
   renderGameList();
   setStatus('Reading game folder…');
   try {
-    state.detail = await api.game.detail(gamePath, resolveOptions());
+    state.detail = await api.game.detail(gameId, resolveOptions());
     setStatus('Ready');
   } catch (err) {
     state.detail = null;
@@ -358,12 +370,12 @@ async function installPlan(plan) {
 
   try {
     setStatus(`Installing ${plan.translatorName} ${plan.version}…`);
-    const result = await api.game.install(plan, {});
+    const result = await api.game.install(state.selected, plan.id, {});
     for (const step of result.performed) log.textContent += `${step.status === 'done' ? '✓' : '·'} ${step.step.description}\n`;
     for (const action of result.pendingUserActions) log.textContent += `! ${action}\n`;
     setStatus(`Installed — ${result.filesWritten.length} files written`, 'ok');
     await refreshLibraryView(false);
-    await selectGame(plan.gamePath, true);
+    await selectGame(state.selected, true);
     $('installLog').hidden = false;
   } catch (err) {
     setStatus(err.message, 'err');
@@ -399,7 +411,7 @@ async function refreshLibraryView(rescan) {
 function applyPayload(payload) {
   state.games = payload.index.games;
   state.stats = payload.stats;
-  state.audits = new Map(payload.audits.map((audit) => [audit.path.toLowerCase(), audit]));
+  state.audits = new Map(payload.audits.map((audit) => [audit.id, audit]));
 }
 
 function render() {

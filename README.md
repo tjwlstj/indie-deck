@@ -170,8 +170,16 @@ honest, and links out rather than pretending it can install them.
 - **Never execute a third-party binary silently.** The ReiPatcher setup rewrites
   game assemblies, so it needs an explicit `--allow-run` and takes a snapshot of
   `Managed/` first.
-- **Receipts, not guesswork.** Every install records the exact file list and any
-  file it displaced, so uninstall is precise and reversible.
+- **Transactional writes.** Every write records whether it *created* a file or
+  *displaced* one. Uninstall deletes the first kind and restores the second, so
+  removing a mod can never take the game's own `plugins.js` with it. If a step
+  fails mid-install the whole thing rolls back.
+- **Downloads are streamed and hashed.** Nothing is cached until its hash is
+  known, and a pinned checksum that does not match is discarded rather than
+  installed.
+- **The launcher's renderer is untrusted.** It addresses games and plans by
+  opaque id; the main process resolves them against its own tables and rebuilds
+  the privileged object itself.
 - **Config edits preserve the file.** `AutoTranslatorConfig.ini` is documented
   inline by upstream; IndieDeck rewrites individual keys and leaves every comment,
   unknown key and line ending intact.
@@ -187,6 +195,12 @@ npm test           # node:test, no test framework dependency
 
 Sources are TypeScript with erasable-only syntax, so `node --experimental-strip-types`
 runs them directly without a build step.
+
+## Roadmap
+
+P0 (safety) is done. Next up: a portable Windows build, then the versioned
+config manager that removes the last hand-editing step. See
+[docs/roadmap.md](docs/roadmap.md).
 
 ## Contributing
 
