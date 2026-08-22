@@ -21,6 +21,10 @@ function subscribe(channel, fn) {
 }
 
 contextBridge.exposeInMainWorld('indiedeck', {
+  app: {
+    info: () => call('app:info'),
+  },
+
   registry: () => call('registry:get'),
 
   i18n: {

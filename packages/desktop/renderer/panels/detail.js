@@ -12,15 +12,36 @@ import { api, state } from '../store.js';
 
 /* --------------------------------------------------------------- header */
 
-export function renderHeader(panel, ctx, refresh) {
-  const { profile, receipts } = ctx;
+/**
+ * Title, path and the two safe frequent actions live in a position:sticky
+ * wrapper, so Play / Open folder stay visible at any scroll depth (§9). The
+ * uninstall action is deliberately NOT here: the fixed bar carries only safe,
+ * frequently used controls.
+ */
+export function renderHeader(panel, ctx) {
+  const { profile } = ctx;
 
-  panel.append(el('h1', null, profile.title && profile.title !== profile.name ? profile.title : profile.name));
-  panel.append(el('div', 'path', profile.path));
+  const sticky = el('div', 'detail-sticky');
+  const inner = el('div', 'detail-sticky-inner');
+
+  inner.append(el('h1', null, profile.title && profile.title !== profile.name ? profile.title : profile.name));
+  inner.append(el('div', 'path', profile.path));
 
   const actions = el('div', 'actions');
   if (profile.executable) {
     const play = el('button', 'primary', `▶  ${t('ui.detail.play', undefined, 'Play')}`);
+    play.disabled = state.busy;
+    if (state.busy) {
+      // A disabled button cannot take focus or show its own title; give screen
+      // readers an adjacent explanation instead (§9.2).
+      play.setAttribute('aria-disabled', 'true');
+      actions.append(
+        Object.assign(el('span', 'plan-sub', t('ui.detail.playBlocked', undefined, 'finish the running task first')), {
+          id: 'playBlockedNote',
+        }),
+      );
+      play.setAttribute('aria-describedby', 'playBlockedNote');
+    }
     play.addEventListener('click', async () => {
       try {
         await api.game.launch(profile.id);
@@ -35,23 +56,9 @@ export function renderHeader(panel, ctx, refresh) {
   openFolder.addEventListener('click', () => api.game.openFolder(profile.id));
   actions.append(openFolder);
 
-  if (receipts.length > 0) {
-    const remove = el('button', 'ghost', t('ui.detail.uninstall', undefined, 'Uninstall IndieDeck changes'));
-    remove.addEventListener('click', async () => {
-      setStatus(t('ui.status.removing', undefined, 'Removing…'));
-      const results = await api.game.uninstall(profile.id);
-      const kept = results.flatMap((r) => r.keptModified ?? []);
-      setStatus(
-        kept.length > 0
-          ? t('ui.status.removedKept', { count: kept.length }, 'Removed. {count} hand-edited file(s) were left alone.')
-          : t('ui.status.removed', undefined, 'Removed. Folder restored to what it was.'),
-        'ok',
-      );
-      await refresh();
-    });
-    actions.append(remove);
-  }
-  panel.append(actions);
+  inner.append(actions);
+  sticky.append(inner);
+  panel.append(sticky);
 }
 
 /* ---------------------------------------------------------------- facts */
@@ -182,9 +189,34 @@ export function renderPlans(panel, ctx, refresh, onInstall) {
   panel.append(el('h3', null, t('ui.detail.translatorOptions', undefined, 'Translator options')));
   if (ctx.plans.length === 0) {
     panel.append(el('div', 'plan-sub', t('ui.detail.noTranslator', undefined, 'No translator in the registry targets this engine.')));
-    return;
+  } else {
+    for (const plan of ctx.plans) panel.append(planCard(plan, onInstall));
   }
-  for (const plan of ctx.plans) panel.append(planCard(plan, onInstall));
+
+  // Maintenance actions stay out of the sticky bar (§9.1): removal touches
+  // every managed file, so it lives with the translator plans it undoes.
+  if (ctx.receipts?.length > 0) {
+    const remove = el('button', 'ghost uninstall', t('ui.detail.uninstall', undefined, 'Uninstall IndieDeck changes'));
+    remove.addEventListener('click', async () => {
+      remove.disabled = true;
+      setStatus(t('ui.status.removing', undefined, 'Removing…'));
+      try {
+        const results = await api.game.uninstall(ctx.profile.id);
+        const kept = results.flatMap((r) => r.keptModified ?? []);
+        setStatus(
+          kept.length > 0
+            ? t('ui.status.removedKept', { count: kept.length }, 'Removed. {count} hand-edited file(s) were left alone.')
+            : t('ui.status.removed', undefined, 'Removed. Folder restored to what it was.'),
+          'ok',
+        );
+        await refresh();
+      } catch (err) {
+        setStatus(err.message, 'err');
+        remove.disabled = false;
+      }
+    });
+    panel.append(remove);
+  }
 }
 
 /* ----------------------------------------------------------------- mods */

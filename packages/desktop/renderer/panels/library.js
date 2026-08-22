@@ -2,7 +2,7 @@
 
 import { $, clear, el } from '../dom.js';
 import { t } from '../i18n.js';
-import { api, emit, state, visibleGames } from '../store.js';
+import { emit, state, visibleGames } from '../store.js';
 
 function healthDot(game) {
   const audit = state.audits.get(game.id);
@@ -40,25 +40,8 @@ export function renderSidebar(onSelectGame) {
   }
   $('issueCount').textContent = String(state.audits.size);
 
-  const roots = clear($('rootList'));
-  const configured = state.config?.roots ?? [];
-  if (configured.length === 0) {
-    const li = el('li');
-    li.append(el('span', 'path', t('ui.sidebar.noRoots', undefined, 'none configured')));
-    roots.append(li);
-  }
-  for (const root of configured) {
-    const li = el('li');
-    li.append(el('span', 'path', root));
-    const remove = el('button', null, '×');
-    remove.title = t('ui.sidebar.stopScanning', { root }, 'Stop scanning {root}');
-    remove.addEventListener('click', async () => {
-      state.config = await api.roots.remove(root);
-      emit('library');
-    });
-    li.append(remove);
-    roots.append(li);
-  }
+  // Roots are managed (and listed) exclusively in the settings view now; the
+  // sidebar carries only filters, per §7.2 of the UX contract.
 
   void onSelectGame;
 }
@@ -66,6 +49,17 @@ export function renderSidebar(onSelectGame) {
 export function renderGameList(onSelectGame) {
   const container = clear($('gameList'));
   const games = visibleGames();
+
+  if (state.games.length === 0) {
+    const emptyCard = el('div', 'empty-library');
+    emptyCard.append(el('p', null, t('ui.status.emptyLibrary', undefined, 'No games yet — add a folder and scan.')));
+    const add = el('button', 'ghost', t('ui.app.addFolder', undefined, 'Add folder'));
+    add.addEventListener('click', () => window.dispatchEvent(new CustomEvent('indiedeck:add-root')));
+    emptyCard.append(add);
+    container.append(emptyCard);
+    $('counts').textContent = '';
+    return;
+  }
 
   for (const game of games) {
     const row = el('div', 'game');

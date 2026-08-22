@@ -57,8 +57,8 @@
 | 중복 번역기 탐지 | **CURRENT** | `packages/core/src/health`가 변형·DLL 버전·영수증 증거를 개별 수집하고 duplicate-variants, multiple-versions, managed-drift 등을 분류한다. 단위 테스트는 `packages/core/test/health.test.ts`(§13.3 fixture 12종). 정리 동작 자체는 여전히 **PLANNED**다. |
 | 재설치 안전성 | **PARTIAL** | 일반 파일 적용은 transaction 기반이지만 같은 컴포넌트를 다시 설치하면 translator-componentId.json 영수증을 덮어쓸 수 있다. 이전 릴리스에서 사라진 파일도 자동 정리되지 않는다. 따라서 현재 Install 동작을 Update 또는 Repair라고 이름만 바꾸면 안 된다. |
 | 설치 후 사용자 수정 보호 | **PARTIAL** | 현재 제거는 create 항목의 hash가 달라지면 파일을 남기지만, modify·snapshot 항목은 현재 내용을 비교하지 않고 backup을 복원한다. 기존 설정 파일 등에 설치 후 생긴 사용자 수정을 모든 경우에 보호한다고 볼 수 없다. |
-| 상단 바 | **CURRENT** | 브랜드, 검색, 원문·번역 언어, 번역 엔드포인트, UI 언어, 폴더 추가, 스캔이 한 줄에 있다. |
-| 게임 액션 | **PARTIAL** | 게임 실행과 폴더 열기는 상세 화면 첫 부분에 있지만 일반 콘텐츠와 함께 스크롤되어 사라진다. |
+| 상단 바 | **CURRENT** | 브랜드(버전 표기 포함), 검색, 새로고침, 설정만 남았다. 언어·엔드포인트 기본값과 폴더 관리는 설정 페이지가 소유한다. |
+| 게임 액션 | **CURRENT** | 게임 실행과 폴더 열기가 상세 화면의 sticky 영역에 고정되어 스크롤 중에도 보인다. 작업 중에는 실행이 비활성화되고 이유가 인접 문구로 안내된다. 제거 동작은 계획 섹션으로 옮겨져 고정 영역 밖이다. |
 
 ### 3.1 현재 설치 진행 표시의 구체적 한계
 
@@ -915,7 +915,8 @@ UI부터 Update 버튼을 붙이지 말고 안전한 상태·조정 모델부터
 5. **상황별 CTA와 복구 화면**
    - 설치, 업데이트, 복구 설치, 정리 후 재설치
    - preserve/remove/write 미리보기
-6. **상단 바·설정·sticky 액션**
+6. **상단 바·설정·sticky 액션** — 완료(2026-08-23, scanDepth는 §7.2의
+   main 확장과 함께 별도로 남김)
    - 전역 기본값을 설정 페이지로 이동
    - DOM 독립 resolveOptions
    - Play/Open folder 고정

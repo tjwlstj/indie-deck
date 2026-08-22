@@ -22,6 +22,10 @@ export const state = {
   selected: null,
   detail: null,
   busy: false,
+  /** App-level view. Settings stays in this document - no navigation, so the
+   * CSP and IPC boundary of the single window are untouched (§7.3). */
+  view: 'library',
+  appInfo: { version: '', portable: false },
 };
 
 /** Panels subscribe so a state change re-renders them without a framework. */
@@ -51,11 +55,18 @@ export function visibleGames() {
   });
 }
 
+/**
+ * Options for plan resolution come from the saved config, never from DOM ids
+ * (§7.2): the top bar no longer owns language/endpoint selects, so reading
+ * `document.getElementById(...)` here would throw. Unsaved edits in the
+ * settings view only affect plans after the user presses save.
+ */
 export function resolveOptions() {
+  const defaults = state.config?.defaults ?? {};
   return {
-    targetLanguage: document.getElementById('targetLanguage').value,
-    sourceLanguage: document.getElementById('sourceLanguage').value,
-    endpoint: document.getElementById('endpoint').value,
+    targetLanguage: defaults.targetLanguage ?? 'en',
+    sourceLanguage: defaults.sourceLanguage ?? 'ja',
+    endpoint: defaults.endpoint ?? 'GoogleTranslate',
   };
 }
 

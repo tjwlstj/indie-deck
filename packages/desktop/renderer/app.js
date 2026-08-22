@@ -7,10 +7,16 @@
  */
 
 import { $, el, setStatus } from './dom.js';
-import { applyStaticTranslations, localeOptions, t } from './i18n.js';
+import { applyStaticTranslations, t } from './i18n.js';
 import { renderGameList, renderSidebar } from './panels/library.js';
 import { SECTIONS } from './panels/index.js';
 import { resetConfigPanel } from './panels/config.js';
+import {
+  populateDefaultsForm,
+  populateLocaleSelect,
+  renderAbout,
+  renderRoots,
+} from './panels/settings.js';
 import { api, applyLibraryPayload, emit, loadLocale, resolveOptions, state, subscribe } from './store.js';
 
 /* --------------------------------------------------------------- render */
@@ -43,7 +49,14 @@ function renderDetail() {
   }
 }
 
+function renderView() {
+  document.body.dataset.view = state.view;
+  $('libraryView').hidden = state.view !== 'library';
+  $('settingsView').hidden = state.view !== 'settings';
+}
+
 function render(scope = 'all') {
+  if (state.view === 'settings') return; // the settings view owns the screen
   if (scope === 'all' || scope === 'library') {
     renderSidebar(selectGame);
     renderGameList(selectGame);
@@ -78,8 +91,16 @@ async function refreshDetail(options = {}) {
   await selectGame(state.selected, { keepScroll: true, ...options });
 }
 
+/** Shows a transient task chip in the top bar while a mutation runs. */
+function setTaskStatus(text) {
+  const node = $('taskStatus');
+  node.hidden = !text;
+  node.textContent = text ?? '';
+}
+
 async function installPlan(plan) {
   state.busy = true;
+  setTaskStatus(t('ui.status.installingShort', undefined, 'Installing…'));
   renderDetail();
 
   const log = el('div', 'log');
@@ -92,7 +113,9 @@ async function installPlan(plan) {
   });
   const offBytes = api.on.installBytes(({ received, total }) => {
     if (total > 0) {
-      setStatus(t('ui.status.downloading', { percent: Math.round((received / total) * 100) }, 'Downloading… {percent}%'));
+      const percent = Math.round((received / total) * 100);
+      setStatus(t('ui.status.downloading', { percent }, 'Downloading… {percent}%'));
+      setTaskStatus(t('ui.status.downloading', { percent }, 'Downloading… {percent}%'));
     }
   });
 
@@ -113,6 +136,9 @@ async function installPlan(plan) {
     offLog();
     offBytes();
     state.busy = false;
+    setTaskStatus(null);
+    // The plan buttons and the sticky Play were disabled by state.busy.
+    renderDetail();
   }
 }
 
@@ -123,6 +149,7 @@ async function refreshLibraryView(rescan) {
   try {
     if (rescan) {
       setStatus(t('ui.status.scanningShort', undefined, 'Scanning…'));
+      setTaskStatus(t('ui.status.scanningShort', undefined, 'Scanning…'));
       offProgress = api.on.scanProgress((current) => setStatus(t('ui.status.scanning', { path: current }, 'Scanning {path}')));
     }
     const payload = rescan ? await api.library.scan({}) : await api.library.load();
@@ -138,6 +165,7 @@ async function refreshLibraryView(rescan) {
   } finally {
     offProgress();
     scanButton.disabled = false;
+    setTaskStatus(null);
     // A structural signal the CI smoke test can wait on. Keying off the status
     // text would break the moment the UI is translated.
     document.body.dataset.libraryState = 'ready';
@@ -158,43 +186,33 @@ async function changeLocale(locale) {
   if (state.selected) await refreshDetail();
 }
 
-function populateLocaleSelect() {
-  const select = $('uiLocale');
-  select.replaceChildren();
-  const system = el('option', null, `${t('ui.app.language', undefined, 'Language')}: auto`);
-  system.value = 'system';
-  select.append(system);
-  for (const locale of localeOptions()) {
-    const option = el('option', null, locale.label);
-    option.value = locale.code;
-    select.append(option);
-  }
-  select.value = state.config?.locale ?? 'system';
+/* ------------------------------------------------------------ settings */
+
+function openSettings() {
+  state.view = 'settings';
+  renderAbout();
+  renderRoots();
+  populateLocaleSelect();
+  populateDefaultsForm(state.registry.translators.find((x) => x.id === 'xunity-autotranslator')?.endpoints ?? []);
+  renderView();
 }
 
-/* ------------------------------------------------------------------ boot */
+function closeSettings() {
+  state.view = 'library';
+  // Preserve selection and detail; only re-render what the library needs.
+  renderView();
+  emit('all');
+}
 
-async function boot() {
-  await loadLocale();
-  state.registry = await api.registry();
-  state.config = await api.config.get();
+let savingDefaults = false;
 
-  applyStaticTranslations();
-  populateLocaleSelect();
-
-  const endpoints = state.registry.translators.find((x) => x.id === 'xunity-autotranslator')?.endpoints ?? [];
-  const endpointSelect = $('endpoint');
-  for (const endpoint of endpoints) {
-    const option = el('option', null, endpoint.needsKey ? `${endpoint.id} (key)` : endpoint.id);
-    option.value = endpoint.id;
-    endpointSelect.append(option);
-  }
-
-  $('targetLanguage').value = state.config.defaults.targetLanguage;
-  $('sourceLanguage').value = state.config.defaults.sourceLanguage;
-  endpointSelect.value = state.config.defaults.endpoint;
-
-  const persistDefaults = async () => {
+async function saveDefaults() {
+  if (savingDefaults) return;
+  savingDefaults = true;
+  const saveButton = $('saveDefaults');
+  saveButton.disabled = true;
+  $('defaultsSaved').textContent = t('ui.settings.saving', undefined, 'Saving…');
+  try {
     state.config = await api.config.set({
       ...state.config,
       defaults: {
@@ -203,12 +221,46 @@ async function boot() {
         endpoint: $('endpoint').value,
       },
     });
+    $('defaultsSaved').textContent = t('ui.settings.saved', undefined, 'Saved');
+    // Plans and audits were computed with the old defaults (§7.2).
     if (state.selected) await refreshDetail();
-  };
-  $('targetLanguage').addEventListener('change', persistDefaults);
-  $('sourceLanguage').addEventListener('change', persistDefaults);
-  endpointSelect.addEventListener('change', persistDefaults);
-  $('uiLocale').addEventListener('change', (event) => changeLocale(event.target.value));
+  } catch (err) {
+    $('defaultsSaved').textContent = err.message;
+  } finally {
+    saveButton.disabled = false;
+    savingDefaults = false;
+  }
+}
+
+/* ------------------------------------------------------------------ boot */
+
+async function boot() {
+  await loadLocale();
+  state.appInfo = await api.app.info();
+  state.registry = await api.registry();
+  state.config = await api.config.get();
+
+  applyStaticTranslations();
+  renderAbout();
+  populateLocaleSelect();
+
+  $('openSettings').addEventListener('click', openSettings);
+  $('closeSettings').addEventListener('click', closeSettings);
+
+  $('targetLanguage').addEventListener('change', () => ($('defaultsSaved').textContent = ''));
+  $('sourceLanguage').addEventListener('change', () => ($('defaultsSaved').textContent = ''));
+  $('endpoint').addEventListener('change', () => ($('defaultsSaved').textContent = ''));
+  $('saveDefaults').addEventListener('click', () => void saveDefaults());
+
+  // The empty-library card in the list column also offers "add folder"; it
+  // signals through a window event so library.js stays free of boot wiring.
+  window.addEventListener('indiedeck:add-root', async () => {
+    const picked = await api.roots.pick();
+    if (!picked) return;
+    state.config = await api.config.get();
+    renderRoots();
+    await refreshLibraryView(true);
+  });
 
   $('search').addEventListener('input', (event) => {
     state.query = event.target.value;
@@ -216,10 +268,12 @@ async function boot() {
   });
 
   $('scan').addEventListener('click', () => refreshLibraryView(true));
+  $('rescanRoots').addEventListener('click', () => refreshLibraryView(true));
   $('addRoot').addEventListener('click', async () => {
     const picked = await api.roots.pick();
     if (!picked) return;
     state.config = await api.config.get();
+    renderRoots();
     await refreshLibraryView(true);
   });
 

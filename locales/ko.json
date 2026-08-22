@@ -152,7 +152,29 @@
       "language": "언어",
       "loading": "라이브러리 불러오는 중…",
       "ready": "준비됨",
-      "counts": "{total}개 중 {shown}개"
+      "counts": "{total}개 중 {shown}개",
+      "refresh": "새로고침",
+      "refreshTitle": "등록된 라이브러리 루트를 디스크에서 다시 검색합니다",
+      "settings": "설정"
+    },
+    "settings": {
+      "title": "설정",
+      "back": "← 라이브러리로 돌아가기",
+      "general": "일반",
+      "about": "정보",
+      "installedBuild": "설치판",
+      "portableBuild": "포터블",
+      "manualUpdatesOnly": "포터블 빌드는 수동 업데이트입니다",
+      "translationDefaults": "번역 기본값",
+      "defaultsHint": "저장을 누른 뒤 계획과 호환성 검사가 다시 계산될 때 적용됩니다.",
+      "targetLang": "번역 대상 언어",
+      "sourceLang": "원본 언어",
+      "endpoint": "번역 엔진",
+      "save": "저장",
+      "saving": "저장 중…",
+      "saved": "저장됨",
+      "library": "라이브러리",
+      "rescan": "전체 다시 검색"
     },
     "update": {
       "readyTitle": "IndieDeck 업데이트 준비됨",
@@ -178,6 +200,7 @@
       "emptyTitle": "게임을 선택하세요",
       "emptyBody": "엔진·백엔드·버전을 읽고, 그 게임에 실제로 맞는 번역기 빌드가 무엇인지 계산합니다.",
       "play": "실행",
+      "playBlocked": "작업이 진행 중인 동안에는 실행할 수 없습니다.",
       "openFolder": "폴더 열기",
       "uninstall": "IndieDeck이 설치한 항목 제거",
       "engine": "엔진",
@@ -242,6 +265,7 @@
     },
     "status": {
       "reading": "게임 폴더 읽는 중…",
+      "installingShort": "설치 중…",
       "scanning": "검색 중 {path}",
       "scanningShort": "검색 중…",
       "downloading": "다운로드 중… {percent}%",

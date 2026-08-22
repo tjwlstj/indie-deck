@@ -367,6 +367,13 @@ function handleMutation<T>(channel: string, fn: (...args: never[]) => Promise<T>
 }
 
 function register(): void {
+  handle('app:info', () => ({
+    version: app.getVersion(),
+    // Portable builds set this env var; the updater deliberately stays off
+    // there, and the settings page says so instead of a silent no-op.
+    portable: process.env['PORTABLE_EXECUTABLE_DIR'] !== undefined,
+  }));
+
   handle('registry:get', () => ({
     engines: registry.engines.map((e) => ({ id: e.id, name: e.displayName ?? e.name })),
     translators: registry.translators.map((t) => ({

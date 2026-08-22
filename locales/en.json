@@ -152,7 +152,29 @@
       "language": "Language",
       "loading": "Loading library…",
       "ready": "Ready",
-      "counts": "{shown} of {total} games"
+      "counts": "{shown} of {total} games",
+      "refresh": "Refresh",
+      "refreshTitle": "Rescan the registered library roots from disk",
+      "settings": "Settings"
+    },
+    "settings": {
+      "title": "Settings",
+      "back": "← Back to library",
+      "general": "General",
+      "about": "About",
+      "installedBuild": "installed build",
+      "portableBuild": "portable build",
+      "manualUpdatesOnly": "updates are manual for portable builds",
+      "translationDefaults": "Translation defaults",
+      "defaultsHint": "Used when plans and compatibility checks are recomputed after you press save.",
+      "targetLang": "Translate into",
+      "sourceLang": "Translate from",
+      "endpoint": "Translation engine",
+      "save": "Save",
+      "saving": "Saving…",
+      "saved": "Saved",
+      "library": "Library",
+      "rescan": "Full rescan"
     },
     "update": {
       "readyTitle": "IndieDeck update ready",
@@ -178,6 +200,7 @@
       "emptyTitle": "Pick a game",
       "emptyBody": "IndieDeck reads its engine, backend and version, then works out which translator build actually fits it.",
       "play": "Play",
+      "playBlocked": "Play is unavailable while a task runs.",
       "openFolder": "Open folder",
       "uninstall": "Uninstall IndieDeck changes",
       "engine": "Engine",
@@ -242,6 +265,7 @@
     },
     "status": {
       "reading": "Reading game folder…",
+      "installingShort": "Installing…",
       "scanning": "Scanning {path}",
       "scanningShort": "Scanning…",
       "downloading": "Downloading… {percent}%",
