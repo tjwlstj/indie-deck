@@ -3,6 +3,36 @@
 All notable changes to IndieDeck are documented here. Versions follow Semantic
 Versioning while the project is pre-1.0.
 
+## [0.1.1] - 2026-08-23
+
+### Added
+
+- Disk-evidenced translator install health. Per game, the launcher now
+  classifies installs as healthy, update-available, version-conflict,
+  duplicate-variants, multiple-versions, orphaned, unmanaged, managed-drift,
+  corrupt-receipt, newer-than-registry or version-unknown, keeping every issue
+  instead of one verdict.
+- A strict receipt reader that preserves damaged receipts as evidence rather
+  than silently dropping them, distinguishing parse, schema and unsafe-entry
+  failures.
+- Ownership hashes: files recorded by a receipt are compared against what is on
+  disk, so hand edits surface as drift instead of being overwritten later.
+- Shared core test fixture module (fake game folders, PE version resources,
+  receipt samples) used by the new installation-health tests.
+
+### Changed
+
+- Translator update findings compare against the best release compatible with
+  the specific game - engine, backend, architecture and endpoint - instead of
+  the newest registry-wide release.
+- Logical loader variants that share marker paths are disambiguated by the
+  game's scripting backend before any duplicate or orphaned finding fires.
+
+### Documentation
+
+- Added `docs/launcher-ux-guide.md`, the install/recovery UX implementation
+  contract, including per-step definitions of done for the remaining rollout.
+
 ## [0.1.0] - 2026-08-21
 
 ### Added
@@ -41,3 +71,4 @@ Versioning while the project is pre-1.0.
   0.1.0-to-0.1.1 update can only be tested after the next version is published.
 
 [0.1.0]: https://github.com/tjwlstj/indie-deck/releases/tag/v0.1.0
+[0.1.1]: https://github.com/tjwlstj/indie-deck/releases/tag/v0.1.1

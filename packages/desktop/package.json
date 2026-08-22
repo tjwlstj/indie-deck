@@ -1,6 +1,6 @@
 {
   "name": "@indiedeck/desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Desktop launcher UI for IndieDeck.",
   "license": "MIT",
   "private": true,
@@ -11,7 +11,7 @@
     "dev": "electron ."
   },
   "dependencies": {
-    "@indiedeck/core": "0.1.0",
+    "@indiedeck/core": "0.1.1",
     "electron-updater": "6.8.9"
   },
   "type": "module"
