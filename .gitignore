@@ -8,6 +8,7 @@ node_modules/
 dist/
 build/*
 !build/icon.svg
+!build/installer.nsh
 out/
 release/
 *.tsbuildinfo

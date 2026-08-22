@@ -30,11 +30,15 @@ win:
 
 nsis:
   artifactName: IndieDeck-Setup-${version}-${arch}.${ext}
-  oneClick: true
+  # Assisted install: the user sees the product name and version, can pick the
+  # directory, and a previous installation is offered as the default target.
+  oneClick: false
+  allowToChangeInstallationDirectory: true
   perMachine: false
   createDesktopShortcut: always
   createStartMenuShortcut: true
   deleteAppDataOnUninstall: false
+  include: build/installer.nsh
 
 portable:
   artifactName: IndieDeck-Portable-${version}-${arch}.${ext}
