@@ -54,7 +54,7 @@
 | 설치 직후 상세 갱신 | **CURRENT** | game:detail은 선택한 게임 폴더를 deep detect하여 다시 읽는다. |
 | 설치 직후 목록 갱신 | **PARTIAL** | 설치 후 library:load가 호출되지만 이는 마지막 스캔 때 저장한 library.json을 다시 읽는다. 게임 카드의 번역기 배지, 감사, 통계는 수동 전체 스캔 전까지 낡을 수 있다. 제거 후에는 상세만 새로 읽어 이 차이가 더 분명하다. |
 | 오래된 번역기 탐지 | **PARTIAL** | translator-outdated, endpoint-too-old, input-system-too-old 감사 항목은 있지만 대부분 안내 문구일 뿐 실행 가능한 복구 동작과 연결되지 않는다. 현재 newest 비교도 그 게임에서 가장 높은 호환 버전이 아니라 레지스트리 전체의 최신 버전을 기준으로 한다. |
-| 중복 번역기 탐지 | **PLANNED** | 현재 탐지기는 번역기 정의 하나당 InstalledTranslator 한 개로 흔적을 합치고 첫 variantId와 첫 DLL 버전만 남긴다. 여러 변형·여러 버전을 개별 설치로 보고하거나 정리할 수 없다. |
+| 중복 번역기 탐지 | **CURRENT** | `packages/core/src/health`가 변형·DLL 버전·영수증 증거를 개별 수집하고 duplicate-variants, multiple-versions, managed-drift 등을 분류한다. 단위 테스트는 `packages/core/test/health.test.ts`(§13.3 fixture 12종). 정리 동작 자체는 여전히 **PLANNED**다. |
 | 재설치 안전성 | **PARTIAL** | 일반 파일 적용은 transaction 기반이지만 같은 컴포넌트를 다시 설치하면 translator-componentId.json 영수증을 덮어쓸 수 있다. 이전 릴리스에서 사라진 파일도 자동 정리되지 않는다. 따라서 현재 Install 동작을 Update 또는 Repair라고 이름만 바꾸면 안 된다. |
 | 설치 후 사용자 수정 보호 | **PARTIAL** | 현재 제거는 create 항목의 hash가 달라지면 파일을 남기지만, modify·snapshot 항목은 현재 내용을 비교하지 않고 backup을 복원한다. 기존 설정 파일 등에 설치 후 생긴 사용자 수정을 모든 경우에 보호한다고 볼 수 없다. |
 | 상단 바 | **CURRENT** | 브랜드, 검색, 원문·번역 언어, 번역 엔드포인트, UI 언어, 폴더 추가, 스캔이 한 줄에 있다. |
@@ -892,7 +892,8 @@ position: sticky만으로 충분하다.
 
 UI부터 Update 버튼을 붙이지 말고 안전한 상태·조정 모델부터 만든다.
 
-1. **설치 증거와 건강 상태**
+1. **설치 증거와 건강 상태** — 완료(2026-08-23): `packages/core/src/health`,
+   `packages/core/test/fixtures.ts`, `packages/core/test/health.test.ts`
    - 모든 변형·DLL 버전·영수증·수정 파일을 보존하는 탐지 모델
    - 상태 분류와 resolver 기반 목표 버전
    - 단위 테스트와 audit 문구(공유 fixture 모듈을 먼저 구축한다)

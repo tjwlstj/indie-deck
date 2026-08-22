@@ -393,3 +393,76 @@ export interface InstallReceipt {
   source?: AssetSource;
   planFindings?: PlanFinding[];
 }
+
+/* -------------------------------------------------------------- install health */
+
+/**
+ * What IndieDeck concluded about one translator's presence in a game folder.
+ * These are not mutually exclusive - a single install can be a duplicate,
+ * drifted and outdated at once - so evidence keeps every issue and a separate
+ * `primaryStatus` picks what the UI leads with.
+ */
+export type InstallHealthStatus =
+  | 'absent'
+  | 'healthy'
+  | 'update-available'
+  | 'version-conflict'
+  | 'duplicate-variants'
+  | 'multiple-versions'
+  | 'orphaned'
+  | 'unmanaged'
+  | 'managed-drift'
+  | 'corrupt-receipt'
+  | 'newer-than-registry'
+  | 'version-unknown';
+
+/** Why a receipt file could not be trusted. */
+export type ReceiptIssueCode =
+  | 'parse-error'
+  | 'schema-error'
+  | 'unsafe-entry'
+  | 'missing-active'
+  | 'multiple-active'
+  | 'chain-cycle'
+  | 'missing-baseline'
+  | 'missing-backup'
+  | 'unsafe-storage-id';
+
+export interface ReceiptRecord {
+  /** Receipt file name inside `.indiedeck/receipts`, kept so records stay addressable. */
+  storageId: string;
+  id?: string;
+  kind?: InstallReceipt['kind'];
+  componentId?: string;
+  variantId?: string;
+  version?: string;
+  status: 'active' | 'superseded' | 'observed' | 'invalid';
+}
+
+export interface AssemblyVersionEvidence {
+  path: string;
+  version: string;
+}
+
+/**
+ * Everything known about one translator's installation, gathered from disk.
+ * The roles of the sources differ: an on-disk DLL under a loadable payload
+ * path is authoritative for the *payload* version, a receipt is evidence of
+ * ownership and intent, and config tags are hints only.
+ */
+export interface TranslatorInstallEvidence {
+  translatorId: string;
+  primaryStatus: InstallHealthStatus;
+  healthIssues: InstallHealthStatus[];
+  ownership: 'managed' | 'unmanaged' | 'observed';
+  uninstallable: boolean;
+  variantHits: { variantId: string; paths: string[]; configPath?: string }[];
+  payloadPaths: string[];
+  assemblyVersions: AssemblyVersionEvidence[];
+  receipts: ReceiptRecord[];
+  receiptIssues: { name: string; code: ReceiptIssueCode }[];
+  configTagVersion?: string;
+  ownedPaths: string[];
+  modifiedOwnedPaths: string[];
+  unknownPaths: string[];
+}

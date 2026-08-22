@@ -36,6 +36,43 @@
       },
       "engine-version-unknown": {
         "message": "Unity 버전을 읽지 못했습니다. 이 게임에서는 버전 기준 호환성 검사가 참고용으로만 표시됩니다."
+      },
+      "translator-payload-orphaned": {
+        "evidence-message": "{translator} 페이로드 파일이 있지만 이를 실행할 로더가 설치돼 있지 않습니다."
+      },
+      "translator-duplicate-install": {
+        "message": "{translator}의 여러 로더 계열 페이로드가 동시에 있습니다({variants}). 하나만 실제로 로드됩니다.",
+        "fix": "중복을 정리한 뒤 이 게임에 맞는 변형을 다시 설치하세요."
+      },
+      "translator-multi-version": {
+        "message": "{translator} 파일이 여러 버전을 보고합니다({versions}). 디스크만으로 어느 것이 로드되는지 판단할 수 없습니다.",
+        "fix": "정리한 뒤 한 버전만 다시 설치하세요."
+      },
+      "translator-managed-drift": {
+        "message": "{translator}이(가) IndieDeck 기록과 일치하지 않습니다(영수증 {receipt}, 파일 보고 {found}).",
+        "fix": "변경된 파일을 검토한 뒤 복구 설치를 실행하세요."
+      },
+      "translator-unmanaged": {
+        "message": "{translator} 파일이 IndieDeck 영수증 없이 설치돼 있습니다.",
+        "fix": "그대로 두거나, IndieDeck 설치로 백업·교체해 관리 상태로 만드세요."
+      },
+      "translator-newer-than-registry": {
+        "message": "{translator} {installed}은(는) IndieDeck이 아는 최신 릴리스보다 새롭습니다. 그대로 유지합니다."
+      },
+      "translator-version-unknown": {
+        "message": "{translator} 파일이 있지만 디스크나 영수증에서 버전을 읽을 수 없습니다.",
+        "fix": "자동 교체 전에 직접 확인하세요."
+      },
+      "translator-receipt-corrupt": {
+        "message": "IndieDeck 영수증 {count}개를 신뢰할 수 없습니다({names}). 해결될 때까지 자동 변경이 차단됩니다."
+      },
+      "translator-version-conflict": {
+        "message": "{translator} {installed}은(는) 현재 설치된 형태로는 이 게임의 엔진·백엔드 조합에 맞지 않습니다.",
+        "fix": "복구 설치를 실행해 리졸버가 호환 빌드를 고르게 하세요."
+      },
+      "translator-update-available": {
+        "message": "{translator} {installed}이(가) 설치돼 있습니다. 이 게임에 더 잘 맞는 릴리스가 있습니다.",
+        "fix": "indiedeck install {game} --translator {translator}"
       }
     },
     "plan": {

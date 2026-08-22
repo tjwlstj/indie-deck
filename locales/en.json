@@ -36,6 +36,43 @@
       },
       "engine-version-unknown": {
         "message": "Unity version could not be read, so version-gated compatibility checks are advisory only for this game."
+      },
+      "translator-payload-orphaned": {
+        "evidence-message": "{translator} payload files are present, but no loader able to run them is installed."
+      },
+      "translator-duplicate-install": {
+        "message": "{translator} payloads from several loader families are present ({variants}); only one can load.",
+        "fix": "Clean up the duplicates, then reinstall the variant that matches this game."
+      },
+      "translator-multi-version": {
+        "message": "{translator} files report several versions ({versions}); which one loads is not decidable from disk alone.",
+        "fix": "Clean up and reinstall a single version."
+      },
+      "translator-managed-drift": {
+        "message": "{translator} does not match its IndieDeck record (receipt {receipt}, files report {found}).",
+        "fix": "Review the changed files, then run a repair install."
+      },
+      "translator-unmanaged": {
+        "message": "{translator} files are installed without an IndieDeck receipt.",
+        "fix": "Keep them, or back up and replace them through an IndieDeck install to make them managed."
+      },
+      "translator-newer-than-registry": {
+        "message": "{translator} {installed} is newer than the newest release IndieDeck knows; it will be kept as is."
+      },
+      "translator-version-unknown": {
+        "message": "{translator} files are present but their version cannot be read from disk or receipts.",
+        "fix": "Verify manually before any automatic replacement."
+      },
+      "translator-receipt-corrupt": {
+        "message": "{count} IndieDeck receipt file(s) could not be trusted ({names}); automatic changes are blocked until this is resolved."
+      },
+      "translator-version-conflict": {
+        "message": "{translator} {installed} does not fit this game's engine and backend combination as installed.",
+        "fix": "Run a repair install so the resolver picks a compatible build."
+      },
+      "translator-update-available": {
+        "message": "{translator} {installed} is installed; a better-matching release for this game is available.",
+        "fix": "indiedeck install {game} --translator {translator}"
       }
     },
     "plan": {
