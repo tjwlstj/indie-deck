@@ -3,6 +3,31 @@
 All notable changes to IndieDeck are documented here. Versions follow Semantic
 Versioning while the project is pre-1.0.
 
+## [0.1.2] - 2026-08-23
+
+### Added
+
+- The launcher now shows its own version: a chip beside the brand and a fuller
+  about line (installed vs portable, update mode) in the new settings view.
+- Assisted Windows installer. The setup wizard shows the product name and
+  version and lets the user pick the installation directory.
+- In-place upgrade across directories: the installer reads the previous
+  installation location from the registry and targets that folder even when it
+  is not the default, so an old copy elsewhere is detected, uninstalled and
+  replaced where it stands.
+
+### Changed
+
+- Simplified top bar: brand with version, search, refresh and settings. Global
+  options moved into an in-app settings page (general, translation defaults,
+  library roots) - no navigation, so the CSP/IPC boundary of the single window
+  is untouched. Plan resolution now reads saved defaults instead of DOM state.
+- Game detail pins Play / Open folder in a sticky header visible at any scroll
+  depth; launching is disabled with an explanation while a task runs, and the
+  uninstall action moved out of the fixed bar to the translator plans it
+  undoes.
+- Empty library offers an add-folder call to action.
+
 ## [0.1.1] - 2026-08-23
 
 ### Added
@@ -72,3 +97,4 @@ Versioning while the project is pre-1.0.
 
 [0.1.0]: https://github.com/tjwlstj/indie-deck/releases/tag/v0.1.0
 [0.1.1]: https://github.com/tjwlstj/indie-deck/releases/tag/v0.1.1
+[0.1.2]: https://github.com/tjwlstj/indie-deck/releases/tag/v0.1.2

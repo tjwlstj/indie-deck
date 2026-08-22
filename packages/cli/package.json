@@ -1,6 +1,6 @@
 {
   "name": "@indiedeck/cli",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Command line interface for IndieDeck.",
   "license": "MIT",
   "type": "module",
@@ -13,6 +13,6 @@
     "start": "node --experimental-strip-types src/index.ts"
   },
   "dependencies": {
-    "@indiedeck/core": "0.1.1"
+    "@indiedeck/core": "0.1.2"
   }
 }
