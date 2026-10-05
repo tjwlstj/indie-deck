@@ -21,6 +21,7 @@ metadata before committing:
 ```powershell
 npm run release:check
 npm run verify
+npm run desktop:flow
 npm audit --audit-level=high
 npm run dist:win
 npm run package:check
@@ -87,21 +88,79 @@ and keep the certificate and password out of the repository.
 
 ## Updater verification boundary
 
-Only installed NSIS builds run the updater. Portable builds opt out because
-there is no stable installation directory to replace. IndieDeck checks after
-startup and downloads in the background, but never requests an updater-driven
-quit. The main process serialises writes and blocks a normal window close while
-any are queued; after a later clean app exit, the downloaded update may install.
+Only supported installed Windows NSIS builds invoke the native updater. About
+eight seconds after startup, IndieDeck checks the stable GitHub Releases channel
+only if its update snapshot is still idle, so the timer cannot replace a manual
+check or download the user already started. It does not download:
+`autoDownload`, `autoInstallOnAppQuit`, prereleases and downgrades are disabled.
+In **Settings → Launcher updates**, the user may check again, explicitly
+download with visible progress, and confirm **Restart and install** only after
+the selected version is fully downloaded.
+
+That confirmation reserves a main-process restart gate before native quit. It
+is refused while a queued or active game-file mutation exists and while Windows
+is logging off or shutting down; the reservation rejects new mutations until
+quit. A synchronous or asynchronous installer-launch failure releases the gate,
+keeps the verified download available and permits an explicit retry. The updater
+uses `quitAndInstall(false, true)` with `autoRunAppAfterInstall = true`: the
+assisted NSIS wizard is visible, and the app is configured to relaunch after the
+wizard finishes. Do not describe this as silent, unattended, automatic-on-exit
+or guaranteed without completing the wizard.
+
+Update state is owned by main and carries a monotonic sequence. The renderer
+subscribes before requesting the current snapshot, so checking, progress,
+downloaded and retry states recover across a renderer reload in the same app
+process. This is not persistence across an app or OS restart. The renderer can
+request fixed check/download/install actions but cannot supply a feed URL,
+release URL or executable path.
+
+Mode admission is explicit. `PORTABLE_EXECUTABLE_DIR` selects `portable`;
+an unpackaged source run (`app.isPackaged === false`) selects `development`;
+policy disablement, a non-Windows package or missing packaged `app-update.yml`
+selects `disabled`; every remaining supported Windows package is `installed`.
+An electron-builder `win-unpacked` directory is still a packaged layout, so it
+must be classified by that metadata rather than by the word “unpacked”.
+Portable, development and disabled modes never invoke native update actions;
+their settings card opens the fixed official latest-release page for manual
+replacement. Installed mode alone uses `latest.yml`.
+
+There are three distinct evidence lanes:
+
+1. `launcher-updates.test.ts` and `launcher-update-renderer.test.ts` use a mocked
+   native updater to verify the controller, progress, retry, shutdown/busy gates,
+   IPC-facing snapshots and renderer reload ordering without network access.
+   The Korean and English `desktop:flow` runs additionally boot an installed-
+   layout harness with mocked native check/download/install methods and drive the
+   actual Electron main/preload/renderer events. They verify explicit download,
+   progress, reload recovery, config-write busy rejection, asynchronous native
+   failure recovery, retry and the post-reservation mutation gate; they do not
+   start native NSIS.
+2. `npm run package:check` and the release workflow verify the real packaged
+   updater configuration, NSIS installer, blockmap, `latest.yml`, filenames and
+   hashes. Release smoke runs with updates disabled, so it does not download or
+   install from GitHub.
+3. Only the following public-feed exercise proves one specific real `N → N+1`
+   pair. Passing lanes 1 and 2 is necessary but is not a substitute for lane 3.
 
 For every release after 0.1.0, keep the previous installed version and exercise
 this end-to-end check before calling the updater proven for that pair:
 
 1. Install version `N` and add a harmless test library root.
 2. Publish stable version `N+1` with `latest.yml`, installer and blockmap.
-3. Launch `N`, wait for the update-ready notification, then close it normally.
-4. Relaunch and verify the executable reports `N+1` and retained the library
-   data.
-5. Record the tested pair in the release notes.
+3. Launch `N`, wait for the delayed check, and verify it reports `N+1` without
+   starting a download.
+4. In Settings, explicitly download `N+1`; verify progress, downloaded state and
+   renderer-reload recovery.
+5. Start a harmless game-file operation and verify restart/install remains
+   unavailable until that operation reaches a terminal state.
+6. Confirm restart/install, complete the visible assisted NSIS wizard, and verify
+   IndieDeck relaunches as `N+1` with the test library data retained.
+7. Record the exact pair, artifacts and result in the release notes.
+
+Publishing 0.1.3 cannot by itself prove the new flow: a public
+`0.1.2 → 0.1.3` update runs 0.1.2's older updater, while the new 0.1.3 UI has no
+newer stable target to download. Until a controlled equivalent or a later public
+`0.1.3 → N+1` pair is exercised, record the new public-feed flow as unverified.
 
 Pre-releases are not the default update channel. Do not use one as proof of the
 stable updater path without explicitly configuring and documenting a separate

@@ -2,6 +2,7 @@ import { BrowserWindow, app, dialog, ipcMain, shell } from 'electron';
 import electronUpdater from 'electron-updater';
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -63,6 +64,7 @@ import { fontWriteBlockKey } from './font-guard.ts';
 import { getMToolStatus, isMToolGame, mtoolLaunchSpec, getMToolGameExecutable, type MToolStatus } from './mtool.ts';
 import { previewTranslatorMaintenance, runTranslatorMaintenance, type TranslatorMaintenancePreview } from './translator-maintenance.ts';
 import { inspectGameArchive, importGameArchive, listGameArchives, type GameArchiveInspection } from './game-archives.ts';
+import { createLauncherUpdateController, LAUNCHER_RELEASE_URL } from './launcher-updates.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const { autoUpdater } = electronUpdater;
@@ -73,6 +75,9 @@ if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
 let registry: Registry;
 let mainWindow: BrowserWindow | undefined;
 let pendingMutations = 0;
+let updateRestartReserved = false;
+let sessionEnding = false;
+let launcherUpdates: ReturnType<typeof createLauncherUpdateController>;
 let mutationQueue: Promise<void> = Promise.resolve();
 let stateRevision = 0;
 const gameRevisions = new Map<string, number>();
@@ -93,6 +98,7 @@ function send(channel: string, payload: unknown): void {
 /** Reserving a slot is synchronous, so a fast start reply cannot open a quit
  * gap before the queued file writer begins. */
 function enqueueMutation<T>(work: () => Promise<T> | T): Promise<T> {
+  if (updateRestartReserved) throw new Error('ui.update.error.busy');
   pendingMutations += 1;
   const result = mutationQueue.then(work);
   mutationQueue = result.then(() => undefined, () => undefined);
@@ -270,7 +276,7 @@ function createWindow(): void {
   // updater install—cannot begin until every queued write has settled.
   let closeNoticeOpen = false;
   window.on('close', (event) => {
-    if (pendingMutations === 0) return;
+    if (pendingMutations === 0 && !operations.isActive()) return;
     event.preventDefault();
     if (closeNoticeOpen) return;
     closeNoticeOpen = true;
@@ -288,6 +294,9 @@ function createWindow(): void {
         closeNoticeOpen = false;
       });
   });
+  // Never launch an updater installer during Windows logoff/shutdown.
+  window.on('query-session-end', () => { sessionEnding = true; });
+  window.on('session-end', () => { sessionEnding = true; });
 
   // INDIEDECK_DEBUG=1 pipes renderer console output to the terminal, which is
   // the only way to see a renderer error when devtools are closed.
@@ -787,6 +796,67 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
       && document.querySelectorAll('#gameList .archive-version-label').length === 2;
   })()`, 'imported version selected with library label');
   console.log('[smoke] OS-picked ZIP inspection → two side-by-side labeled game versions → library refresh/selection → original archives and predecessor preserved passed');
+
+  // Installed-update IPC/UI contract with a mocked native updater supplied by
+  // the disposable bootstrap. This does not prove a public N→N+1 installation.
+  const updateCalls = (globalThis as typeof globalThis & {
+    __indiedeckUpdateSmoke?: { checks: number; downloads: number; installs: number };
+  }).__indiedeckUpdateSmoke;
+  if (!updateCalls) throw new Error('Offline update fixture was not installed.');
+  await evaluate(`document.getElementById('openSettings').click()`);
+  await waitFor(`!!document.querySelector('#launcherUpdates .update-check:not(:disabled)')`, 'installed update settings');
+  if (Number(updateCalls.downloads) !== 0) throw new Error('An update downloaded without an explicit request.');
+  await evaluate(`document.querySelector('#launcherUpdates .update-check').click()`);
+  await waitFor(`!!document.querySelector('#launcherUpdates .update-download:not(:disabled)')`, 'available launcher release');
+  await evaluate(`document.querySelector('#launcherUpdates .update-download').click()`);
+  await waitFor(`document.querySelector('#launcherUpdates .update-progress')?.value > 0`, 'launcher download progress');
+  await new Promise<void>((resolve) => {
+    window.webContents.once('did-finish-load', () => resolve()); window.webContents.reload();
+  });
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return document.body.dataset.libraryState === 'ready' && state.updateStatus?.status === 'downloading';
+  })()`, 'launcher main-owned download reload recovery');
+  await evaluate(`document.getElementById('openSettings').click()`);
+  await waitFor(`!!document.querySelector('#launcherUpdates .update-install:not(:disabled)')`, 'verified launcher download');
+  const rejectsBusyRestart = await evaluate<boolean>(`(async () => {
+    const { api, state } = await import('./store.js');
+    const results = await Promise.allSettled([api.config.set(state.config), api.updates.install()]);
+    return results[0].status === 'fulfilled' && results[1].status === 'rejected';
+  })()`);
+  if (!rejectsBusyRestart || Number(updateCalls.installs) !== 0) throw new Error('Launcher restart raced a queued file write.');
+  await evaluate(`document.querySelector('#launcherUpdates .update-install').click()`);
+  await waitFor(`!!document.querySelector('#launcherUpdateConfirm .update-confirm')`, 'launcher restart confirmation');
+  await evaluate(`document.querySelector('#launcherUpdateConfirm .update-confirm').click()`);
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return state.updateStatus?.status === 'error' && state.updateStatus?.downloadedVersion
+      && document.querySelector('#launcherUpdates .update-install:not(:disabled)');
+  })()`, 'native installer failure unlocks and permits retry');
+  const writeAfterFailure = await evaluate<boolean>(`(async () => {
+    const { api, state } = await import('./store.js');
+    await api.config.set(state.config); return true;
+  })()`);
+  if (!writeAfterFailure || Number(updateCalls.installs) !== 1) throw new Error('Failed installer left a permanent restart lock.');
+  await evaluate(`document.getElementById('launcherUpdates').scrollIntoView({ block: 'start' })`);
+  await evaluate(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
+  const updateShot = process.env['INDIEDECK_UPDATES_SCREENSHOT'];
+  if (updateShot) await writeFile(updateShot, (await window.webContents.capturePage()).toPNG());
+  await evaluate(`document.querySelector('#launcherUpdates .update-install').click()`);
+  await evaluate(`document.querySelector('#launcherUpdateConfirm .update-confirm').click()`);
+  await waitFor(`(async () => (await import('./store.js')).state.updateStatus?.status === 'installing')()`, 'explicit retry reserves restart');
+  const reservationBoundary = await evaluate<boolean>(`(async () => {
+    const { api, state } = await import('./store.js');
+    const results = await Promise.allSettled([
+      api.config.set(state.config), api.mtool.clear(), api.library.scan(), api.game.launch(state.selected),
+    ]);
+    return results.every((result) => result.status === 'rejected')
+      && (await api.updates.current()).status === 'installing';
+  })()`);
+  if (!reservationBoundary || Number(updateCalls.downloads) !== 1 || Number(updateCalls.installs) !== 2) {
+    throw new Error('Restart reservation failed to block new mutations or repeated native actions.');
+  }
+  console.log('[smoke] launcher update mock flow: explicit download/progress → renderer reload recovery → busy restart rejected → native failure unlocked → retry/reservation passed; no real updater download/install/restart');
 }
 
 /* ------------------------------------------------------------ updates */
@@ -797,29 +867,31 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
  * replace, so users update those by downloading the next portable executable.
  */
 function configureAutoUpdates(): void {
-  if (
-    !app.isPackaged ||
-    process.env['INDIEDECK_DISABLE_UPDATES'] === '1' ||
-    process.env['PORTABLE_EXECUTABLE_DIR']
-  ) {
-    return;
+  const mode = process.env['PORTABLE_EXECUTABLE_DIR'] !== undefined ? 'portable'
+    : !app.isPackaged ? 'development'
+    : process.env['INDIEDECK_DISABLE_UPDATES'] === '1' || process.platform !== 'win32'
+      || !existsSync(path.join(process.resourcesPath, 'app-update.yml')) ? 'disabled' : 'installed';
+  launcherUpdates = createLauncherUpdateController(autoUpdater, {
+    mode, currentVersion: app.getVersion(),
+    isBusy: () => pendingMutations > 0 || operations.isActive(),
+    isShutdownSafe: () => !sessionEnding,
+    reserveInstall: () => {
+      if (updateRestartReserved || sessionEnding || pendingMutations > 0 || operations.isActive()) return false;
+      updateRestartReserved = true;
+      return true;
+    },
+    releaseInstallReservation: () => { updateRestartReserved = false; },
+    onChange: (snapshot) => send('updates:status', snapshot),
+  });
+  if (mode === 'installed') {
+    const timer = setTimeout(() => {
+      // A manual check/download may already have completed (including a cached
+      // download). Startup must not clear that user's verified install state.
+      if (launcherUpdates.snapshot().status !== 'idle') return;
+      void launcherUpdates.check().catch(() => {});
+    }, 8_000);
+    timer.unref();
   }
-
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
-  autoUpdater.on('error', (err) => console.error(`[updater] ${(err as Error).message}`));
-
-  // Do not interrupt a translator/mod transaction with an updater-driven quit.
-  // The update downloads in the background, shows a system notification, and
-  // installs only after the user later exits the app normally.
-  setTimeout(() => {
-    void autoUpdater
-      .checkForUpdatesAndNotify({
-        title: t('ui.update.readyTitle', undefined, 'IndieDeck update ready'),
-        body: t('ui.update.readyBody', undefined, 'The update will be installed after you close IndieDeck.'),
-      })
-      .catch((err: unknown) => console.error(`[updater] ${(err as Error).message}`));
-  }, 8_000);
 }
 
 /* ------------------------------------------------------------- config */
@@ -1160,6 +1232,9 @@ async function runMaintenance(
 function handle<T>(channel: string, fn: (...args: never[]) => Promise<T> | T): void {
   ipcMain.handle(channel, async (_event, ...args) => {
     try {
+      if (updateRestartReserved && channel !== 'updates:current' && channel !== 'app:info') {
+        throw new Error('ui.update.error.busy');
+      }
       return { ok: true as const, data: await fn(...(args as never[])) };
     } catch (err) {
       return { ok: false as const, error: localiseTaskError(err) };
@@ -1169,7 +1244,7 @@ function handle<T>(channel: string, fn: (...args: never[]) => Promise<T> | T): v
 
 function localiseTaskError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
-  return /^ui\.(maintenance|archives)\.[a-zA-Z0-9.]+$/.test(message) ? t(message) : message;
+  return /^ui\.(maintenance|archives|update)\.[a-zA-Z0-9.]+$/.test(message) ? t(message) : message;
 }
 
 async function archiveRecords() {
@@ -1240,7 +1315,13 @@ function register(): void {
     // Portable builds set this env var; the updater deliberately stays off
     // there, and the settings page says so instead of a silent no-op.
     portable: process.env['PORTABLE_EXECUTABLE_DIR'] !== undefined,
+    updateMode: launcherUpdates.snapshot().mode,
   }));
+  handle('updates:current', () => launcherUpdates.snapshot());
+  handle('updates:check', () => launcherUpdates.check());
+  handle('updates:download', () => launcherUpdates.download());
+  handle('updates:install', () => launcherUpdates.install());
+  handle('updates:openRelease', async () => { await shell.openExternal(LAUNCHER_RELEASE_URL); return true; });
 
   handle('registry:get', () => ({
     engines: registry.engines.map((e) => ({ id: e.id, name: e.displayName ?? e.name })),
@@ -1488,9 +1569,9 @@ void app.whenReady().then(async () => {
     app.quit();
     return;
   }
+  configureAutoUpdates();
   register();
   createWindow();
-  configureAutoUpdates();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -1499,6 +1580,10 @@ void app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('before-quit', (event) => {
+  if (pendingMutations > 0 || operations.isActive()) event.preventDefault();
 });
 
 export type { GameProfile };

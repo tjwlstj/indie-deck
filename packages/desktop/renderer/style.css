@@ -1129,3 +1129,22 @@ select {
 .archive-progress progress { display: block; width: 100%; margin: 12px 0; }
 .list-toolbar { padding: 10px 12px; border-bottom: 1px solid var(--line); }
 .list-toolbar button { width: 100%; }
+
+/* --------------------------------------------------- launcher updates */
+.launcher-update-card {
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+}
+.launcher-update-card.error { border-left-color: var(--warn); }
+.launcher-update-card.downloaded,
+.launcher-update-card.up-to-date { border-left-color: var(--ok); }
+.update-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.update-help,
+.update-warning { font-size: 11.5px; line-height: 1.6; margin: 9px 0; }
+.update-help { color: var(--text-faint); }
+.update-warning { color: var(--warn); }
+.update-version { margin: 5px 0; overflow-wrap: anywhere; }
+.update-progress { display: block; width: 100%; margin: 12px 0; }

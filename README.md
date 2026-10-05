@@ -105,13 +105,22 @@ On Windows 10 or 11 x64, download the current version from
 [GitHub Releases](https://github.com/tjwlstj/indie-deck/releases/latest):
 
 - **`IndieDeck-Setup-…-x64.exe`** — recommended. Installs per user, creates
-  Start Menu and desktop shortcuts, and checks published GitHub Releases for
-  app updates. IndieDeck blocks a normal close while an install or config edit
-  is pending; a downloaded update is applied after a later clean exit.
+  Start Menu and desktop shortcuts, and checks the stable GitHub Releases feed
+  about eight seconds after startup if the update state is still idle. That
+  check does not download anything or overwrite a check/download the user
+  already started.
+  **Settings → Launcher updates** lets you check again, explicitly download with
+  visible progress, then confirm **Restart and install**. IndieDeck refuses that
+  restart while a game-file change is pending or Windows is ending the session;
+  it then opens the assisted NSIS update wizard and is configured to relaunch
+  after the wizard finishes. This is not an unattended or install-on-exit update.
 - **`IndieDeck-Portable-…-x64.exe`** — a single-file launcher that does not
-  install. Portable builds are updated manually by replacing the executable.
+  install. Portable builds are updated manually by replacing the executable;
+  the settings card opens the fixed official latest-release page instead of
+  invoking the native updater. Source-development and updater-disabled preview
+  modes use the same release-page fallback.
 
-The first release is not code-signed, so Windows SmartScreen may show an
+The current Windows releases are not code-signed, so Windows SmartScreen may show an
 "unknown publisher" warning. Verify the download against `SHA256SUMS.txt` on
 the same release before running it. The project does not currently provide
 32-bit or ARM64 Windows builds.
@@ -172,7 +181,16 @@ The offline `npm run desktop:flow` check exercises installation, settings
 navigation, renderer reload, optional and standalone fonts, config/receipt
 refresh, small-window sticky actions and ordered removal in Korean and English
 using disposable game folders and mocked downloads. The font fixture is a real
-7z archive containing synthetic bytes, not a working Unity atlas.
+7z archive containing synthetic bytes, not a working Unity atlas. Launcher
+update controller and renderer tests use a mocked updater to cover explicit
+check/download/restart states, busy and shutdown gates, retry and main-owned
+reload recovery. The Korean and English desktop flows also boot an installed-
+layout updater harness and drive the real main/preload/renderer events through
+download progress, reload, a busy restart rejection, asynchronous failure and
+retry. Its three native updater methods are mocked: those offline checks do not
+contact the public feed or run a real NSIS updater. Packaging checks separately
+verify the real installer, blockmap and feed metadata; a public update driven by
+the new 0.1.3 UI still requires a later `0.1.3 → N+1` release pair.
 
 Maintainers can find the versioning, tag, artifact, signing and updater procedure
 in [docs/releasing.md](docs/releasing.md).

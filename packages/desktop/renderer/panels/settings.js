@@ -13,6 +13,7 @@ import { api, applyLibraryPayload, emit, mutationBlocked, state } from '../store
 import { resetConfigPanel } from './config.js';
 import { renderMToolSettings } from './mtool.js';
 import { renderArchiveSettings } from './archives.js';
+import { renderLauncherUpdates } from './updates.js';
 
 export function setSettingsMutationDisabled() {
   const disabled = mutationBlocked();
@@ -23,6 +24,7 @@ export function setSettingsMutationDisabled() {
   for (const button of document.querySelectorAll('#rootList button')) button.disabled = disabled;
   renderMToolSettings();
   renderArchiveSettings();
+  renderLauncherUpdates();
 }
 
 export function renderRoots() {
@@ -70,12 +72,17 @@ export function renderRoots() {
 export function renderAbout() {
   $('appVersion').textContent = `v${state.appInfo.version}`;
   $('appVersion').hidden = false;
-  const kind = state.appInfo.portable
+  const mode = state.updateStatus?.mode ?? state.appInfo.updateMode ?? (state.appInfo.portable ? 'portable' : 'development');
+  const kind = mode === 'portable'
     ? t('ui.settings.portableBuild', undefined, 'portable build')
-    : t('ui.settings.installedBuild', undefined, 'installed build');
+    : mode === 'development'
+      ? t('ui.settings.developmentBuild', undefined, 'development / unpacked build')
+      : mode === 'disabled'
+        ? t('ui.settings.updateDisabledMode', undefined, 'in-app updates disabled')
+        : t('ui.settings.installedBuild', undefined, 'installed build');
   $('aboutInfo').textContent =
     `IndieDeck v${state.appInfo.version} · ${kind}` +
-    (state.appInfo.portable ? ` · ${t('ui.settings.manualUpdatesOnly', undefined, 'updates are manual')}` : '');
+    (mode !== 'installed' ? ` · ${t('ui.settings.manualUpdatesOnly', undefined, 'updates are manual')}` : '');
 }
 
 export function populateDefaultsForm(endpoints) {

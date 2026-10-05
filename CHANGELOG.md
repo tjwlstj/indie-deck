@@ -5,6 +5,8 @@ Versioning while the project is pre-1.0.
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-05
+
 ### Added
 
 - Per-operation installation/removal progress with real loading bars, explicit
@@ -12,7 +14,42 @@ Versioning while the project is pre-1.0.
 - Renderer reload recovery through main-owned operation snapshots and outcomes.
 - Targeted game refresh after success or failure, atomically saved library
   revisions and one post-state for badges, audit, statistics, detail and config.
-- Offline Korean/English Electron install-and-remove flow checks.
+- Offline Korean/English Electron flows for install/removal and a mocked
+  installed-layout launcher update, including progress, renderer reload, busy
+  restart refusal, asynchronous native failure, retry and the restart mutation
+  gate.
+- Optional Unity TextMeshPro font recommendations by detected Unity line and
+  target language, including opt-in translator-plan fonts and a bounded
+  standalone fallback-font action for an existing compatible XUnity install.
+- A local MTool handoff for RPG Maker MV/MZ and RGSS games, with an explicit
+  bundle connection, single game-executable argument, open-only/manual fallback
+  and targeted refresh. IndieDeck does not install, update or own MTool changes.
+- Previewed cleanup and compatible reinstall for recognised Unity XUnity
+  translator payloads, with retained backups, original-baseline receipt
+  inheritance and process-local rollback. Unknown files, unsafe ownership and
+  ReiPatcher installations remain blocked.
+- Side-by-side classic ZIP game import with source hashes, optional labels and
+  library registration. 7z and RAR are recognised but still require manual
+  extraction.
+- A Settings launcher-update card for installed builds. Startup performs a
+  check-only request after eight seconds only while update state remains idle;
+  checking again, downloading and confirming restart are separate user actions.
+  Progress and downloaded state survive a renderer reload through a main-owned
+  monotonic snapshot.
+
+### Changed
+
+- Launcher downloads and installs are no longer automatic. Native
+  `autoDownload` and `autoInstallOnAppQuit` are disabled. After confirmation,
+  IndieDeck closes and opens the assisted NSIS updater; the wizard is visible
+  and the app is configured to relaunch after it finishes.
+- Portable, source-development and updater-disabled preview modes expose a fixed
+  official latest-release fallback instead of invoking the native updater.
+
+### Security
+
+- Updated Electron to 43.7.7 and `js-yaml` to 4.3.2 to incorporate their
+  upstream security fixes.
 
 ### Fixed
 
@@ -23,13 +60,30 @@ Versioning while the project is pre-1.0.
 - Reusing an already installed loader no longer requests unnecessary user work.
 - Concurrent file changes and game launches are rejected during maintenance;
   one launcher instance owns the mutation queue.
-- Desktop reinstalls that would overwrite an original management baseline are
-  blocked with a reason until the safe update/repair planner is implemented.
+- The ordinary Desktop Install action continues to block reinstalls that would
+  overwrite an original management baseline. Recognised XUnity payloads use the
+  separate scoped cleanup/reinstall preview; other update/repair paths remain
+  blocked rather than being treated as an ordinary install.
 - Desktop removal validates the exact receipt object it will apply, rejects
   legacy/hashless/escaping or linked records and protects the detected executable.
 - Copied font/mod files now retain post-install hashes; canonical receipt IDs
   accept safe Korean names and internal spaces. Copy/hash failures roll back
   instead of leaving an apparently successful, unremovable install.
+- Update installation is refused while game-file mutations are pending or
+  Windows is ending the session. The restart reservation is acquired before
+  native quit, blocks new mutations, and is released after synchronous or
+  asynchronous installer-launch failure so the verified download can be retried.
+
+### Distribution notes
+
+- Offline updater tests cover the controller and renderer state model with a
+  mocked native updater. The Korean/English desktop flows use an installed-layout
+  harness but do not launch native NSIS. Distribution checks cover the real NSIS
+  artifacts, blockmap, `latest.yml` and packaged update configuration. None of
+  those lanes proves a live public-feed installation.
+- A public `0.1.2 → 0.1.3` update exercises the older 0.1.2 client. The new
+  0.1.3 settings/download/restart flow remains unverified against a real public
+  `0.1.3 → N+1` pair until that later stable release exists and is recorded.
 
 ## [0.1.2] - 2026-08-23
 
@@ -126,3 +180,4 @@ Versioning while the project is pre-1.0.
 [0.1.0]: https://github.com/tjwlstj/indie-deck/releases/tag/v0.1.0
 [0.1.1]: https://github.com/tjwlstj/indie-deck/releases/tag/v0.1.1
 [0.1.2]: https://github.com/tjwlstj/indie-deck/releases/tag/v0.1.2
+[0.1.3]: https://github.com/tjwlstj/indie-deck/releases/tag/v0.1.3

@@ -2,10 +2,11 @@
 
 > 문서 상태: **PARTIAL** — 구현과 후속 설계가 함께 있는 가이드
 >
-> 최신 확인: 2026-10-05, v0.1.2(`b37a6d0`) 이후 작업 브랜치
+> 최신 확인: 2026-10-05, v0.1.3 구현 기준
 >
-> §3은 실제 구현 상태이며, 나머지 절의 원자적 maintenance·업데이트·복구
-> 계약은 완료되지 않은 설계도 포함한다. 구현한 범위를 §3.1에 기록한다.
+> §3과 §16–§20은 후속 구현의 실제 상태를 기록한다. 그 밖의 원자적 게임
+> maintenance·업데이트·복구 계약에는 완료되지 않은 설계도 포함한다.
+> 구현한 범위와 검증 경계는 §3.1에 기록한다.
 
 ## 1. 목적
 
@@ -21,6 +22,8 @@
    변형이 중복 설치된 경우에도 런처 안에서 안전한 해결 절차를 제시한다.
 5. 게임 상세 내용을 아래로 스크롤해도 **게임 실행**과 **폴더 열기**가
    계속 보인다.
+6. 설치형 런처의 새 버전을 설정에서 확인하고, 사용자가 다운로드와
+   재시작 설치를 각각 결정하며, 진행 상태는 renderer reload에도 유지된다.
 
 가장 중요한 원칙은 편의성 때문에 기존 안전 경계를 약화하지 않는 것이다.
 인식하지 못한 사용자 파일을 자동으로 삭제하거나, 기존 설치 영수증을
@@ -39,8 +42,10 @@
 
 로딩 바, 설정 페이지, 설치·제거 후 단일 게임 인덱스 갱신과 고정 액션
 바는 구현됐다. §18의 알려진 Unity XUnity payload 정리·재설치와 §19의 ZIP
-게임 버전 가져오기도 구현됐다. 모든 도구·로더를 아우르는 설치 상태 조정,
-범용 업데이트·복구·중복 정리와 프로세스 종료 후 journal 복구는 **PLANNED**다.
+게임 버전 가져오기도 구현됐다. §20의 런처 자체 업데이트 UI와 안전 gate는
+구현됐지만 새 0.1.3 UI를 통한 실제 public N→N+1은 미검증이다. 모든
+도구·로더를 아우르는 게임 번역기 설치 상태 조정, 범용 업데이트·복구·중복
+정리와 프로세스 종료 후 journal 복구는 **PLANNED**다.
 
 ## 3. 현재 기준선
 
@@ -63,6 +68,7 @@
 | RPG Maker 로컬 MTool 연계 | **CURRENT** | MV/MZ·RGSS 상세 카드와 설정의 기존 MTool 연결, 게임 실행 파일 단일 인수 전달·도구만 열기·위치 열기·적용 후 갱신을 제공한다. 복사 설치·자동 번역이 아니며, 실제 자동 선택과 번역 동작은 미검증이다. Wolf RPG는 제외한다. |
 | Unity 번역기 정리·재설치 | **CURRENT** | §18의 알려진 XUnity 파일 한정, 확인 후 백업·정리·호환 재설치. 로더·타 모드·설정·번역문·폰트 보존, stale hash/unsafe metadata 차단, 프로세스 내 오류 복원. |
 | 게임 압축파일·버전 관리 | **PARTIAL** | §19의 classic ZIP 검증·별도 버전 폴더 가져오기와 원본 hash/사용자 라벨 기록은 구현. 7z/RAR는 인식만 하며 ZIP64·암호·분할 압축과 게임 자체의 정확한 버전 추출은 미지원. |
+| 런처 자체 업데이트 | **PARTIAL** | §20의 설치형 check-only 시작 확인, 명시적 다운로드·확인 후 assisted NSIS 재시작, busy/shutdown gate, 실패 재시도와 main sequence reload 복구는 구현·mock 검증됐다. 실제 packaged metadata는 검증됐지만 새 0.1.3 UI의 public `0.1.3 → N+1` 설치는 아직 미검증이다. |
 
 ### 3.1 이번 구현 범위와 검증 근거
 
@@ -98,6 +104,11 @@
   `maintenance:current/outcome/acknowledge`다. §5의 actionId 기반 원자적
   maintenance 계획은 후속 계약이며, 현재 설치·제거·제한된 XUnity 정리/재설치에
   이 수명 모델을 적용한다.
+- 런처 자체 업데이트는 게임 maintenance와 별도인 main 소유 상태 기계다.
+  `launcher-updates.test.ts`의 21개 controller 테스트와
+  `launcher-update-renderer.test.ts`가 명시적 check/download/install,
+  stable 버전 admission, 진행률, reload sequence, busy/shutdown gate와 설치
+  실패 뒤 재시도를 mock updater로 검증한다. 실제 public feed 설치 증거는 아니다.
 
 ### 3.2 일반 Install을 업데이트로 사용하면 안 되는 이유
 
@@ -1091,13 +1102,12 @@ P1.5의 미완 항목)로 관리한다. 번역기·변형별 fixture는 최소 �
 - README, architecture, roadmap의 CURRENT/PLANNED 설명을 실제 구현 상태에
   맞춰 함께 갱신한다.
 
-## 15. 이번 문서 작업의 범위
+## 15. 최초 가이드 작업의 범위
 
-이번 변경은 위 계약을 기록하는 것까지만 한다. 로딩 바를 표시하거나,
-기존 설치를 정리하거나, 상단 바를 바꾸거나, 실행 버튼을 고정하지 않는다.
-또한 버전·태그·패키지와 GitHub Release를 만들지 않는다. 실제 구현이
-시작될 때 이 문서의 **PLANNED** 항목을 작업 단위로 나누고, 검증된 항목만
-**CURRENT**로 바꾼다.
+이 문서의 최초 변경은 계약을 기록하는 가이드 작업만이었다. 이후 실제
+구현된 범위는 §3과 §16–§20에 별도로 추가했으며, 검증된 항목만
+**CURRENT**로 승격했다. 아직 남은 범용 maintenance와 durable recovery의
+**PLANNED** 표기는 릴리스 번호나 UI 존재만으로 승격하지 않는다.
 
 ## 16. 후속 구현: 추천 TMP 폰트
 
@@ -1254,3 +1264,86 @@ Unity 엔진 버전 또는 게임 패치 호환성을 증명하지 않는다. �
 구분하는 이름이다. 세이브·모드·번역 설정을 다른 버전으로 자동 이식하지 않는다.
 가져오기 수명은 main의 별도 상태 snapshot과 단조 progress sequence로
 renderer reload를 복구하며, 프로세스/OS crash 후 자동 stage 복구는 미구현이다.
+
+## 20. 후속 구현: 런처 자체 업데이트
+
+이 절의 로컬 구현 상태는 **CURRENT**, 새 0.1.3 UI를 통한 실제 public
+`0.1.3 → N+1` 설치 증거는 **PARTIAL**이다. 게임 번역기 업데이트와 런처
+실행 파일 업데이트는 서로 다른 상태 기계와 안전 경계를 사용한다.
+
+### 20.1 설치형 사용자 흐름
+
+지원되는 Windows NSIS 설치형은 시작 약 8초 뒤 update snapshot이 아직
+idle일 때만 stable GitHub Releases를 **확인만** 한다. 사용자가 먼저 시작한
+확인·다운로드 상태를 timer가 덮어쓰지 않는다. `autoDownload`와
+`autoInstallOnAppQuit`은 꺼져 있으므로 새 버전 발견만으로 다운로드하거나
+앱 종료 때 설치하지 않는다.
+
+설정의 **런처 업데이트**에서 다음 동작을 각각 사용자가 선택한다.
+
+1. **업데이트 확인**으로 최신 상태를 다시 조회한다.
+2. 더 높은 stable 버전이 확인된 경우 **다운로드**를 눌러 바이트와 퍼센트
+   진행을 본다.
+3. 완전한 동일 버전의 download acknowledgement를 받은 뒤
+   **재시작 후 설치**를 누르고 현재→대상 버전을 다시 확인한다.
+4. IndieDeck이 닫히고 assisted NSIS 마법사가 표시된다. 사용자가 마법사를
+   완료하면 updater 설정에 따라 IndieDeck이 다시 실행된다.
+
+4단계는 무인 자동 설치가 아니다. `quitAndInstall(false, true)`의 non-silent
+선택으로 설치 마법사를 표시하며, `autoRunAppAfterInstall = true`는 마법사
+완료 뒤 앱 재실행을 요청한다. 사용자가 마법사를 취소하거나 완료하지 않은
+경우까지 설치 성공으로 주장하지 않는다.
+
+### 20.2 안전 gate와 실패 복구
+
+업데이트 확인과 다운로드는 게임 파일을 바꾸지 않으므로 게임 작업과 겹칠
+수 있지만, 재시작 설치는 다음 조건을 모두 만족해야 한다.
+
+- queued/active 게임 파일 mutation과 maintenance operation이 없다.
+- Windows logoff/shutdown session이 시작되지 않았다.
+- main이 재시작 예약을 동기적으로 획득했고, 예약 뒤 새 mutation을 거부한다.
+- 다운로드한 버전이 확인한 stable 목표 버전과 정확히 같고 현재 버전보다 높다.
+
+`quitAndInstall()`은 일반 창 종료보다 먼저 창을 닫을 수 있으므로 renderer의
+버튼 비활성화나 BrowserWindow close handler만 안전 근거로 삼지 않는다.
+main이 예약 전후 조건을 다시 확인한다. 네이티브 설치 실행이 동기 또는
+비동기로 실패하면 예약을 해제하고 검증된 다운로드를 유지해 사용자가 다시
+시도할 수 있게 한다. raw 오류, 캐시 경로와 provider 내부 객체는 renderer에
+보내지 않고 제한된 오류 분류만 전달한다.
+
+### 20.3 reload, 모드와 신뢰 경계
+
+main의 snapshot은 단조 `seq`를 갖는다. renderer는 status 이벤트를 먼저
+구독한 뒤 current snapshot을 요청하고, 이미 적용한 sequence보다 오래된
+응답을 무시한다. 따라서 같은 app process 안에서 renderer를 reload해도
+확인·다운로드 진행·다운로드 완료·재시도 상태를 회복한다. app/OS 재시작을
+넘는 상태 영속성을 약속하는 것은 아니다.
+
+renderer는 고정된 current/check/download/install/open-release IPC만 호출하며
+feed URL, 릴리스 URL, 실행 파일 경로나 native 옵션을 지정하지 않는다.
+`PORTABLE_EXECUTABLE_DIR`이 있으면 portable, `app.isPackaged === false`인 소스
+실행은 development, 정책 비활성·비 Windows package·packaged
+`app-update.yml` 누락은 disabled, 나머지 지원 Windows package는 installed다.
+따라서 electron-builder의 `win-unpacked`는 packaged layout이며 이름만 보고
+development로 분류하지 않는다. portable/development/disabled는 native updater를
+호출하지 않고 고정된 공식 latest-release 페이지를 연다. Portable 사용자는
+새 단일 EXE를 받아 기존 실행 파일을 수동으로 교체한다.
+
+### 20.4 검증 경계
+
+- `launcher-updates.test.ts`의 21개 테스트는 controller의 명시적 동작,
+  single-flight, 버전 검증, 진행률, late event, busy/shutdown gate, 재시작
+  예약과 동기·비동기 설치 실패 후 재시도를 mock updater로 검증한다.
+- `launcher-update-renderer.test.ts`는 main sequence 적용, 이전 current 응답
+  무시, 확인 dialog version binding과 mutation 중 설치 차단을 검증한다.
+- 한국어·영어 `desktop:flow`는 installed-layout harness에서 check/download/
+  install 세 native 메서드만 mock하고 실제 Electron main/preload/renderer
+  이벤트를 사용한다. 명시적 다운로드·진행률·renderer reload 복구, config
+  write 동시 busy 거부, 비동기 native 오류 뒤 write 재허용, 설치 재시도와
+  예약 이후 모든 mutation IPC 거부를 검증했다. 실제 NSIS는 실행하지 않는다.
+- package/release 검사는 실제 NSIS installer, blockmap, `latest.yml`, packaged
+  provider 설정과 파일명을 검증한다. release smoke는 업데이트를 꺼 둔 채
+  실행하므로 public GitHub 다운로드·설치 검증은 아니다.
+- 공개 `0.1.2 → 0.1.3`은 0.1.2의 기존 updater 코드를 실행한다. 새 설정 UI와
+  명시적 다운로드·재시작 경로는 이후 실제 `0.1.3 → N+1` stable pair를
+  수행하고 버전·자산·데이터 보존 결과를 기록하기 전까지 **PARTIAL**이다.

@@ -42,10 +42,19 @@ remains deliberately small while the application is pre-1.0.
       `electron-builder`
 - [x] Release CI: tag → version check → build → test → audit → package →
       packaged-app smoke test → checksum → GitHub Release
-- [x] Installed-app update checks through GitHub Releases. The updater never
-      forces a restart, and a normal close is blocked while writes are queued;
-      portable builds remain manual. The updater packaging path is verified,
-      while a real `N → N+1` upgrade pair remains to be verified and recorded.
+- [x] Installed-app self-update UI through the stable GitHub Releases channel.
+      Startup checks only after eight seconds while state is still idle; check,
+      download and confirmed restart/install remain separate user actions, and
+      automatic download and install-on-exit are disabled. Main-owned sequence
+      snapshots recover a renderer reload. Pending game-file writes and Windows
+      shutdown block the assisted NSIS restart, while installer-launch failure
+      releases the gate for retry. Portable, source-development and
+      updater-disabled preview modes open the fixed latest-release page for
+      manual replacement.
+- [ ] Exercise and record the new UI against a real public `0.1.3 → N+1` pair.
+      Mocked controller/renderer coverage and real packaged installer/feed
+      metadata are verified, but a public `0.1.2 → 0.1.3` update uses the older
+      0.1.2 client and does not prove the new flow.
 - [ ] In-app registry update check (the data ages faster than the code)
 
 ## P1 — Config Manager  ✅ done

@@ -152,6 +152,7 @@ try {
       INDIEDECK_MTOOL_SCREENSHOT: path.resolve('out', `desktop-mtool-${locale}.png`),
       INDIEDECK_MAINTENANCE_SCREENSHOT: path.resolve('out', `desktop-maintenance-${locale}.png`),
       INDIEDECK_ARCHIVES_SCREENSHOT: path.resolve('out', `desktop-archives-${locale}.png`),
+      INDIEDECK_UPDATES_SCREENSHOT: path.resolve('out', `desktop-updates-${locale}.png`),
       INDIEDECK_DISABLE_UPDATES: '1',
       INDIEDECK_REGISTRY: path.resolve('registry') },
   });
@@ -168,6 +169,7 @@ try {
   const requiredSmokeMarkers = [
     '[smoke] rendered 3 game rows', '[smoke] exact-file confirmation',
     '[smoke] font opt-out', '[smoke] RPG Maker', '[smoke] OS-picked ZIP inspection',
+    '[smoke] launcher update mock flow',
   ];
   if (requiredSmokeMarkers.some((marker) => !smokeOutput.includes(marker))) {
     throw new Error('Desktop exited without completing every required smoke flow.');

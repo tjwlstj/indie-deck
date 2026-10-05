@@ -14,6 +14,7 @@ import { operationCard } from './panels/detail.js';
 import { refreshMToolStatus } from './panels/mtool.js';
 import { archiveProgressLabel, bindArchiveEvents, recoverArchiveProgress, refreshArchiveRecords } from './panels/archives.js';
 import { isArchiveActive } from './archive-model.js';
+import { bindLauncherUpdateEvents, refreshLauncherUpdateStatus, renderLauncherUpdates } from './panels/updates.js';
 import {
   populateDefaultsForm,
   populateLocaleSelect,
@@ -156,6 +157,13 @@ function renderOperationChrome() {
 }
 
 function render(scope = 'all') {
+  if (scope === 'updates') {
+    // Network check/download progress is independent of game file mutations.
+    // Do not rebuild focused game/config/archive forms for each byte event.
+    renderLauncherUpdates();
+    if (state.appInfo.version) renderAbout();
+    return;
+  }
   renderOperationChrome();
   if (!bootReady) return;
   if (state.view === 'settings') return;
@@ -462,6 +470,7 @@ function openSettings() {
   renderOperationChrome();
   void refreshMToolStatus().catch((err) => setStatus(err.message, 'err'));
   void refreshArchiveRecords().catch((err) => setStatus(err.message, 'err'));
+  void refreshLauncherUpdateStatus();
 }
 
 function closeSettings() {
@@ -515,6 +524,8 @@ async function boot() {
   // the gap between renderer creation and reload recovery.
   bindMaintenanceEvents();
   bindArchiveEvents();
+  bindLauncherUpdateEvents();
+  const updateRecovery = refreshLauncherUpdateStatus();
   const recovery = recoverMaintenance().catch((err) => setStatus(err.message, 'err'));
   // current() does not wait for main's mutation queue, so a reload during an
   // import can display its progress while the library read is still waiting.
@@ -564,7 +575,7 @@ async function boot() {
   window.addEventListener('indiedeck:open-settings', (event) => {
     openSettings();
     const section = event.detail?.section;
-    if (['mtoolSettings', 'archiveSettings'].includes(section)) $(section)?.scrollIntoView({ block: 'nearest' });
+    if (['mtoolSettings', 'archiveSettings', 'launcherUpdates'].includes(section)) $(section)?.scrollIntoView({ block: 'nearest' });
   });
   $('importArchive').addEventListener('click', () => {
     openSettings();
@@ -599,6 +610,7 @@ async function boot() {
 
   await recovery;
   await archiveRecovery;
+  await updateRecovery;
   bootReady = true;
   await refreshLibraryView(false);
   // Records need the loaded library's opaque game ids. A normal restart also

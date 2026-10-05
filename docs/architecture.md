@@ -263,6 +263,58 @@ Library revisions are persisted by an atomic same-directory replacement.
 Selection tokens and per-game snapshot revisions stop late detail/config
 responses from overwriting a newer selection or post-mutation state.
 
+## Launcher self-update
+
+`launcher-updates.ts` wraps `electron-updater` behind a main-owned state
+machine. A supported installed Windows build checks the stable GitHub Releases
+feed about eight seconds after startup only if its snapshot remains idle, so the
+timer cannot replace a manual action already in progress. It does not download
+or install as a side effect: `autoDownload` and `autoInstallOnAppQuit` are false,
+and Settings exposes separate check, download and confirmed restart/install
+actions. Prereleases and downgrades are rejected.
+
+The renderer receives bounded snapshots over fixed IPC calls and cannot provide
+a feed URL, release URL, executable path or native updater options. Each snapshot
+has a monotonic `seq`; the renderer subscribes to `updates:status` before asking
+for `updates:current`, so a reload in the same main-process lifetime cannot
+replace a newer progress/downloaded state with an older response. Raw provider
+errors and download paths are not exposed. Mode admission is main-owned:
+`PORTABLE_EXECUTABLE_DIR` selects portable, `app.isPackaged === false` selects a
+source-development run, and policy disablement, non-Windows packages or a
+missing packaged `app-update.yml` select disabled. Remaining supported Windows
+packages are installed mode. Thus electron-builder's `win-unpacked` output is a
+packaged layout and is not classified as development merely because its files
+are unpacked. Portable, development and disabled modes never invoke native
+update operations and instead expose the fixed official latest-release page for
+manual replacement.
+
+Check and download do not mutate game files, but restart/install has a stricter
+gate. Main first confirms that the mutation queue and `OperationManager` are
+idle and that Windows is not ending the session, then synchronously reserves
+`updateRestartReserved`. Every later mutation admission rejects while reserved;
+main checks the safety conditions again before native quit. Native installer
+launch errors release the reservation and keep the verified download retryable.
+This direct gate is required because `quitAndInstall()` closes windows before
+Electron's normal quit notification, so the BrowserWindow close handler is not
+the installation authority.
+
+The installed path uses `autoRunAppAfterInstall = true` and
+`quitAndInstall(false, true)`. The first argument deliberately keeps the assisted
+NSIS wizard visible; after the user completes it, the updater is configured to
+run IndieDeck again. This is not a silent or unattended install.
+
+Controller and renderer-model tests use a mocked updater to verify explicit
+actions, version admission, progress, reload sequencing, busy/shutdown gates and
+failure retry. Korean and English desktop flows also run the real
+main/preload/renderer event path in an installed-layout harness, but its native
+updater methods are mocked and it never starts NSIS. Packaging checks separately
+inspect the real NSIS artifact, blockmap, `latest.yml` and packaged provider
+configuration. Release smoke disables network updates, and a public update
+driven by the new 0.1.3 UI remains unverified until a real `0.1.3 → N+1` pair is
+exercised.
+
+## Unity translator maintenance
+
 Existing managed translator installs cannot be reapplied through the desktop
 Install action: overwriting their fixed-name receipts would lose the original
 baseline. Duplicate/drifted payloads are also blocked with a visible reason.

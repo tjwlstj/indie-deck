@@ -25,6 +25,15 @@ contextBridge.exposeInMainWorld('indiedeck', {
     info: () => call('app:info'),
   },
 
+  updates: {
+    current: () => call('updates:current'),
+    check: () => call('updates:check'),
+    download: () => call('updates:download'),
+    install: () => call('updates:install'),
+    openRelease: () => call('updates:openRelease'),
+    onStatus: (fn) => subscribe('updates:status', fn),
+  },
+
   registry: () => call('registry:get'),
 
   i18n: {
