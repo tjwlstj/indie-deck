@@ -6,7 +6,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
-import { downloadAsset } from '../src/install/download.ts';
+import { downloadAsset, type DownloadProgressEvent } from '../src/install/download.ts';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'indiedeck-dl-'));
 const cacheDir = path.join(tmp, 'cache');
@@ -119,4 +119,45 @@ test('progress is reported while streaming', async () => {
   assert.ok(seen.length > 0, 'onProgress fired');
   assert.equal(seen.at(-1), PAYLOAD.length, 'the last report is the full size');
   assert.deepEqual([...seen].sort((a, b) => a - b), seen, 'progress is monotonic');
+});
+
+test('structured lifecycle distinguishes transfer, verification, and cache reuse', async () => {
+  const networkEvents: DownloadProgressEvent[] = [];
+  const source = { type: 'url' as const, url: `${base}/ok`, sha256: PAYLOAD_SHA };
+  await downloadAsset(source, {
+    cacheDir,
+    force: true,
+    onDownloadEvent: (event) => networkEvents.push(event),
+  });
+
+  assert.equal(networkEvents[0]?.phase, 'download');
+  assert.equal(networkEvents[0]?.status, 'started');
+  const byteEvents = networkEvents.filter((event) => event.phase === 'download' && event.status === 'progress');
+  assert.ok(byteEvents.length > 0, 'network bytes are structured events');
+  assert.equal(byteEvents.at(-1)?.received, PAYLOAD.length);
+  assert.ok(
+    networkEvents.some(
+      (event) => event.phase === 'verify' && event.status === 'completed' && event.integrity === 'verified',
+    ),
+    'network payload verification completes explicitly',
+  );
+
+  const cachedEvents: typeof networkEvents = [];
+  await downloadAsset(source, { cacheDir, onDownloadEvent: (event) => cachedEvents.push(event) });
+  assert.ok(
+    cachedEvents.some(
+      (event) => event.phase === 'download' && event.status === 'completed' && event.fromCache === true,
+    ),
+    'a cache hit emits a download completion instead of disappearing',
+  );
+  assert.ok(
+    cachedEvents.some(
+      (event) =>
+        event.phase === 'verify' &&
+        event.status === 'completed' &&
+        event.fromCache === true &&
+        event.integrity === 'verified',
+    ),
+    'the cached file is visibly verified',
+  );
 });

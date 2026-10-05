@@ -72,17 +72,22 @@ distinction it enforces is the one that makes uninstall safe:
 | --- | --- | --- |
 | `create` | the file did not exist | delete it |
 | `modify` | it did, and was displaced | restore the backup |
-| `snapshot` | copied before an external patcher ran | restore the backup |
+| `snapshot` | copied before an external patcher ran | preserve when changed without a post-write hash; explicit force may restore |
 
 Deleting a file we merely overwrote destroys data that was never ours - a game's
 own `plugins.js`, or a file another mod owns. The transaction resolves an
 archive's file list *before* extracting so anything it is about to land on is
 backed up first, and `rollback()` walks the journal backwards if any step
-throws, leaving the folder byte-for-byte as it was.
+throws. Its result distinguishes complete restoration from partial restoration;
+external tools and failed I/O can leave changes that need manual review.
 
-Uninstall also refuses to delete a file whose hash no longer matches what
-IndieDeck wrote: if the user hand-edited it afterwards, it is reported as
-`keptModified` and left alone.
+Uninstall preserves both created and modified files whose recorded post-install
+hash no longer matches. A snapshot without that hash is preserved when its
+current contents differ from its baseline backup. Unresolved entries remain in
+the receipt, so a later retry still has the original recovery evidence.
+Rollback reports I/O failures instead of treating every attempted restore as
+complete. The file transaction is process-local; durable crash recovery and
+atomic file-plus-receipt activation remain planned.
 
 `applyPlan` walks the steps inside that transaction:
 
@@ -110,8 +115,14 @@ IndieDeck wrote: if the user hand-edited it afterwards, it is reported as
 Each install writes a **receipt** to `<game>/.indiedeck/receipts/` holding the
 typed entry list above. `uninstallReceipt` reverses it newest-first and prunes
 the directories it emptied. Receipts written by 0.1.0 (a flat `files[]` plus a
-separate `backups[]`) are migrated on read, so installs made by the first
-release stay removable.
+separate `backups[]`) are migrated on read by the core/CLI. Desktop automatic
+removal has a stricter boundary: it requires canonical v2 records with explicit
+operations and post-install hashes for created/modified files. It reads and
+validates each record once, rejects linked receipt/target/backup paths and
+out-of-scope backups, and protects the detected executable and its containing
+directories. Legacy records need manual review before desktop removal. This
+does not guarantee atomic exclusion against an external process replacing a
+target after validation.
 
 ## audit
 
@@ -157,9 +168,12 @@ game.detail(gameId)     ->   resolve id -> path (own table)
                              resolve plans, cache them main-side
                         <-   profile + plans, each with an id
 
-game.install(gameId,         look up ITS OWN cached plan
-             planId)    ->   verify the plan targets that game
-                             applyPlan(plan)
+maintenance.start(          look up ITS OWN cached plan
+  {gameId, planId,      ->   re-detect and compare a fresh resolved plan
+   kind, requestId})        reserve one operation and return operationId
+                             queued file writer -> structured progress
+                             targeted re-detect -> persist library revision
+                        <-   terminal outcome + library/detail/config postState
 
 game.launch(gameId)     ->   re-detect, use the detected executable
 ```
@@ -169,6 +183,21 @@ process already knows about" - not "extract this archive into C:\Windows" or
 "spawn this binary". Config writes are field-filtered, scan roots can only be
 added through the OS folder picker opened by the main process, and
 `shell.openExternal` accepts `https:` only.
+
+The renderer subscribes once to operation progress/outcomes, then requests the
+active snapshot on boot. Main retains outcomes until ACK; ten unacknowledged
+results block further starts instead of discarding recovery evidence. This
+recovers renderer reloads within the same process, not an interrupted OS/app.
+Library revisions are persisted by an atomic same-directory replacement.
+Selection tokens and per-game snapshot revisions stop late detail/config
+responses from overwriting a newer selection or post-mutation state.
+
+Existing managed translator installs cannot be reapplied through the desktop
+Install action: overwriting their fixed-name receipts would lose the original
+baseline. Duplicate/drifted payloads are also blocked with a visible reason.
+The upcoming maintenance planner must add safe update, repair and consolidation
+before those actions can be offered. The general core/CLI installer has not been
+promoted to that maintenance contract.
 
 ## i18n
 

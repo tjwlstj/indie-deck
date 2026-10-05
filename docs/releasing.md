@@ -32,6 +32,11 @@ executable, blockmap and `latest.yml` under the ignored `release/` directory.
 Local output is evidence only; the public assets always come from the clean
 GitHub Actions checkout.
 
+For an unpacked development preview, use `npm run pack:win` and inspect its
+runtime with `node scripts/check-package.mjs release/win-unpacked/resources/app.asar --runtime-only`.
+This opt-in check verifies runtime entries and the version only; it is not a
+substitute for the full distribution/updater gate above.
+
 ## 2. Tag the verified commit
 
 Push the release commit to `main` and wait for the entire `CI` workflow to pass.

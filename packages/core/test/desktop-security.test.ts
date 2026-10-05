@@ -62,12 +62,31 @@ test('normal quit cannot interrupt a queued filesystem mutation', () => {
     'root:remove',
     'root:pick',
     'library:scan',
-    'game:install',
-    'game:uninstall',
+    'game:refresh',
     'mods:toggle',
     'mods:add',
     'config:write',
   ]) {
     assert.match(main, new RegExp(`handleMutation\\('${channel.replace(':', '\\:')}'`));
   }
+  assert.match(main, /enqueue: \(work\) => \{ void enqueueMutation\(work\); \}/);
+  assert.match(main, /function enqueueMutation[\s\S]*pendingMutations \+= 1/);
+  assert.match(main, /operations\.start\(request,/);
+});
+
+test('maintenance keeps opaque targets, rejects concurrent writes and revalidates plans before applying', () => {
+  assert.match(preload, /start: \(request\) => call\('maintenance:start', request\)/);
+  assert.doesNotMatch(preload, /game:install|game:uninstall|install:bytes|install:progress/);
+  assert.match(main, /requirePlan\(request\.gameId, request\.planId\)/);
+  assert.match(main, /planFingerprint\(candidate\) === planFingerprint\(plan\)/);
+  assert.match(main, /if \(operations\.isActive\(\)\) throw/);
+  assert.match(main, /if \(pendingMutations > 0\) throw/);
+  assert.match(main, /app\.requestSingleInstanceLock\(\)/);
+  assert.match(main, /r\.storageId !== `\$\{r\.kind\}-\$\{r\.componentId\}\.json`/);
+  const removalStart = main.indexOf('const receipts = await readSafeRemovalReceipts(');
+  const removalEnd = main.indexOf('} catch (err)', removalStart);
+  assert.ok(removalStart >= 0 && removalEnd > removalStart, 'desktop removal uses the strict one-read receipt guard');
+  assert.match(main.slice(removalStart, removalEnd), /profile\.executable \? \[profile\.executable\] : \[\]/);
+  assert.doesNotMatch(main.slice(removalStart, removalEnd), /readReceipts\(|readReceiptEvidence\(/);
+  assert.match(main.slice(removalStart, removalEnd), /uninstallReceipt\(receipts\[index\]!/);
 });

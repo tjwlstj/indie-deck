@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
@@ -7,7 +8,7 @@ import { after, test } from 'node:test';
 import zlib from 'node:zlib';
 import { detectGame } from '../src/detect/index.ts';
 import { readReceipts, uninstallReceipt, writeReceipt } from '../src/install/apply.ts';
-import { withTransaction } from '../src/install/transaction.ts';
+import { FileTransaction, withTransaction } from '../src/install/transaction.ts';
 import { installModFromFile } from '../src/mods/index.ts';
 import { loadRegistry } from '../src/registry/index.ts';
 
@@ -218,6 +219,21 @@ test('rollback undoes creates and restores overwrites when a step throws', async
   assert.equal(fs.existsSync(path.join(root, 'brand-new.txt')), false, 'the created file is gone');
 });
 
+test('rollback reports a missing backup instead of claiming complete restoration', async () => {
+  const root = makeGame('tx-rollback-report', { 'keep.txt': 'original content' });
+  const tx = new FileTransaction({ root, backupDir: '.indiedeck/backups' });
+  const entry = await tx.write('keep.txt', 'changed');
+  assert.ok(entry.backup);
+  await fsp.rm(path.join(root, entry.backup));
+
+  const report = await tx.rollback();
+  assert.equal(report.status, 'partial');
+  assert.equal(report.attempted, 1);
+  assert.equal(report.completed, 0);
+  assert.deepEqual(report.failures.map((failure) => failure.path), ['keep.txt']);
+  assert.equal(await fsp.readFile(path.join(root, 'keep.txt'), 'utf8'), 'changed');
+});
+
 test('the journal marks a displaced file as modify and keeps its backup', async () => {
   const root = makeGame('tx-journal', { 'existing.cfg': 'v1' });
   const { entries } = await withTransaction({ root, backupDir: '.indiedeck/backups' }, async (tx) => {
@@ -233,6 +249,43 @@ test('the journal marks a displaced file as modify and keeps its backup', async 
   assert.equal(await fsp.readFile(path.join(root, displaced.backup!), 'utf8'), 'v1');
   assert.equal(created.operation, 'create');
   assert.equal(created.backup, undefined);
+});
+
+test('copyIn records the exact copied-file hash and refuses directory copies before mutation', async () => {
+  const root = makeGame('tx-copy-file-evidence', {});
+  const source = path.join(tmp, 'tx-copy-file-source.bin');
+  const payload = Buffer.from('font or loose-mod payload');
+  await fsp.writeFile(source, payload);
+
+  const tx = new FileTransaction({ root, backupDir: '.indiedeck/backups' });
+  const entry = await tx.copyIn(source, 'fonts/payload.bin');
+  assert.equal(entry.operation, 'create');
+  assert.equal(entry.sha256, crypto.createHash('sha256').update(payload).digest('hex'));
+  assert.deepEqual(await fsp.readFile(path.join(root, entry.path)), payload);
+
+  const sourceDir = path.join(tmp, 'tx-copy-directory-source');
+  await fsp.mkdir(sourceDir, { recursive: true });
+  await fsp.writeFile(path.join(sourceDir, 'nested.bin'), 'nested');
+  await assert.rejects(
+    () => tx.copyIn(sourceDir, 'unsupported-directory'),
+    /only supports regular files; directory copies require per-file receipt entries/,
+  );
+  assert.equal(fs.existsSync(path.join(root, 'unsupported-directory')), false);
+  assert.equal(tx.entries.some((item) => item.path === 'unsupported-directory'), false);
+});
+
+test('an unsafe mod receipt name is rejected before any mod file is written', async () => {
+  const root = rpgGame('rpg-unsafe-receipt-name');
+  const source = path.join(tmp, 'unsafe-name-plugin.js');
+  await fsp.writeFile(source, '// plugin');
+  const profile = detectGame(reg, root)!;
+
+  await assert.rejects(
+    () => installModFromFile(reg, profile, source, { name: '../escape' }),
+    /safe receipt filename/,
+  );
+  assert.equal(fs.existsSync(path.join(root, 'js/plugins/unsafe-name-plugin.js')), false);
+  assert.equal(fs.existsSync(path.join(root, '.indiedeck')), false);
 });
 
 test('uninstall leaves a file alone once the user has edited it', async () => {
@@ -251,6 +304,40 @@ test('uninstall leaves a file alone once the user has edited it', async () => {
   assert.equal(await fsp.readFile(path.join(root, 'mod.dll'), 'utf8'), 'user changed this afterwards');
   assert.deepEqual(result.removed, ['untouched.dll']);
   assert.equal(fs.existsSync(path.join(root, 'untouched.dll')), false);
+  assert.equal(result.receiptRetained, true, 'unresolved evidence stays available for retry');
+  const retained = (await readReceipts(root)).find((item) => item.componentId === 'Edited');
+  assert.deepEqual(retained?.entries.map((entry) => entry.path), ['mod.dll'], 'completed entries are pruned from the retained receipt');
+});
+
+test('uninstall does not restore over a hand-edited modified file', async () => {
+  const root = makeGame('tx-handedit-modify', { 'shared.dll': 'game original' });
+  const { entries } = await withTransaction({ root, backupDir: '.indiedeck/backups' }, async (tx) => {
+    await tx.write('shared.dll', 'translator version');
+    return undefined;
+  });
+  const receipt = await writeReceipt(root, { kind: 'translator', componentId: 'Shared', version: '1.0', entries });
+  await fsp.writeFile(path.join(root, 'shared.dll'), 'user changed translator version');
+
+  const result = await uninstallReceipt(receipt);
+  assert.deepEqual(result.keptModified, ['shared.dll']);
+  assert.equal(result.receiptRetained, true);
+  assert.equal(await fsp.readFile(path.join(root, 'shared.dll'), 'utf8'), 'user changed translator version');
+  assert.equal((await readReceipts(root)).some((item) => item.componentId === 'Shared'), true);
+});
+
+test('uninstall conservatively retains a changed snapshot without a post-write hash', async () => {
+  const root = makeGame('tx-handedit-snapshot', { 'Managed/Game.dll': 'baseline' });
+  const { entries } = await withTransaction({ root, backupDir: '.indiedeck/backups' }, async (tx) => {
+    await tx.snapshot('Managed');
+    return undefined;
+  });
+  const receipt = await writeReceipt(root, { kind: 'translator', componentId: 'Snapshot', version: '1.0', entries });
+  await fsp.writeFile(path.join(root, 'Managed/Game.dll'), 'changed after snapshot');
+
+  const result = await uninstallReceipt(receipt);
+  assert.deepEqual(result.keptModified, ['Managed']);
+  assert.equal(result.receiptRetained, true);
+  assert.equal(await fsp.readFile(path.join(root, 'Managed/Game.dll'), 'utf8'), 'changed after snapshot');
 });
 
 test('a schemaVersion 1 receipt still uninstalls, and its backups still restore', async () => {

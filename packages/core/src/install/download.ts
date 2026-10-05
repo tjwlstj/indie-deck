@@ -25,8 +25,22 @@ export interface DownloadOptions {
   logger?: Logger;
   /** Skip the cache and re-fetch. */
   force?: boolean;
+  /** Legacy byte callback retained for CLI and desktop compatibility. */
   onProgress?: (received: number, total: number | undefined) => void;
+  /** Structured download lifecycle used by applyPlan's progress contract. */
+  onDownloadEvent?: (event: DownloadProgressEvent) => void;
   signal?: AbortSignal;
+}
+
+export interface DownloadProgressEvent {
+  phase: 'download' | 'verify';
+  status: 'started' | 'progress' | 'completed' | 'failed';
+  assetId: string;
+  received?: number;
+  total?: number;
+  fromCache?: boolean;
+  integrity?: DownloadResult['integrity'];
+  error?: string;
 }
 
 export interface DownloadResult {
@@ -53,6 +67,27 @@ interface GithubAsset {
 interface GithubRelease {
   tag_name: string;
   assets: GithubAsset[];
+}
+
+function sourceAssetId(source: AssetSource): string {
+  if (source.asset) return source.asset;
+  if (source.assetPattern) return source.assetPattern;
+  if (source.url) {
+    try {
+      return decodeURIComponent(new URL(source.url).pathname.split('/').pop() ?? 'download');
+    } catch {
+      return source.url.split('/').pop() ?? 'download';
+    }
+  }
+  return `${source.repo ?? 'asset'}@${source.tag ?? 'latest'}`;
+}
+
+function emitDownload(options: DownloadOptions, event: DownloadProgressEvent): void {
+  try {
+    options.onDownloadEvent?.(event);
+  } catch (err) {
+    (options.logger ?? silentLogger).warn(`download progress observer failed: ${(err as Error).message}`);
+  }
 }
 
 function githubHeaders(): Record<string, string> {
@@ -143,18 +178,53 @@ function checkIntegrity(expected: string | undefined, actual: string): DownloadR
 export async function downloadAsset(source: AssetSource, options: DownloadOptions = {}): Promise<DownloadResult> {
   const log = options.logger ?? silentLogger;
   const cacheDir = options.cacheDir ?? defaultCacheDir();
+  const assetId = sourceAssetId(source);
+  emitDownload(options, {
+    phase: 'download',
+    status: 'started',
+    assetId,
+    received: 0,
+    ...(source.size !== undefined ? { total: source.size } : {}),
+  });
   const { url, name, size } = await resolveAssetUrl(source);
   const target = path.join(cacheDir, cacheKey(url, name));
 
   if (!options.force && (await pathExists(target))) {
+    emitDownload(options, { phase: 'verify', status: 'started', assetId, fromCache: true });
     const { sha256: digest, bytes } = await hashFile(target);
     const integrity = checkIntegrity(source.sha256, digest);
     if (integrity === 'mismatch') {
+      emitDownload(options, {
+        phase: 'verify',
+        status: 'completed',
+        assetId,
+        received: bytes,
+        total: bytes,
+        fromCache: true,
+        integrity,
+      });
       // A cached file that no longer matches the pinned checksum is not usable.
       log.warn(`cached ${name} failed its checksum - re-downloading`);
       await fsp.rm(target, { force: true });
     } else {
       log.debug(`cache hit: ${name}`);
+      emitDownload(options, {
+        phase: 'download',
+        status: 'completed',
+        assetId,
+        received: bytes,
+        total: bytes,
+        fromCache: true,
+      });
+      emitDownload(options, {
+        phase: 'verify',
+        status: 'completed',
+        assetId,
+        received: bytes,
+        total: bytes,
+        fromCache: true,
+        integrity,
+      });
       return { path: target, bytes, sha256: digest, fromCache: true, url, integrity };
     }
   }
@@ -165,9 +235,21 @@ export async function downloadAsset(source: AssetSource, options: DownloadOption
   const init: RequestInit = { headers: { 'user-agent': 'IndieDeck' } };
   if (options.signal) init.signal = options.signal;
   const response = await fetch(url, init);
-  if (!response.ok) throw new Error(`Download failed: HTTP ${response.status} for ${url}`);
+  if (!response.ok) {
+    const error = `Download failed: HTTP ${response.status} for ${url}`;
+    emitDownload(options, { phase: 'download', status: 'failed', assetId, fromCache: false, error });
+    throw new Error(error);
+  }
 
   const total = Number(response.headers.get('content-length')) || size;
+  emitDownload(options, {
+    phase: 'download',
+    status: 'progress',
+    assetId,
+    received: 0,
+    ...(total !== undefined ? { total } : {}),
+    fromCache: false,
+  });
   const partial = `${target}.part`;
   const hash = crypto.createHash('sha256');
   let received = 0;
@@ -181,32 +263,105 @@ export async function downloadAsset(source: AssetSource, options: DownloadOption
         await handle.write(buf);
         received += buf.length;
         options.onProgress?.(received, total);
+        emitDownload(options, {
+          phase: 'download',
+          status: 'progress',
+          assetId,
+          received,
+          ...(total !== undefined ? { total } : {}),
+          fromCache: false,
+        });
       }
     } else {
       const buf = Buffer.from(await response.arrayBuffer());
       hash.update(buf);
       await handle.write(buf);
       received = buf.length;
+      options.onProgress?.(received, total);
+      emitDownload(options, {
+        phase: 'download',
+        status: 'progress',
+        assetId,
+        received,
+        ...(total !== undefined ? { total } : {}),
+        fromCache: false,
+      });
     }
   } catch (err) {
     await handle.close();
     await fsp.rm(partial, { force: true });
+    emitDownload(options, {
+      phase: 'download',
+      status: 'failed',
+      assetId,
+      received,
+      ...(total !== undefined ? { total } : {}),
+      fromCache: false,
+      error: (err as Error).message,
+    });
     throw err;
   }
   await handle.close();
+
+  emitDownload(options, {
+    phase: 'download',
+    status: 'completed',
+    assetId,
+    received,
+    ...(total !== undefined ? { total } : {}),
+    fromCache: false,
+  });
+  emitDownload(options, {
+    phase: 'verify',
+    status: 'started',
+    assetId,
+    received,
+    ...(total !== undefined ? { total } : {}),
+    fromCache: false,
+  });
 
   const digest = hash.digest('hex');
   const integrity = checkIntegrity(source.sha256, digest);
   if (integrity === 'mismatch') {
     await fsp.rm(partial, { force: true });
-    throw new Error(
-      `Checksum mismatch for ${name}: expected ${source.sha256}, got ${digest}. The download was discarded.`,
-    );
+    const error = `Checksum mismatch for ${name}: expected ${source.sha256}, got ${digest}. The download was discarded.`;
+    emitDownload(options, {
+      phase: 'verify',
+      status: 'failed',
+      assetId,
+      received,
+      ...(total !== undefined ? { total } : {}),
+      fromCache: false,
+      integrity,
+      error,
+    });
+    throw new Error(error);
   }
   if (total && received !== total) {
     await fsp.rm(partial, { force: true });
-    throw new Error(`Truncated download for ${name}: expected ${total} bytes, got ${received}.`);
+    const error = `Truncated download for ${name}: expected ${total} bytes, got ${received}.`;
+    emitDownload(options, {
+      phase: 'verify',
+      status: 'failed',
+      assetId,
+      received,
+      total,
+      fromCache: false,
+      integrity,
+      error,
+    });
+    throw new Error(error);
   }
+
+  emitDownload(options, {
+    phase: 'verify',
+    status: 'completed',
+    assetId,
+    received,
+    ...(total !== undefined ? { total } : {}),
+    fromCache: false,
+    integrity,
+  });
 
   await fsp.rename(partial, target);
   return { path: target, bytes: received, sha256: digest, fromCache: false, url, integrity };

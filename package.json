@@ -29,6 +29,7 @@
     "verify": "npm run build && npm test && npm run registry:check",
     "indiedeck": "node --experimental-strip-types packages/cli/src/index.ts",
     "desktop": "npm run build && electron packages/desktop",
+    "desktop:flow": "npm run build && node scripts/check-desktop-flow.mjs ko && node scripts/check-desktop-flow.mjs en",
     "pack:win": "npm run build && electron-builder --win dir --x64",
     "dist:win": "npm run verify && electron-builder --win nsis portable --x64 --publish never",
     "package:check": "node scripts/check-package.mjs",

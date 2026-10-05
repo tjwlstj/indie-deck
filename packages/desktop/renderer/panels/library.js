@@ -2,7 +2,34 @@
 
 import { $, clear, el } from '../dom.js';
 import { t } from '../i18n.js';
-import { emit, state, visibleGames } from '../store.js';
+import { emit, mutationBlocked, state, visibleGames } from '../store.js';
+
+function operationBadge(gameId) {
+  const operation = state.operation;
+  if (!operation || operation.gameId !== gameId) return null;
+  if (!operation.outcome) {
+    return el(
+      'span',
+      'pill operation-badge active',
+      operation.kind === 'uninstall'
+        ? t('ui.operation.removingShort', undefined, 'Removing…')
+        : t('ui.operation.installingShort', undefined, 'Installing…'),
+    );
+  }
+  if (operation.outcome.status === 'failed') {
+    return el('span', 'pill operation-badge err', t('ui.operation.failedShort', undefined, 'Failed'));
+  }
+  if (operation.outcome.status === 'needs-user-action') {
+    return el('span', 'pill operation-badge warn', t('ui.operation.actionShort', undefined, 'Action needed'));
+  }
+  if (operation.outcome.refreshStatus === 'failed' && operation.outcome.mutationStatus === 'committed') {
+    return el('span', 'pill operation-badge warn', t('ui.operation.refreshNeededShort', undefined, 'Refresh needed'));
+  }
+  if (operation.outcome.status === 'success' && operation.outcome.refreshStatus === 'complete') {
+    return el('span', 'pill operation-badge ok', t('ui.operation.completeShort', undefined, 'Complete'));
+  }
+  return el('span', 'pill operation-badge err', t('ui.operation.failedShort', undefined, 'Failed'));
+}
 
 function healthDot(game) {
   const audit = state.audits.get(game.id);
@@ -54,6 +81,7 @@ export function renderGameList(onSelectGame) {
     const emptyCard = el('div', 'empty-library');
     emptyCard.append(el('p', null, t('ui.status.emptyLibrary', undefined, 'No games yet — add a folder and scan.')));
     const add = el('button', 'ghost', t('ui.app.addFolder', undefined, 'Add folder'));
+    add.disabled = mutationBlocked();
     add.addEventListener('click', () => window.dispatchEvent(new CustomEvent('indiedeck:add-root')));
     emptyCard.append(add);
     container.append(emptyCard);
@@ -78,6 +106,8 @@ export function renderGameList(onSelectGame) {
       .join(' ');
     if (runtime) meta.append(el('span', null, runtime));
     if (game.arch !== 'unknown') meta.append(el('span', null, game.arch));
+    const task = operationBadge(game.id);
+    if (task) meta.append(task);
     for (const translator of game.installedTranslators) {
       meta.append(
         el(

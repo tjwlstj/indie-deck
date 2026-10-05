@@ -3,6 +3,34 @@
 All notable changes to IndieDeck are documented here. Versions follow Semantic
 Versioning while the project is pre-1.0.
 
+## [Unreleased]
+
+### Added
+
+- Per-operation installation/removal progress with real loading bars, explicit
+  stages, current-asset byte counts, collapsible logs and persistent result cards.
+- Renderer reload recovery through main-owned operation snapshots and outcomes.
+- Targeted game refresh after success or failure, atomically saved library
+  revisions and one post-state for badges, audit, statistics, detail and config.
+- Offline Korean/English Electron install-and-remove flow checks.
+
+### Fixed
+
+- Late game/config responses can no longer replace a newer selection or mutation.
+- User changes to modified files and unverified snapshots survive removal;
+  unresolved entries retain their receipt for a later recovery attempt.
+- Rollback gaps and receipt-write failures retain their actual file outcomes.
+- Reusing an already installed loader no longer requests unnecessary user work.
+- Concurrent file changes and game launches are rejected during maintenance;
+  one launcher instance owns the mutation queue.
+- Desktop reinstalls that would overwrite an original management baseline are
+  blocked with a reason until the safe update/repair planner is implemented.
+- Desktop removal validates the exact receipt object it will apply, rejects
+  legacy/hashless/escaping or linked records and protects the detected executable.
+- Copied font/mod files now retain post-install hashes; canonical receipt IDs
+  accept safe Korean names and internal spaces. Copy/hash failures roll back
+  instead of leaving an apparently successful, unremovable install.
+
 ## [0.1.2] - 2026-08-23
 
 ### Added

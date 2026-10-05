@@ -6,7 +6,7 @@ import { extractFile, listPackage } from '@electron/asar';
 import yaml from 'js-yaml';
 
 const archive = path.resolve(
-  process.argv[2] ?? path.join('release', 'win-unpacked', 'resources', 'app.asar'),
+  process.argv.slice(2).find((arg) => arg !== '--runtime-only') ?? path.join('release', 'win-unpacked', 'resources', 'app.asar'),
 );
 
 if (!fs.existsSync(archive)) {
@@ -16,8 +16,11 @@ if (!fs.existsSync(archive)) {
 
 const required = [
   '\\packages\\desktop\\dist\\main.js',
+  '\\packages\\desktop\\dist\\operations.js',
+  '\\packages\\desktop\\dist\\receipt-guard.js',
   '\\packages\\desktop\\preload.cjs',
   '\\packages\\desktop\\renderer\\index.html',
+  '\\packages\\desktop\\renderer\\state-model.js',
   '\\node_modules\\@indiedeck\\core\\dist\\index.js',
   '\\node_modules\\electron-updater\\out\\main.js',
   '\\registry\\engines.json',
@@ -49,6 +52,12 @@ const packagedVersion = JSON.parse(extractFile(archive, 'package.json').toString
 if (packagedVersion !== version) {
   console.error(`[package] packaged version ${packagedVersion} does not match source version ${version}`);
   process.exit(1);
+}
+// Unpacked development previews have no installer/update metadata. This opt-in
+// mode verifies only their runtime and version; release checks stay strict.
+if (process.argv.includes('--runtime-only')) {
+  console.log(`[package] runtime-only preview verified at ${version}; distribution/update metadata not checked`);
+  process.exit(0);
 }
 const resourcesDir = path.dirname(archive);
 const outputDir = path.dirname(path.dirname(resourcesDir));

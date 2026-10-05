@@ -7,7 +7,7 @@ import { ensureDir, pathExists } from '../util/fsx.ts';
 import type { Logger } from '../util/log.ts';
 import { silentLogger } from '../util/log.ts';
 import { isNativeLoader } from '../registry/index.ts';
-import { BACKUP_DIR, writeReceipt } from '../install/apply.ts';
+import { BACKUP_DIR, isSafeReceiptComponentId, writeReceipt } from '../install/apply.ts';
 import { withTransaction } from '../install/transaction.ts';
 import { extractZip } from '../install/unzip.ts';
 
@@ -351,6 +351,9 @@ export async function installModFromFile(
 
   const destDir = path.join(profile.path, host.dir);
   const name = options.name ?? path.basename(sourcePath).replace(/\.(zip|dll|js|rpy)$/i, '');
+  if (!isSafeReceiptComponentId(name)) {
+    throw new Error(`Mod name cannot be used as a safe receipt filename: ${JSON.stringify(name)}.`);
+  }
   const isZip = sourcePath.toLowerCase().endsWith('.zip');
 
   // Everything below runs in one transaction: a mod archive that lands on a

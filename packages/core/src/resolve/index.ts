@@ -357,6 +357,7 @@ function buildSteps(
           { loader: loaderDef.name, version: loaderVersion?.version ?? '' },
           'Reuse the {loader} install already present {version}',
         ),
+        { details: { informational: true } },
       ),
     );
   }

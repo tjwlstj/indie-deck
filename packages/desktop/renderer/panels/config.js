@@ -9,19 +9,27 @@
 
 import { $, el, setStatus } from '../dom.js';
 import { retranslate, t } from '../i18n.js';
-import { api, state } from '../store.js';
+import { api, mutationBlocked, state } from '../store.js';
 
 const config = {
   data: null,
   pending: new Map(),
   open: new Set(['basic', 'credentials']),
   busy: false,
+  gameId: null,
+  gameRevision: -1,
+  loadToken: 0,
+  applyToken: 0,
 };
 
 export function resetConfigPanel() {
+  config.loadToken += 1;
+  config.applyToken += 1;
   config.data = null;
   config.pending.clear();
   config.busy = false;
+  config.gameId = null;
+  config.gameRevision = -1;
 }
 
 function currentValue(id, fallback) {
@@ -58,6 +66,7 @@ function select(options, value, onChange) {
 function control(id, type, value, original, options = {}) {
   if (type === 'boolean') {
     const button = el('button', `toggle${String(value).toLowerCase() === 'true' ? ' on' : ''}`);
+    button.disabled = config.busy || mutationBlocked();
     button.addEventListener('click', () => {
       const next = String(currentValue(id, value)).toLowerCase() === 'true' ? 'False' : 'True';
       stage(id, next, original);
@@ -72,24 +81,29 @@ function control(id, type, value, original, options = {}) {
       label: `${p.provider.label}  ·  ${p.provider.tier.join('/')}`,
     }));
     if (options.allowEmpty) entries.unshift({ value: '', label: t('ui.config.none', undefined, '(none)') });
-    return select(entries, value, (next) => {
+    const node = select(entries, value, (next) => {
       stage(id, next, original);
       render();
     });
+    node.disabled = config.busy || mutationBlocked();
+    return node;
   }
 
   if (type === 'language') {
-    return select(
+    const node = select(
       LANGUAGE_CODES.map((code) => ({ value: code, label: code })),
       value,
       (next) => stage(id, next, original),
     );
+    node.disabled = config.busy || mutationBlocked();
+    return node;
   }
 
   if (type === 'font-bundle') {
     const entries = [{ value: '', label: t('ui.config.none', undefined, '(none)') }];
     for (const bundle of config.data.fontBundles ?? []) entries.push({ value: bundle, label: bundle });
     const node = select(entries, value, (next) => stage(id, next, original));
+    node.disabled = config.busy || mutationBlocked();
     if (value && ![...node.options].some((o) => o.value === value)) {
       const custom = el('option', null, t('ui.config.inFileNotInFolder', { value }, '{value} (in file, not in folder)'));
       custom.value = value;
@@ -104,6 +118,7 @@ function control(id, type, value, original, options = {}) {
   input.value = value;
   if (options.placeholder) input.placeholder = options.placeholder;
   if (type === 'secret') input.autocomplete = 'off';
+  input.disabled = config.busy || mutationBlocked();
   input.addEventListener('input', () => stage(id, input.value, original));
   return input;
 }
@@ -137,6 +152,15 @@ function renderFooterCount() {
       count === 1
         ? t('ui.config.unsavedOne', undefined, '1 unsaved change')
         : t('ui.config.unsavedMany', { count }, '{count} unsaved changes');
+  }
+}
+
+function syncMutationControls() {
+  const host = $('configPanel');
+  if (!host) return;
+  const disabled = config.busy || mutationBlocked();
+  for (const node of host.querySelectorAll('input, select, button.toggle, .cfg-footer button')) {
+    node.disabled = disabled;
   }
 }
 
@@ -275,10 +299,13 @@ function render() {
   footer.append(count);
 
   const preview = el('button', 'ghost', t('ui.config.preview', undefined, 'Preview'));
+  preview.disabled = config.busy || mutationBlocked();
   preview.addEventListener('click', () => apply(true));
   const save = el('button', 'primary', t('ui.config.save', undefined, 'Save'));
+  save.disabled = config.busy || mutationBlocked();
   save.addEventListener('click', () => apply(false));
   const discard = el('button', 'ghost', t('ui.config.discard', undefined, 'Discard'));
+  discard.disabled = config.busy || mutationBlocked();
   discard.addEventListener('click', () => {
     config.pending.clear();
     render();
@@ -308,22 +335,36 @@ function planText(plan) {
 }
 
 async function apply(previewOnly) {
-  if (config.busy) return;
+  if (config.busy || mutationBlocked()) return;
+  const gameId = config.gameId;
+  const translatorId = config.data?.config.translatorId;
+  if (!gameId || !translatorId || state.selected !== gameId) return;
   const changes = [...config.pending.entries()].map(([id, value]) => ({ id, value }));
   if (changes.length === 0) return;
 
   config.busy = true;
+  const applyToken = ++config.applyToken;
+  syncMutationControls();
   const log = $('cfgLog');
+  if (!log) {
+    config.busy = false;
+    syncMutationControls();
+    return;
+  }
   log.hidden = false;
   log.textContent = t('ui.config.checking', undefined, 'Checking…');
 
   try {
     if (previewOnly) {
-      log.textContent = planText(await api.translatorConfig.plan(state.selected, config.data.config.translatorId, changes));
+      const plan = await api.translatorConfig.plan(gameId, translatorId, changes);
+      if (applyToken === config.applyToken && state.selected === gameId && config.gameId === gameId && $('cfgLog')) {
+        $('cfgLog').textContent = planText(plan);
+      }
       return;
     }
 
-    const { plan, result } = await api.translatorConfig.write(state.selected, config.data.config.translatorId, changes);
+    const { plan, result } = await api.translatorConfig.write(gameId, translatorId, changes);
+    if (applyToken !== config.applyToken || state.selected !== gameId || config.gameId !== gameId || !$('cfgLog')) return;
     log.textContent = planText(plan);
     if (!result) {
       setStatus(t('ui.config.notWritten', undefined, 'Nothing written - fix the errors above.'), 'err');
@@ -332,25 +373,66 @@ async function apply(previewOnly) {
     log.textContent += `\n\n${t('ui.config.written', { count: result.changed, path: result.path }, '{count} setting(s) written to {path}')}`;
     if (result.backup) log.textContent += `\n${t('ui.config.backedUp', { path: result.backup }, 'original backed up to {path}')}`;
     config.pending.clear();
+    state.translatorConfigs.delete(gameId);
     setStatus(t('ui.config.saved', { count: result.changed }, '{count} setting(s) saved'), 'ok');
-    await load();
+    await load(true);
   } catch (err) {
-    log.textContent = err.message;
-    setStatus(err.message, 'err');
+    if (applyToken === config.applyToken && state.selected === gameId && config.gameId === gameId && $('cfgLog')) {
+      $('cfgLog').textContent = err.message;
+      setStatus(err.message, 'err');
+    }
   } finally {
-    config.busy = false;
-    renderFooterCount();
+    if (applyToken === config.applyToken) {
+      config.busy = false;
+      renderFooterCount();
+      syncMutationControls();
+    }
   }
 }
 
-async function load() {
+function bindData(gameId, data) {
+  const incomingRevision = Number.isSafeInteger(data?.gameRevision) ? data.gameRevision : 0;
+  const translatorChanged = config.data?.config?.translatorId !== data?.config?.translatorId;
+  if (config.gameId !== gameId || translatorChanged || incomingRevision > config.gameRevision) config.pending.clear();
+  config.gameId = gameId;
+  config.gameRevision = incomingRevision;
+  config.data = data;
+}
+
+async function load(force = false) {
   const host = $('configPanel');
   if (!host || !state.selected) return;
+  const gameId = state.selected;
+  const token = ++config.loadToken;
+
+  if (!force) {
+    const cached = state.translatorConfigs.get(gameId);
+    if (cached) {
+      bindData(gameId, cached);
+      render();
+      return;
+    }
+    if (config.gameId === gameId && config.data) {
+      render();
+      return;
+    }
+  }
+
   try {
-    config.data = await api.translatorConfig.read(state.selected, config.data?.config.translatorId);
+    const requestedTranslator = config.gameId === gameId ? config.data?.config.translatorId : undefined;
+    const data = await api.translatorConfig.read(gameId, requestedTranslator);
+    if (token !== config.loadToken || state.selected !== gameId || !$('configPanel')) return;
+    const knownRevision = state.gameRevisions.get(gameId) ?? 0;
+    const incomingRevision = Number.isSafeInteger(data?.gameRevision) ? data.gameRevision : 0;
+    if (incomingRevision < knownRevision) return;
+    state.gameRevisions.set(gameId, incomingRevision);
+    state.translatorConfigs.set(gameId, data);
+    bindData(gameId, data);
     render();
   } catch (err) {
-    host.replaceChildren(el('div', 'cfg-help', err.message));
+    if (token === config.loadToken && state.selected === gameId && $('configPanel')) {
+      $('configPanel').replaceChildren(el('div', 'cfg-help', err.message));
+    }
   }
 }
 

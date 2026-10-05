@@ -29,8 +29,36 @@ export interface TransactionOptions {
   dryRun?: boolean;
 }
 
+export interface RollbackFailure {
+  /** Game-root-relative path from the transaction journal. */
+  path: string;
+  operation: ReceiptEntry['operation'];
+  error: string;
+}
+
+export interface RollbackResult {
+  /** `complete` means every journal entry was reversed without an I/O error. */
+  status: 'complete' | 'partial' | 'not-run';
+  attempted: number;
+  completed: number;
+  failures: RollbackFailure[];
+}
+
 function hash(data: Buffer): string {
   return crypto.createHash('sha256').update(data).digest('hex');
+}
+
+async function hashFile(file: string): Promise<string> {
+  return hash(await fsp.readFile(file));
+}
+
+async function lstatIfExists(file: string): Promise<Awaited<ReturnType<typeof fsp.lstat>> | undefined> {
+  try {
+    return await fsp.lstat(file);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw err;
+  }
 }
 
 export class FileTransaction {
@@ -104,9 +132,11 @@ export class FileTransaction {
     }
 
     if (existed) entry.backup = await this.backup(normalised);
+    // Journal before the first target mutation. A short/failed write must still
+    // be removable (or restorable from the backup) by rollback().
+    this.journal.push(entry);
     await ensureDir(path.dirname(target));
     await fsp.writeFile(target, buffer);
-    this.journal.push(entry);
     return entry;
   }
 
@@ -143,45 +173,57 @@ export class FileTransaction {
       return written;
     }
 
-    // Back up everything the archive is about to land on, before extracting.
-    const displaced = new Map<string, string>();
+    // Back up and journal every previewed target before extraction. If the
+    // extractor stops halfway through, rollback still knows every path that
+    // may have been created or displaced.
     for (const file of preview.files) {
       const rel = path.relative(this.root, path.join(destAbs, file)).replace(/\\/g, '/');
-      if (await pathExists(this.abs(rel))) displaced.set(rel, await this.backup(rel));
-    }
-
-    const result = await extractZip(archivePath, destAbs, options);
-    for (const file of result.files) {
-      const rel = path.relative(this.root, path.join(destAbs, file)).replace(/\\/g, '/');
-      const backup = displaced.get(rel);
-      const entry: ReceiptEntry = { path: rel, operation: backup ? 'modify' : 'create' };
-      if (backup) entry.backup = backup;
-      try {
-        entry.sha256 = hash(await fsp.readFile(this.abs(rel)));
-      } catch {
-        /* unreadable right after writing - skip the hash rather than fail */
-      }
+      const existed = await pathExists(this.abs(rel));
+      const entry: ReceiptEntry = { path: rel, operation: existed ? 'modify' : 'create' };
+      if (existed) entry.backup = await this.backup(rel);
       this.journal.push(entry);
       written.push(entry);
+    }
+
+    await extractZip(archivePath, destAbs, options);
+    for (const entry of written) {
+      // A v2 create/modify receipt without a post-write hash cannot safely
+      // distinguish our payload from a later user edit. Hash failure therefore
+      // fails the transaction instead of emitting unusable removal evidence.
+      entry.sha256 = await hashFile(this.abs(entry.path));
     }
     return written;
   }
 
-  /** Copies a file or directory from outside the game folder into it. */
+  /** Copies one regular file from outside the game folder into it. */
   async copyIn(sourceAbs: string, destRel: string): Promise<ReceiptEntry> {
     const normalised = destRel.replace(/\\/g, '/');
     const target = this.abs(normalised);
-    const existed = await pathExists(target);
-    const entry: ReceiptEntry = { path: normalised, operation: existed ? 'modify' : 'create' };
+    const sourceStat = await fsp.lstat(sourceAbs);
+    if (!sourceStat.isFile() || sourceStat.isSymbolicLink()) {
+      throw new Error('copyIn only supports regular files; directory copies require per-file receipt entries.');
+    }
+    const targetStat = await lstatIfExists(target);
+    if (targetStat && (!targetStat.isFile() || targetStat.isSymbolicLink())) {
+      throw new Error(`copyIn destination is not a regular file: ${normalised}`);
+    }
+    const entry: ReceiptEntry = {
+      path: normalised,
+      operation: targetStat ? 'modify' : 'create',
+      sha256: await hashFile(sourceAbs),
+    };
 
     if (this.dryRun) {
       this.journal.push(entry);
       return entry;
     }
-    if (existed) entry.backup = await this.backup(normalised);
-    await ensureDir(path.dirname(target));
-    await fsp.cp(sourceAbs, target, { recursive: true });
+    if (targetStat) entry.backup = await this.backup(normalised);
+    // Record the target before copyFile so a partial copy or post-copy hash
+    // failure remains rollback-visible.
     this.journal.push(entry);
+    await ensureDir(path.dirname(target));
+    await fsp.copyFile(sourceAbs, target);
+    entry.sha256 = await hashFile(target);
     return entry;
   }
 
@@ -200,26 +242,41 @@ export class FileTransaction {
     return this.entries;
   }
 
-  /** Undoes everything this transaction did, newest first. */
-  async rollback(): Promise<void> {
-    if (this.dryRun || this.committed) return;
+  /** Undoes everything this transaction did, newest first, and reports gaps. */
+  async rollback(): Promise<RollbackResult> {
+    if (this.dryRun || this.committed) {
+      return { status: 'not-run', attempted: 0, completed: 0, failures: [] };
+    }
+    const failures: RollbackFailure[] = [];
+    let completed = 0;
+    const attempted = this.journal.length;
     for (const entry of [...this.journal].reverse()) {
       try {
         if (entry.operation === 'create') {
           await fsp.rm(this.abs(entry.path), { recursive: true, force: true });
-        } else if (entry.backup) {
+        } else if (!entry.backup) {
+          throw new Error('No backup was recorded for this journal entry.');
+        } else {
           const from = this.abs(entry.backup);
-          if (await pathExists(from)) {
-            await ensureDir(path.dirname(this.abs(entry.path)));
-            await fsp.cp(from, this.abs(entry.path), { recursive: true });
-          }
+          if (!(await pathExists(from))) throw new Error(`Backup is missing: ${entry.backup}`);
+          await ensureDir(path.dirname(this.abs(entry.path)));
+          await fsp.cp(from, this.abs(entry.path), { recursive: true });
         }
+        completed += 1;
       } catch (err) {
-        this.log.warn(`rollback could not restore ${entry.path}: ${(err as Error).message}`);
+        const error = (err as Error).message;
+        failures.push({ path: entry.path, operation: entry.operation, error });
+        this.log.warn(`rollback could not restore ${entry.path}: ${error}`);
       }
     }
     this.journal.length = 0;
     this.backups.clear();
+    return {
+      status: failures.length === 0 ? 'complete' : 'partial',
+      attempted,
+      completed,
+      failures,
+    };
   }
 }
 
@@ -233,7 +290,7 @@ export async function withTransaction<T>(
     const result = await fn(tx);
     return { result, entries: tx.commit() };
   } catch (err) {
-    await tx.rollback();
-    throw err;
+    const rollbackResult = await tx.rollback();
+    throw Object.assign(err as Error, { rollbackResult });
   }
 }

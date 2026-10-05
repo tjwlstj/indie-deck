@@ -8,7 +8,178 @@
 
 import { el, setStatus, severityMark, severityTone } from '../dom.js';
 import { retranslate, t } from '../i18n.js';
-import { api, state } from '../store.js';
+import { api, mutationBlocked, state } from '../store.js';
+
+function operationText(operation) {
+  if (operation.descriptionKey) return t(operation.descriptionKey, operation.descriptionParams, operation.description ?? operation.phase);
+  return t(`ui.operation.phase.${operation.phase}`, operation.descriptionParams, operation.description ?? operation.phase);
+}
+
+function terminalText(operation) {
+  const outcome = operation.outcome;
+  if (!outcome) return operationText(operation);
+  if (outcome.status === 'failed' && outcome.mutationStatus === 'committed') {
+    return t(
+      'ui.operation.failedCommitted',
+      undefined,
+      'Changes were applied, but the install record or final step failed. Review the error and current game state.',
+    );
+  }
+  if (outcome.status === 'needs-user-action') {
+    return t('ui.operation.needsAction', undefined, 'Automatic steps finished — more action is required.');
+  }
+  if (outcome.status === 'success') {
+    if (outcome.refreshStatus === 'failed') {
+      return t('ui.operation.refreshFailed', undefined, 'The file operation finished, but the latest state could not be loaded.');
+    }
+    return operation.kind === 'uninstall'
+      ? t('ui.operation.removeComplete', undefined, 'Removal complete')
+      : t('ui.operation.installComplete', undefined, 'Installation complete');
+  }
+  if (outcome.mutationStatus === 'rolled-back' && outcome.rollbackStatus === 'not-run') {
+    return t('ui.operation.stoppedBeforeChanges', undefined, 'The task stopped before any game files were changed.');
+  }
+  if (outcome.rollbackStatus === 'complete') {
+    return t('ui.operation.failedRolledBack', undefined, 'The task failed. Changes were rolled back.');
+  }
+  return t('ui.operation.failedRollbackPartial', undefined, 'The task failed and some changes could not be restored.');
+}
+
+function formatBytes(value) {
+  const bytes = Number(value ?? 0);
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1048576).toFixed(1)} MB`;
+}
+
+/** State-derived card: it survives detail re-renders, view switches and reload. */
+export function operationCard(operation) {
+  const outcome = operation.outcome;
+  const tone = !outcome
+    ? 'active'
+    : outcome.status === 'failed'
+      ? outcome.rollbackStatus === 'complete' ? 'warn' : 'err'
+      : outcome.status === 'needs-user-action' || outcome.refreshStatus === 'failed'
+        ? 'warn'
+        : 'ok';
+  const card = el('section', `operation-card ${tone}`);
+  card.setAttribute('role', 'status');
+  card.setAttribute('aria-live', 'polite');
+
+  const head = el('div', 'operation-head');
+  head.append(
+    el(
+      'strong',
+      null,
+      operation.kind === 'uninstall'
+        ? t('ui.operation.removing', undefined, 'Removing translator')
+        : t('ui.operation.installing', undefined, 'Installing translator'),
+    ),
+    el('span', 'operation-phase', terminalText(operation)),
+  );
+  card.append(head);
+
+  if (!outcome) {
+    const bar = document.createElement('progress');
+    bar.className = 'operation-progress';
+    bar.max = 100;
+    if (Number(operation.total) > 0) {
+      bar.value = Math.max(0, Math.min(100, (Number(operation.received ?? 0) / Number(operation.total)) * 100));
+    } else {
+      bar.removeAttribute('value');
+    }
+    bar.setAttribute('aria-label', operationText(operation));
+    card.append(bar);
+
+    const meta = [];
+    if (Number(operation.stepCount) > 0) {
+      meta.push(
+        t(
+          'ui.operation.step',
+          {
+            current: Math.max(1, Math.min(Number(operation.stepIndex ?? 1), Number(operation.stepCount))),
+            total: operation.stepCount,
+          },
+          'Step {current}/{total}',
+        ),
+      );
+    }
+    if (Number(operation.total) > 0) {
+      meta.push(`${formatBytes(operation.received)} / ${formatBytes(operation.total)}`);
+    } else if (operation.phase === 'download') {
+      meta.push(t('ui.operation.unknownSize', undefined, 'download size unknown'));
+    }
+    if (operation.fromCache) meta.push(t('ui.operation.fromCache', undefined, 'from cache'));
+    if (meta.length > 0) card.append(el('div', 'operation-meta', meta.join(' · ')));
+    card.append(el('div', 'operation-folder-note', t('ui.operation.folderNote', undefined, 'Folder view stays available; avoid editing files until this task finishes.')));
+  }
+
+  const pending = [...(outcome?.result?.pendingUserActions ?? [])];
+  if (Array.isArray(outcome?.result)) {
+    const kept = outcome.result.flatMap((entry) => entry?.keptModified ?? []);
+    const missing = outcome.result.flatMap((entry) => entry?.missing ?? []);
+    if (kept.length > 0) {
+      pending.push(
+        t(
+          'ui.operation.keptModified',
+          { count: kept.length },
+          '{count} hand-edited file(s) were kept and need review.',
+        ),
+      );
+    }
+    if (missing.length > 0) {
+      pending.push(
+        t('ui.operation.missingFiles', { count: missing.length }, '{count} managed file(s) were already missing.'),
+      );
+    }
+  }
+  if (pending.length > 0) {
+    const list = el('ul', 'operation-actions-needed');
+    for (const action of pending) list.append(el('li', null, action));
+    card.append(list);
+  }
+
+  if (outcome?.error) card.append(el('div', 'operation-error', outcome.error));
+  if (outcome?.refreshError) card.append(el('div', 'operation-error', outcome.refreshError));
+  if ((outcome?.rollbackFailures ?? []).length > 0) {
+    const list = el('ul', 'operation-errors');
+    for (const failure of outcome.rollbackFailures) list.append(el('li', null, `${failure.path}: ${failure.error}`));
+    card.append(list);
+  }
+
+  if ((operation.log ?? []).length > 0) {
+    const details = document.createElement('details');
+    const summary = el('summary', null, t('ui.operation.showLog', undefined, 'Task log'));
+    const log = el('pre', 'operation-log');
+    log.textContent = operation.log.join('\n');
+    details.append(summary, log);
+    card.append(details);
+  }
+
+  if (outcome) {
+    const actions = el('div', 'operation-terminal-actions');
+    if (outcome.refreshStatus === 'failed') {
+      const retry = el(
+        'button',
+        'ghost',
+        operation.refreshing
+          ? t('ui.operation.refreshingState', undefined, 'Refreshing game state…')
+          : t('ui.operation.refreshState', undefined, 'Refresh state'),
+      );
+      retry.disabled = Boolean(operation.refreshing);
+      retry.addEventListener('click', () => window.dispatchEvent(new CustomEvent('indiedeck:refresh-operation-state')));
+      actions.append(retry);
+    }
+    const dismiss = el('button', 'ghost', t('ui.operation.dismiss', undefined, 'Dismiss'));
+    dismiss.disabled = Boolean(operation.refreshing);
+    dismiss.addEventListener('click', () => window.dispatchEvent(new CustomEvent('indiedeck:dismiss-operation')));
+    actions.append(dismiss);
+    card.append(actions);
+  }
+
+  return card;
+}
 
 /* --------------------------------------------------------------- header */
 
@@ -30,8 +201,8 @@ export function renderHeader(panel, ctx) {
   const actions = el('div', 'actions');
   if (profile.executable) {
     const play = el('button', 'primary', `▶  ${t('ui.detail.play', undefined, 'Play')}`);
-    play.disabled = state.busy;
-    if (state.busy) {
+    play.disabled = mutationBlocked();
+    if (mutationBlocked()) {
       // A disabled button cannot take focus or show its own title; give screen
       // readers an adjacent explanation instead (§9.2).
       play.setAttribute('aria-disabled', 'true');
@@ -43,6 +214,7 @@ export function renderHeader(panel, ctx) {
       play.setAttribute('aria-describedby', 'playBlockedNote');
     }
     play.addEventListener('click', async () => {
+      if (mutationBlocked()) return;
       try {
         await api.game.launch(profile.id);
       } catch (err) {
@@ -53,10 +225,17 @@ export function renderHeader(panel, ctx) {
   }
 
   const openFolder = el('button', 'ghost', t('ui.detail.openFolder', undefined, 'Open folder'));
-  openFolder.addEventListener('click', () => api.game.openFolder(profile.id));
+  openFolder.addEventListener('click', async () => {
+    try {
+      await api.game.openFolder(profile.id);
+    } catch (err) {
+      setStatus(err.message, 'err');
+    }
+  });
   actions.append(openFolder);
 
   inner.append(actions);
+  if (state.operation?.gameId === profile.id) inner.append(operationCard(state.operation));
   sticky.append(inner);
   panel.append(sticky);
 }
@@ -161,7 +340,14 @@ function planCard(plan, onInstall) {
 
   if (plan.viable) {
     const install = el('button', 'primary install', t('ui.plan.install', undefined, 'Install'));
-    install.disabled = state.busy;
+    install.disabled = mutationBlocked() || Boolean(plan.installBlockReason);
+    if (plan.installBlockReason) {
+      const reasonId = `install-block-${String(plan.id).replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+      install.setAttribute('aria-describedby', reasonId);
+      const reason = el('span', 'plan-sub install-block-reason', plan.installBlockReason);
+      reason.id = reasonId;
+      head.append(reason);
+    }
     install.addEventListener('click', () => onInstall(plan));
     head.append(install);
   } else {
@@ -185,36 +371,23 @@ function planCard(plan, onInstall) {
   return card;
 }
 
-export function renderPlans(panel, ctx, refresh, onInstall) {
+export function renderPlans(panel, ctx, refresh, onInstall, onUninstall) {
   panel.append(el('h3', null, t('ui.detail.translatorOptions', undefined, 'Translator options')));
   if (ctx.plans.length === 0) {
     panel.append(el('div', 'plan-sub', t('ui.detail.noTranslator', undefined, 'No translator in the registry targets this engine.')));
   } else {
-    for (const plan of ctx.plans) panel.append(planCard(plan, onInstall));
+    for (const plan of ctx.plans) {
+      const gameId = ctx.profile.id;
+      panel.append(planCard(plan, (selectedPlan) => onInstall(gameId, selectedPlan)));
+    }
   }
 
   // Maintenance actions stay out of the sticky bar (§9.1): removal touches
   // every managed file, so it lives with the translator plans it undoes.
   if (ctx.receipts?.length > 0) {
     const remove = el('button', 'ghost uninstall', t('ui.detail.uninstall', undefined, 'Uninstall IndieDeck changes'));
-    remove.addEventListener('click', async () => {
-      remove.disabled = true;
-      setStatus(t('ui.status.removing', undefined, 'Removing…'));
-      try {
-        const results = await api.game.uninstall(ctx.profile.id);
-        const kept = results.flatMap((r) => r.keptModified ?? []);
-        setStatus(
-          kept.length > 0
-            ? t('ui.status.removedKept', { count: kept.length }, 'Removed. {count} hand-edited file(s) were left alone.')
-            : t('ui.status.removed', undefined, 'Removed. Folder restored to what it was.'),
-          'ok',
-        );
-        await refresh();
-      } catch (err) {
-        setStatus(err.message, 'err');
-        remove.disabled = false;
-      }
-    });
+    remove.disabled = mutationBlocked();
+    remove.addEventListener('click', () => onUninstall(ctx.profile.id));
     panel.append(remove);
   }
 }
@@ -239,11 +412,17 @@ export function renderMods(panel, ctx, refresh) {
   }
 
   const addMod = el('button', 'ghost', `+  ${t('ui.detail.addMod', undefined, 'Add mod from file')}`);
+  addMod.disabled = mutationBlocked();
   addMod.addEventListener('click', async () => {
-    const updated = await api.mods.add(profile.id);
-    if (updated) {
-      ctx.mods = updated;
-      refresh({ keepScroll: true });
+    if (mutationBlocked()) return;
+    try {
+      const updated = await api.mods.add(profile.id);
+      if (updated) {
+        ctx.mods = updated;
+        await refresh({ keepScroll: true });
+      }
+    } catch (err) {
+      setStatus(err.message, 'err');
     }
   });
   panel.append(addMod);
@@ -253,11 +432,13 @@ export function renderMods(panel, ctx, refresh) {
   for (const mod of mods) {
     const row = el('div', 'mod');
     const toggle = el('button', `toggle${mod.enabled ? ' on' : ''}`);
+    toggle.disabled = mutationBlocked();
     toggle.title = mod.enabled ? t('ui.plan.blocked', undefined, 'blocked') : '';
     toggle.addEventListener('click', async () => {
       try {
+        if (mutationBlocked()) return;
         ctx.mods = await api.mods.toggle(profile.id, mod.id, !mod.enabled);
-        refresh({ keepScroll: true });
+        await refresh({ keepScroll: true });
       } catch (err) {
         setStatus(err.message, 'err');
       }

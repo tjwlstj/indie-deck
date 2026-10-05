@@ -7,9 +7,19 @@
  * process's OS folder picker, never a renderer-supplied path.
  */
 
-import { $, clear, el } from '../dom.js';
+import { $, clear, el, setStatus } from '../dom.js';
 import { localeOptions, t } from '../i18n.js';
-import { api, emit, state } from '../store.js';
+import { api, applyLibraryPayload, emit, mutationBlocked, state } from '../store.js';
+import { resetConfigPanel } from './config.js';
+
+export function setSettingsMutationDisabled() {
+  const disabled = mutationBlocked();
+  for (const id of ['uiLocale', 'targetLanguage', 'sourceLanguage', 'endpoint', 'saveDefaults', 'addRoot', 'rescanRoots']) {
+    const node = $(id);
+    if (node) node.disabled = disabled;
+  }
+  for (const button of document.querySelectorAll('#rootList button')) button.disabled = disabled;
+}
 
 export function renderRoots() {
   const list = clear($('rootList'));
@@ -24,14 +34,33 @@ export function renderRoots() {
     li.append(el('span', 'path', root));
     const remove = el('button', null, '×');
     remove.title = t('ui.sidebar.stopScanning', { root }, 'Stop scanning {root}');
+    remove.disabled = mutationBlocked();
     remove.addEventListener('click', async () => {
-      state.config = await api.roots.remove(root);
-      renderRoots();
-      emit('library');
+      if (mutationBlocked()) return;
+      try {
+        state.config = await api.roots.remove(root);
+        // Root removal is already committed at this point. Reflect that fact
+        // even if the follow-up library read fails, instead of leaving the
+        // removed root visible as though nothing changed.
+        renderRoots();
+        emit('all');
+        const payload = await api.library.load();
+        applyLibraryPayload(payload);
+        if (state.selected && !state.games.some((game) => game.id === state.selected)) {
+          state.selected = null;
+          state.detail = null;
+          state.selectionRequestToken += 1;
+          resetConfigPanel();
+        }
+        emit('all');
+      } catch (err) {
+        setStatus(err.message, 'err');
+      }
     });
     li.append(remove);
     list.append(li);
   }
+  setSettingsMutationDisabled();
 }
 
 export function renderAbout() {

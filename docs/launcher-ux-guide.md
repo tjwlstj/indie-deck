@@ -1,12 +1,11 @@
 # IndieDeck 런처 설치·복구 UX 구현 가이드
 
-> 문서 상태: **PLANNED**
+> 문서 상태: **PARTIAL** — 구현과 후속 설계가 함께 있는 가이드
 >
-> 기준 코드: 2026-08-22, main 브랜치의 2509bad
+> 최신 확인: 2026-10-05, v0.1.2(`b37a6d0`) 이후 작업 브랜치
 >
-> 이 문서는 다음 구현을 위한 설계·검증 계약이다. 이 문서를 추가하는
-> 변경에는 런처 UI, 설치 동작, 파일 형식, 릴리스 산출물 변경이 포함되지
-> 않는다.
+> §3은 실제 구현 상태이며, 나머지 절의 원자적 maintenance·업데이트·복구
+> 계약은 완료되지 않은 설계도 포함한다. 구현한 범위를 §3.1에 기록한다.
 
 ## 1. 목적
 
@@ -38,48 +37,61 @@
 | **PLANNED** | 이 가이드가 제안하며 아직 구현되지 않은 기능 |
 | **RESEARCH** | 도구별 소유권·보존 경계를 검증해야 하며 아직 자동 동작을 약속하지 않는 영역 |
 
-아래에 설명하는 로딩 바, 설정 페이지, 설치 상태 조정 계획, 원자적
-업데이트·복구, 설치 후 단일 게임 인덱스 갱신, 고정 액션 바는 모두
-**PLANNED**다.
+로딩 바, 설정 페이지, 설치·제거 후 단일 게임 인덱스 갱신과 고정 액션
+바는 구현됐다. 설치 상태 조정 계획, 원자적 업데이트·복구·중복 정리,
+프로세스 종료 후 journal 복구는 **PLANNED**다.
 
 ## 3. 현재 기준선
 
 | 영역 | 현재 상태 | 근거와 한계 |
 | --- | --- | --- |
 | 게임 폴더 파일 롤백 기반 | **CURRENT** | FileTransaction 안에서 수행된 게임 폴더 write·extract가 잡힌 프로세스 내 오류를 만나면 journal을 거꾸로 적용해 복원을 시도한다. crash 복구나 설치 전체 commit을 뜻하지 않는다. |
-| 설치·영수증 전체 원자성 | **PARTIAL** | 현재 applyPlan은 파일 transaction을 commit한 뒤 영수증을 직접 기록한다. 영수증 쓰기가 실패하면 적용 파일이 남고 관리 기록이 없을 수 있으며, 게임 폴더 밖 toolsDir 작업은 이 transaction과 영수증 범위 밖이다. |
+| 설치·영수증 전체 원자성 | **PARTIAL** | 파일 commit 뒤 영수증을 기록한다. 기록 실패는 committed 파일과 receiptStatus를 보존한 실패 outcome으로 표시한다. toolsDir 쓰기와 crash 복구는 게임 transaction 밖이며 완전 복원으로 표시하지 않는다. |
 | IPC 신뢰 경계 | **CURRENT** | 게임 상세·설치·실행 대상은 렌더러가 경로나 계획 객체를 보내지 않고 main이 발급한 gameId와 planId로 지정한다. |
-| 다운로드 바이트 진행 | **PARTIAL** | main이 install:bytes로 received/total을 보내지만 렌더러는 하단 상태 문구에 퍼센트만 표시한다. 그래픽 로딩 바와 구조화된 단계 상태는 없다. |
-| 설치 로그 | **PARTIAL** | install:progress는 자유 형식 문자열이다. 어느 게임·작업·단계의 이벤트인지 식별할 수 없다. |
-| 설치 직후 상세 갱신 | **CURRENT** | game:detail은 선택한 게임 폴더를 deep detect하여 다시 읽는다. |
-| 설치 직후 목록 갱신 | **PARTIAL** | 설치 후 library:load가 호출되지만 이는 마지막 스캔 때 저장한 library.json을 다시 읽는다. 게임 카드의 번역기 배지, 감사, 통계는 수동 전체 스캔 전까지 낡을 수 있다. 제거 후에는 상세만 새로 읽어 이 차이가 더 분명하다. |
-| 오래된 번역기 탐지 | **PARTIAL** | translator-outdated, endpoint-too-old, input-system-too-old 감사 항목은 있지만 대부분 안내 문구일 뿐 실행 가능한 복구 동작과 연결되지 않는다. 현재 newest 비교도 그 게임에서 가장 높은 호환 버전이 아니라 레지스트리 전체의 최신 버전을 기준으로 한다. |
+| 다운로드 바이트 진행 | **CURRENT** | requestId·operationId·sequence·gameId를 갖는 단계 이벤트와 실제 progress 요소를 사용한다. 자산별 바이트와 단계 수를 분리하고 크기를 모르면 불확정 바를 사용한다. |
+| 설치 로그 | **CURRENT** | 상태 기반 작업 카드의 접는 로그이며 화면 전환·재렌더에도 유지된다. 로그는 보조 정보이고 terminal outcome이 완료를 결정한다. |
+| 설치·제거 직후 상세 갱신 | **CURRENT** | 실패·복원 이후에도 deep 재감지하며 상세·감사·receipt·mods·redacted config를 함께 반환한다. 선택 token과 gameRevision이 늦은 응답을 거른다. |
+| 설치·제거 직후 목록 갱신 | **CURRENT** | refreshLibraryGame이 해당 항목만 교체/제거하고 revision을 원자 저장한다. postState의 목록·감사·통계를 함께 병합한다. 다른 게임을 선택해도 설치 대상의 목록 갱신은 반영된다. |
+| 오래된 번역기 탐지 | **PARTIAL** | 게임별 호환 목표 버전 비교는 구현됐다. 안전한 update·repair 실행과 연결하는 maintenance 조정 계획은 남아 있다. |
 | 중복 번역기 탐지 | **CURRENT** | `packages/core/src/health`가 변형·DLL 버전·영수증 증거를 개별 수집하고 duplicate-variants, multiple-versions, managed-drift 등을 분류한다. 단위 테스트는 `packages/core/test/health.test.ts`(§13.3 fixture 12종). 정리 동작 자체는 여전히 **PLANNED**다. |
-| 재설치 안전성 | **PARTIAL** | 일반 파일 적용은 transaction 기반이지만 같은 컴포넌트를 다시 설치하면 translator-componentId.json 영수증을 덮어쓸 수 있다. 이전 릴리스에서 사라진 파일도 자동 정리되지 않는다. 따라서 현재 Install 동작을 Update 또는 Repair라고 이름만 바꾸면 안 된다. |
-| 설치 후 사용자 수정 보호 | **PARTIAL** | 현재 제거는 create 항목의 hash가 달라지면 파일을 남기지만, modify·snapshot 항목은 현재 내용을 비교하지 않고 backup을 복원한다. 기존 설정 파일 등에 설치 후 생긴 사용자 수정을 모든 경우에 보호한다고 볼 수 없다. |
+| 재설치 안전성 | **PARTIAL** | desktop은 기존 managed component 영수증 재설치와 중복·drift·다른 변형 덮어쓰기를 차단하고 사유를 먼저 표시한다. core/CLI의 일반 applyPlan은 maintenance가 아니며 update·repair·정리 버튼으로 승격하지 않는다. |
+| 설치 후 사용자 수정 보호 | **PARTIAL** | create·modify의 설치 후 hash 변경은 보존한다. post hash가 없는 snapshot은 baseline과 다르면 보존하고, 미해결 entry의 receipt를 남긴다. 변경 미리보기와 receipt v3의 원자 계승은 남아 있다. |
 | 상단 바 | **CURRENT** | 브랜드(버전 표기 포함), 검색, 새로고침, 설정만 남았다. 언어·엔드포인트 기본값과 폴더 관리는 설정 페이지가 소유한다. |
 | 게임 액션 | **CURRENT** | 게임 실행과 폴더 열기가 상세 화면의 sticky 영역에 고정되어 스크롤 중에도 보인다. 작업 중에는 실행이 비활성화되고 이유가 인접 문구로 안내된다. 제거 동작은 계획 섹션으로 옮겨져 고정 영역 밖이다. |
 
-### 3.1 현재 설치 진행 표시의 구체적 한계
+### 3.1 이번 구현 범위와 검증 근거
 
-- 여러 자산을 차례로 다운로드하면 received/total이 자산마다 다시 시작하여
-  하나의 전체 퍼센트처럼 보일 때 값이 뒤로 점프한다.
-- Content-Length가 없으면 total이 0이므로 퍼센트를 표시할 수 없다.
-- 캐시 적중, 검증, 백업, 압축 해제, 설정, 재감지, 감사와 롤백은 바이트
-  이벤트만으로 표현할 수 없다.
-- 이벤트에 operationId, gameId, planId, step이 없어 다른 작업의 이벤트를
-  확실히 분리할 수 없다.
-- 설치 시작 시 전역 busy를 true로 만든 뒤 마지막 상세 렌더보다 나중에
-  false로 되돌리므로, 별도 최종 렌더가 없으면 설치 버튼이 비활성 상태로
-  남을 수 있다.
-- await 중 선택 게임이 바뀌면 완료 후 state.selected가 원래 설치 대상과
-  달라질 수 있다. 작업 대상 id는 시작 시 캡처하고 선택 상태와 분리해야
-  한다.
-- pendingUserActions가 남은 결과도 현재 화면은 곧바로 “설치됨”으로
-  표시한다. 완전 완료와 사용자 작업 대기를 구분해야 한다.
-- core 다운로드 계층에는 AbortSignal 기반이 있지만 현재 main·preload·UI의
-  취소 동작과 연결되어 있지 않다. 첫 구현에서 작동하지 않는 취소 버튼을
-  노출하면 안 된다.
+- core의 `ApplyProgress`와 다운로드 lifecycle은 자유 로그와 분리한다.
+  캐시 적중·크기 미상·복수 자산·rollback/receipt 실패는
+  `apply-progress.test.ts`, `download.test.ts`, `transaction.test.ts`로 검증한다.
+- main의 `OperationManager`는 즉시 시작 응답, 전역 한 작업, 단조 sequence,
+  snapshot, ACK 전 outcome 보관을 제공한다. 미확인 결과가 10개가 되면
+  다음 시작을 거부해 결과를 잃지 않고 보관량을 제한한다.
+  `desktop-operations.test.ts`가 작업 수명과 reload 복구 경계를 검증한다.
+- desktop 제거는 `readSafeRemovalReceipts`로 읽은 동일 객체만 적용한다.
+  canonical v2·operation·hash·backup 범위를 검증하고 실행 파일 및 이를
+  포함하는 디렉터리, symlink/junction 경로를 차단한다. v1 자동 제거는
+  증거 부족으로 중단한다. `desktop-receipts.test.ts`가 이 경계를 검증하며,
+  검증 이후 외부 프로세스의 target 교체까지 원자적으로 막는 것은 아니다.
+- 폰트·단일 파일 모드 복사도 설치 후 hash를 기록한다. 정상적인 한글·공백
+  모드 이름은 안전한 단일 파일명 규칙으로 허용하며, directory copy는
+  파일별 소유권 기록 없이 수행하지 않는다. 추출·복사·hash 실패는
+  rollback 경로로 전달하고, 7z 준비 도구가 없을 때만 수동 안내로 남긴다.
+- renderer는 앱 수명 listener를 하나씩 등록하고 작업을 상태로 렌더링한다.
+  실제 바, 단계, 바이트, 접는 로그, 추가 작업·부분 복원·갱신 실패 카드,
+  대상 목록 배지와 설정 화면의 상단 작업 버튼을 제공한다.
+- `library.test.ts`와 `renderer-state.test.ts`는 targeted 저장, revision,
+  A→B→A 선택 역순 응답, postState 병합과 오래된 작업 이벤트를 검증한다.
+- `node scripts/check-desktop-flow.mjs ko` 및 `en`은 일회용 게임과 가짜
+  다운로드로 실제 Electron/IPC/core 설치→설정 이동→renderer reload→
+  즉시 목록 갱신→작은 창 sticky 액션→제거 흐름을 검증한다. 실제 번역기
+  실행이나 실제 GitHub 다운로드 성공을 증명하는 테스트는 아니다.
+- 취소 UI, durable journal, 프로세스/OS crash 이후 복구, 증분 hash cache,
+  손상 인덱스의 엄격한 재구성은 남아 있다. 단일 게임 저장 revision은
+  디스크에 유지되고, gameRevision은 현재 main 프로세스의 snapshot token이다.
+- 이번 이벤트는 `maintenance:start({kind,gameId,planId?,requestId})`와
+  `maintenance:current/outcome/acknowledge`다. §5의 actionId 기반 원자적
+  maintenance 계획은 후속 계약이며, 현재 설치·제거에만 이 수명 모델을 적용한다.
 
 ### 3.2 현재 재설치를 업데이트로 사용하면 안 되는 이유
 
@@ -902,12 +914,14 @@ UI부터 Update 버튼을 붙이지 말고 안전한 상태·조정 모델부터
    - 안전한 remove와 durable journal·startup recovery
    - 영수증 v3 또는 versioned receipt/active pointer의 stage/activate
    - 고장 주입 롤백 테스트
-3. **구조화 진행 이벤트**
+3. **구조화 진행 이벤트** — **PARTIAL**(2026-10-05): 설치·제거 진행과
+   renderer reload 복구는 구현, 원자적 maintenance/durable recovery는 남음
    - core 단계 콜백
    - requestId/operationId start handshake와 terminal outcome
    - preload 고정 채널
    - 로딩 바와 접근 가능한 단계 표시
-4. **단일 게임 post-mutation refresh**
+4. **단일 게임 post-mutation refresh** — **PARTIAL**(2026-10-05): 대상 저장과
+   revision·postState 병합 구현, 손상 인덱스 재구성·증분 cache는 남음
    - deep detect
    - library.json 한 항목 교체·저장
    - 감사·통계·상세 postState

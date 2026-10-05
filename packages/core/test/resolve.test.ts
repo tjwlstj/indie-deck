@@ -66,6 +66,8 @@ test('an already-installed loader is preferred over adding a second one', () => 
 
   assert.equal(reuse.loader?.alreadyInstalled, true);
   assert.equal(reuse.loader?.version, '5.4.23.3', 'the installed version is carried through, not the newest');
+  const reuseStep = reuse.steps.find((step) => step.descriptionKey === 'core.step.loader-reuse');
+  assert.equal(reuseStep?.details?.['informational'], true, 'loader reuse is machine-readable, not inferred from translated text');
   assert.ok(reuse.score > plain.score);
 });
 

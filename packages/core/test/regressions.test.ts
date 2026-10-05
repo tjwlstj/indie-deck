@@ -124,6 +124,23 @@ test('a receipt cannot delete outside the game folder', async () => {
   assert.deepEqual(result.removed, [], 'nothing outside the root is reported as removed');
 });
 
+test('a hostile receipt identity is rejected before managed files are touched', async () => {
+  const root = makeDir('receipt-id-escape', { 'owned.dll': 'installed' });
+  const hostile = {
+    id: 'hostile-id',
+    schemaVersion: 2,
+    gamePath: root,
+    kind: 'mod' as const,
+    componentId: '../../../../outside',
+    version: '1',
+    installedAt: new Date(0).toISOString(),
+    entries: [{ path: 'owned.dll', operation: 'create' as const }],
+  };
+
+  await assert.rejects(() => uninstallReceipt(hostile), /outside the receipts folder/);
+  assert.equal(await fsp.readFile(path.join(root, 'owned.dll'), 'utf8'), 'installed');
+});
+
 test('a receipt whose gamePath was tampered with is ignored in favour of the folder it was read from', async () => {
   const root = makeDir('receipt-gamepath', {});
   await fsp.writeFile(path.join(root, 'mod.dll'), 'installed');

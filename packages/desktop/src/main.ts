@@ -31,13 +31,17 @@ import {
   writeGameConfig,
   modHosts,
   readReceipts,
+  readReceiptEvidence,
+  collectTranslatorEvidence,
   refreshLibrary,
+  refreshLibraryGame,
   removeRoot,
   resolvePlans,
   saveConfig,
   setModEnabled,
   summarisePlans,
   uninstallReceipt,
+  isSafeReceiptComponentId,
   type GameProfile,
   type LauncherConfig,
   type Registry,
@@ -45,7 +49,12 @@ import {
   type ConfigChange,
   type ConfigSchema,
   type TranslatorPlan,
+  type ApplyResult,
+  type ReceiptEvidence,
+  type TranslatorInstallEvidence,
 } from '@indiedeck/core';
+import { OperationManager, type OperationRequest, type OperationResult, type ProgressUpdate } from './operations.ts';
+import { readSafeRemovalReceipts } from './receipt-guard.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const { autoUpdater } = electronUpdater;
@@ -57,6 +66,42 @@ let registry: Registry;
 let mainWindow: BrowserWindow | undefined;
 let pendingMutations = 0;
 let mutationQueue: Promise<void> = Promise.resolve();
+let stateRevision = 0;
+const gameRevisions = new Map<string, number>();
+let libraryRoots: string[] = [];
+
+const ownsInstance = app.requestSingleInstanceLock();
+if (!ownsInstance) app.quit();
+app.on('second-instance', () => {
+  if (mainWindow?.isMinimized()) mainWindow.restore();
+  mainWindow?.show();
+  mainWindow?.focus();
+});
+
+function send(channel: string, payload: unknown): void {
+  if (mainWindow && !mainWindow.webContents.isDestroyed()) mainWindow.webContents.send(channel, payload);
+}
+
+/** Reserving a slot is synchronous, so a fast start reply cannot open a quit
+ * gap before the queued file writer begins. */
+function enqueueMutation<T>(work: () => Promise<T> | T): Promise<T> {
+  pendingMutations += 1;
+  const result = mutationQueue.then(work);
+  mutationQueue = result.then(() => undefined, () => undefined);
+  return result.finally(() => { pendingMutations -= 1; });
+}
+
+const operations = new OperationManager({
+  enqueue: (work) => { void enqueueMutation(work); },
+  progress: (event) => send('maintenance:progress', event),
+  outcome: (event) => send('maintenance:outcome', event),
+});
+
+function markGameChanged(gameId: string): number {
+  const revision = ++stateRevision;
+  gameRevisions.set(gameId, revision);
+  return revision;
+}
 
 /* ------------------------------------------------------- trust boundary */
 
@@ -71,19 +116,37 @@ let mutationQueue: Promise<void> = Promise.resolve();
  */
 const gamePathsById = new Map<string, string>();
 const plansById = new Map<string, TranslatorPlan>();
+const planOptionsById = new Map<string, ResolveOptions>();
 
 function idFor(gamePath: string): string {
   return crypto.createHash('sha1').update(path.resolve(gamePath).toLowerCase()).digest('hex').slice(0, 16);
 }
 
 function rememberGames(profiles: GameProfile[]): void {
+  const currentIds = new Set(profiles.map((profile) => idFor(profile.path)));
+  for (const id of gamePathsById.keys()) if (!currentIds.has(id)) {
+    gamePathsById.delete(id);
+    gameRevisions.delete(id);
+    for (const key of plansById.keys()) if (key.startsWith(`${id}:`)) {
+      plansById.delete(key);
+      planOptionsById.delete(key);
+    }
+  }
   for (const profile of profiles) gamePathsById.set(idFor(profile.path), path.resolve(profile.path));
+}
+
+function withinLibraryRoot(gamePath: string): boolean {
+  const resolved = path.resolve(gamePath).toLowerCase();
+  return libraryRoots.some((root) => {
+    const base = path.resolve(root).toLowerCase();
+    return resolved === base || resolved.startsWith(base + path.sep);
+  });
 }
 
 function requireGamePath(gameId: unknown): string {
   if (typeof gameId !== 'string' || !/^[0-9a-f]{16}$/.test(gameId)) throw new Error('Malformed game id.');
   const resolved = gamePathsById.get(gameId);
-  if (!resolved) throw new Error('Unknown game - rescan the library and try again.');
+  if (!resolved || !withinLibraryRoot(resolved)) throw new Error('Unknown game - rescan the library and try again.');
   return resolved;
 }
 
@@ -92,11 +155,19 @@ function withId<T extends { path: string }>(profile: T): T & { id: string } {
 }
 
 /** Recomputes plans for a game and keeps the authoritative copies main-side. */
-function cachePlans(gameId: string, plans: TranslatorPlan[]): (TranslatorPlan & { id: string })[] {
-  for (const key of [...plansById.keys()]) if (key.startsWith(`${gameId}:`)) plansById.delete(key);
-  return plans.map((plan, index) => {
-    const id = `${gameId}:${index}`;
+function cachePlans(gameId: string, plans: TranslatorPlan[], options: ResolveOptions): (TranslatorPlan & { id: string })[] {
+  // Retain a small history: an older detail request finishing later must not
+  // invalidate the ids already returned by the newer selected-game request.
+  // Every install still rebuilds and compares its plan immediately before use.
+  while (plansById.size > 250) {
+    const key = plansById.keys().next().value!;
+    plansById.delete(key);
+    planOptionsById.delete(key);
+  }
+  return plans.map((plan) => {
+    const id = `${gameId}:${crypto.randomUUID()}`;
     plansById.set(id, plan);
+    planOptionsById.set(id, options);
     return { ...plan, id };
   });
 }
@@ -176,20 +247,25 @@ function createWindow(): void {
 
   // INDIEDECK_DEBUG=1 pipes renderer console output to the terminal, which is
   // the only way to see a renderer error when devtools are closed.
-  if (process.env['INDIEDECK_DEBUG']) {
+  if (process.env['INDIEDECK_DEBUG'] || process.env['INDIEDECK_SMOKE']) {
     window.webContents.on('console-message', (details) => {
       console.log(`[renderer:${details.level}] ${details.message}  (${details.sourceId}:${details.lineNumber})`);
     });
     window.webContents.on('did-fail-load', (_event, code, description) => {
       console.error(`[renderer] failed to load: ${description} (${code})`);
     });
-    window.webContents.openDevTools({ mode: 'detach' });
+    if (process.env['INDIEDECK_DEBUG']) window.webContents.openDevTools({ mode: 'detach' });
   }
 
   // INDIEDECK_SMOKE=1 boots the window, waits for the library to render, prints
   // what it found and exits. Used in CI to catch a renderer that silently fails
   // to start, which no unit test would notice.
-  if (process.env['INDIEDECK_SMOKE']) void runSmokeTest(window);
+  if (process.env['INDIEDECK_SMOKE']) {
+    void runSmokeTest(window).catch((err: unknown) => {
+      console.error(`[smoke] ${err instanceof Error ? err.message : String(err)}`);
+      app.exit(1);
+    });
+  }
 }
 
 async function runSmokeTest(window: BrowserWindow): Promise<void> {
@@ -238,6 +314,8 @@ async function runSmokeTest(window: BrowserWindow): Promise<void> {
       else console.log(`[smoke] detail for "${detail.title}": ${detail.facts} facts, ${detail.plans} translator plans, ${detail.configSections} config sections / ${detail.configRows} settings`);
       if (process.env['INDIEDECK_DEBUG']) console.log(`[smoke] config panel says: ${detail.configText}`);
 
+      if (process.env['INDIEDECK_SMOKE_FLOW'] === '1') await runOperationSmoke(window);
+
       const shot = process.env['INDIEDECK_SCREENSHOT'];
       if (shot) {
         // Optionally frame a particular part of the page for documentation shots.
@@ -261,6 +339,99 @@ async function runSmokeTest(window: BrowserWindow): Promise<void> {
 
   console.error('[smoke] renderer did not finish loading within 20s');
   app.exit(1);
+}
+
+/** Exercises the real renderer/preload/main/core flow using only the disposable
+ * fixtures and offline fetch implementation in scripts/desktop-flow-bootstrap. */
+async function runOperationSmoke(window: BrowserWindow): Promise<void> {
+  const evaluate = async <T>(source: string): Promise<T> => {
+    const result = await window.webContents.executeJavaScript(`(async () => {
+      try { return await (${source}); }
+      catch (error) { return { __smokeError: String(error.stack ?? error) }; }
+    })()`) as T & { __smokeError?: string };
+    if (result?.__smokeError) throw new Error(`Renderer flow check failed: ${result.__smokeError}`);
+    return result;
+  };
+  const waitFor = async (source: string, label: string, timeout = 15_000) => {
+    const end = Date.now() + timeout;
+    while (Date.now() < end) {
+      if (await evaluate<boolean>(source)) return;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    throw new Error(`Operation smoke timed out: ${label}`);
+  };
+  const start = await evaluate<{ gameId: string; operationId?: string; immediate: boolean }>(`(async () => {
+    const { state } = await import('./store.js');
+    const gameId = state.selected;
+    const button = document.querySelector('#detail .plan .install');
+    if (!button) throw new Error('No viable translator plan in the smoke fixture.');
+    button.click();
+    return { gameId, operationId: state.operation?.operationId,
+      immediate: !!state.operation && !!document.querySelector('#detail progress') };
+  })()`);
+  if (!start.immediate) throw new Error('Install progress did not appear in the click frame.');
+  await waitFor(`(async () => {
+    const op = (await import('./store.js')).state.operation;
+    const bar = document.querySelector('#detail .operation-progress');
+    return op?.phase === 'download' && op.received > 0 && op.received < op.total
+      && bar && bar.value >= 10 && bar.value < 90;
+  })()`, 'streamed download progress');
+  await evaluate(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
+  const progressShot = process.env['INDIEDECK_FLOW_PROGRESS_SCREENSHOT'];
+  if (progressShot) await writeFile(progressShot, (await window.webContents.capturePage()).toPNG());
+  await evaluate(`(() => {
+    document.querySelectorAll('#gameList .game')[1].click();
+    document.getElementById('openSettings').click();
+  })()`);
+  const settings = await evaluate<boolean>(`!document.getElementById('taskStatus').hidden && document.getElementById('saveDefaults').disabled`);
+  if (!settings) throw new Error('Settings lost the active operation or enabled a file mutation.');
+  await new Promise<void>((resolve) => {
+    window.webContents.once('did-finish-load', () => resolve());
+    window.webContents.reload();
+  });
+  await waitFor(`(async () => !!(await import('./store.js')).state.operation)()`, 'reload snapshot recovery');
+  await waitFor(`(async () => !!(await import('./store.js')).state.operation?.outcome)()`, 'terminal outcome');
+  await waitFor(`document.body.dataset.libraryState === 'ready'`, 'library after operation');
+  const installed = await evaluate<{ status?: string; refreshStatus?: string; translated: number; revision: number; pending?: string[] }>(`(async () => {
+    const { state } = await import('./store.js');
+    return { status: state.operation?.outcome?.status, refreshStatus: state.operation?.outcome?.refreshStatus,
+      translated: state.stats?.withTranslator, revision: state.libraryRevision,
+      pending: state.operation?.outcome?.result?.pendingUserActions };
+  })()`);
+  if (installed.status !== 'success' || installed.refreshStatus !== 'complete' || installed.translated !== 1) {
+    throw new Error(`Install did not atomically refresh the game list: ${JSON.stringify(installed)}`);
+  }
+  await evaluate(`document.getElementById('taskStatus').click()`);
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return state.detail?.profile.id === ${JSON.stringify(start.gameId)}
+      && !!document.querySelector('#detail .detail-sticky .operation-card.ok');
+  })()`, 'completed operation detail');
+  window.setSize(1000, 680);
+  await evaluate(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
+  const visible = await evaluate<boolean>(`(() => {
+    const panel = document.getElementById('detail'); panel.scrollTop = panel.scrollHeight;
+    const sticky = document.querySelector('.detail-sticky').getBoundingClientRect();
+    const bounds = panel.getBoundingClientRect();
+    return sticky.top >= bounds.top - 1 && sticky.bottom <= bounds.bottom;
+  })()`);
+  if (!visible) throw new Error('Sticky game actions escaped the small-window detail viewport.');
+  const shot = process.env['INDIEDECK_FLOW_SCREENSHOT'];
+  if (shot) await writeFile(shot, (await window.webContents.capturePage()).toPNG());
+
+  await evaluate(`document.querySelector('#detail .uninstall').click()`);
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return state.operation?.kind === 'uninstall' && !!state.operation.outcome;
+  })()`, 'removal outcome');
+  const removed = await evaluate<{ status?: string; translated: number; revision: number }>(`(async () => {
+    const { state } = await import('./store.js');
+    return { status: state.operation?.outcome?.status, translated: state.stats?.withTranslator, revision: state.libraryRevision };
+  })()`);
+  if (removed.status !== 'success' || removed.translated !== 0 || removed.revision <= installed.revision) {
+    throw new Error(`Removal did not refresh translator badges/statistics: ${JSON.stringify(removed)}`);
+  }
+  console.log('[smoke] install → settings → renderer reload → postState → sticky actions → uninstall passed');
 }
 
 /* ------------------------------------------------------------ updates */
@@ -328,14 +499,200 @@ async function configContext(gameId: string, translatorId: string) {
 }
 
 /** One shape for both load and scan, with display strings in the active locale. */
-function libraryPayload(index: Awaited<ReturnType<typeof loadLibrary>>) {
-  const games = index.games.map((game) => localiseProfile(registry, game));
+function libraryPayload(index: Awaited<ReturnType<typeof loadLibrary>>, options: ResolveOptions = {}) {
+  const games = index.games.filter((game) => withinLibraryRoot(game.path)).map((game) => localiseProfile(registry, game));
+  stateRevision = Math.max(stateRevision, index.revision);
+  for (const game of games) if (!gameRevisions.has(idFor(game.path))) gameRevisions.set(idFor(game.path), stateRevision);
   rememberGames(games);
   return {
     index: { ...index, games: games.map(withId) },
     stats: libraryStats({ ...index, games }),
-    audits: auditLibrary(registry, games).map((a) => ({ ...a, id: idFor(a.path) })),
+    audits: auditLibrary(registry, games, options).map((a) => ({ ...a, id: idFor(a.path) })),
   };
+}
+
+function safeResolveOptions(options?: ResolveOptions): ResolveOptions {
+  return {
+    targetLanguage: String(options?.targetLanguage ?? 'en').slice(0, 40),
+    sourceLanguage: String(options?.sourceLanguage ?? 'ja').slice(0, 40),
+    endpoint: String(options?.endpoint ?? 'GoogleTranslate').slice(0, 100),
+    includeNonViable: true,
+  };
+}
+
+async function translatorConfigPayload(profile: GameProfile, requested?: string) {
+  const schemas = registry.configSchemas as Map<string, ConfigSchema>;
+  const id = pickTranslator(schemas, profile, requested);
+  const schema = schemas.get(id)!;
+  const config = await readGameConfig(registry, schemas, profile, id);
+  return {
+    config,
+    categories: (schema.categories ?? []).map((category) => ({
+      id: category.id,
+      label: tRegistry(`configSchema.${id}.categories.${category.id}`, category.label),
+    })),
+    fontBundles: profile.installedFontBundles,
+    gameRevision: gameRevisions.get(idFor(profile.path)) ?? 0,
+  };
+}
+
+async function gameDetailPayload(gameId: string, options: ResolveOptions, detected?: GameProfile) {
+  const profile = localiseProfile(registry, detected ?? requireDetectedGame(gameId));
+  const configTranslator = profile.installedTranslators.find((entry) => registry.configSchemas.has(entry.translatorId));
+  const receiptsEvidence = readReceiptEvidence(profile.path);
+  const installEvidence = collectTranslatorEvidence(registry, profile, options);
+  return {
+    profile: withId(profile),
+    gameRevision: gameRevisions.get(gameId) ?? 0,
+    plans: cachePlans(gameId, summarisePlans(resolvePlans(registry, profile, options)), options)
+      .map((plan) => ({ ...plan, installBlockReason: installBlockReason(plan, receiptsEvidence, installEvidence) })),
+    audit: auditGame(registry, profile, options),
+    receipts: await readReceipts(profile.path),
+    mods: await listMods(registry, profile),
+    hosts: modHosts(registry, profile).map((h) => ({ loaderId: h.loader.id, name: h.loader.name, dir: h.dir })),
+    translatorConfig: configTranslator ? await translatorConfigPayload(profile, configTranslator.translatorId) : null,
+  };
+}
+
+function requireDetectedGame(gameId: string): GameProfile {
+  const profile = detectGame(registry, requireGamePath(gameId), { deep: true });
+  if (!profile) throw new Error('No known engine detected here any more - the folder may have changed.');
+  return profile;
+}
+
+/** A read begun before a write cannot label its older files with a newer
+ * revision. Wait for the writer, then retry if another write started while the
+ * asynchronous receipt/mod/config snapshot was assembled. */
+async function stableGameRead<T>(gameId: string, read: () => Promise<T>): Promise<T> {
+  for (;;) {
+    const barrier = mutationQueue;
+    await barrier;
+    const revision = gameRevisions.get(gameId) ?? 0;
+    const snapshot = await read();
+    if (barrier === mutationQueue && revision === (gameRevisions.get(gameId) ?? 0) && !operations.isActive()) return snapshot;
+  }
+}
+
+async function refreshGameState(gameId: string, report: (update: ProgressUpdate) => void) {
+  report({ phase: 'redetect' });
+  const { index, profile } = await refreshLibraryGame(registry, requireGamePath(gameId));
+  stateRevision = Math.max(stateRevision, index.revision);
+  const gameRevision = markGameChanged(gameId);
+  report({ phase: 'audit' });
+  const options = safeResolveOptions((await loadConfig()).defaults);
+  const library = libraryPayload(index, options);
+  const detail = profile ? await gameDetailPayload(gameId, options, profile) : null;
+  return { gameId, gameRevision, library, detail, translatorConfig: detail?.translatorConfig ?? null };
+}
+
+function planFingerprint(plan: TranslatorPlan): string {
+  return JSON.stringify({
+    translatorId: plan.translatorId, variantId: plan.variantId, version: plan.version,
+    loader: plan.loader, fontBundle: plan.fontBundle, viable: plan.viable, config: plan.config,
+    steps: plan.steps.map(({ action, source, dest, details }) => ({ action, source, dest, details })),
+  });
+}
+
+function receiptsAreUnsafe(evidence: ReceiptEvidence): boolean {
+  return evidence.issues.length > 0 || evidence.records.some((r) =>
+    !isSafeReceiptComponentId(r.componentId) ||
+    r.storageId !== `${r.kind}-${r.componentId}.json`);
+}
+
+function validateManagedReceipts(gamePath: string): void {
+  if (receiptsAreUnsafe(readReceiptEvidence(gamePath))) {
+    throw new Error(t('ui.operation.receiptBlocked', undefined,
+      'An install record is damaged or unsupported. Review it before changing managed files.'));
+  }
+}
+
+function installBlockReason(
+  plan: TranslatorPlan, receipts: ReceiptEvidence, installations: TranslatorInstallEvidence[],
+): string | undefined {
+  if (receiptsAreUnsafe(receipts)) return t('ui.operation.receiptBlocked', undefined,
+    'An install record is damaged or unsupported. Review it before changing managed files.');
+  if (receipts.records.some((r) => (r.kind === 'translator' && r.componentId === plan.translatorId) ||
+    (r.kind === 'loader' && r.componentId === plan.loader?.loaderId && !plan.loader?.alreadyInstalled))) {
+    return t('ui.operation.reinstallBlocked', undefined,
+      'This component already has an install record. Safe updates and repairs require the upcoming maintenance flow.');
+  }
+  const evidence = installations.find((e) => e.translatorId === plan.translatorId);
+  if (evidence?.healthIssues.some((issue) =>
+    ['duplicate-variants', 'multiple-versions', 'managed-drift', 'corrupt-receipt', 'newer-than-registry'].includes(issue)) ||
+    evidence?.variantHits.some((hit) => hit.paths.length > 0 && hit.variantId !== plan.variantId)) {
+    return t('ui.operation.cleanupBlocked', undefined,
+      'The existing translator needs review or cleanup before this install can run.');
+  }
+  return undefined;
+}
+
+async function runMaintenance(
+  request: OperationRequest, plan: TranslatorPlan | undefined, options: ResolveOptions,
+  report: (update: ProgressUpdate) => void,
+): Promise<OperationResult> {
+  let result: OperationResult = {
+    status: 'failed', mutationStatus: 'rolled-back', rollbackStatus: 'not-run',
+    rollbackFailures: [], refreshStatus: 'failed',
+  };
+  markGameChanged(request.gameId);
+  try {
+    report({ phase: 'preflight' });
+    const profile = requireDetectedGame(request.gameId);
+    validateManagedReceipts(profile.path);
+    if (request.kind === 'install') {
+      if (!plan?.viable) throw new Error('That plan cannot be installed.');
+      const fresh = summarisePlans(resolvePlans(registry, profile, options))
+        .find((candidate) => planFingerprint(candidate) === planFingerprint(plan));
+      if (!fresh?.viable) throw new Error(t('ui.operation.planChanged', undefined,
+        'The game or install plan changed. Reopen the game and choose a fresh plan.'));
+      const blocked = installBlockReason(fresh, readReceiptEvidence(profile.path), collectTranslatorEvidence(registry, profile, options));
+      if (blocked) throw new Error(blocked);
+      const applied = await applyPlan(fresh, {
+        onEvent: (event) => report(event),
+        logger: {
+          level: 'info', debug: () => {},
+          info: (log) => report({ log }), warn: (log) => report({ log }), error: (log) => report({ log }),
+          child() { return this; },
+        },
+      });
+      result = {
+        ...result, status: applied.pendingUserActions.length ? 'needs-user-action' : 'success',
+        mutationStatus: 'committed', result: applied,
+      };
+    } else {
+      const receipts = await readSafeRemovalReceipts(profile.path, profile.executable ? [profile.executable] : []);
+      const removed = [];
+      result.mutationStatus = 'partial';
+      for (let index = 0; index < receipts.length; index += 1) {
+        report({ phase: 'backup', stepIndex: index + 1, stepCount: receipts.length,
+          description: `${receipts[index]!.kind}: ${receipts[index]!.componentId}` });
+        removed.push(await uninstallReceipt(receipts[index]!, { root: profile.path }));
+      }
+      result = {
+        ...result, status: removed.some((entry) => entry.keptModified.length > 0 || entry.missing.length > 0)
+          ? 'needs-user-action' : 'success', mutationStatus: 'committed', result: removed,
+      };
+    }
+  } catch (err) {
+    const error = err as Error & { applyResult?: ApplyResult };
+    const applied = error.applyResult;
+    result = {
+      ...result, status: 'failed', error: error.message,
+      ...(applied ? {
+        result: applied, mutationStatus: applied.mutationStatus,
+        rollbackStatus: applied.rollbackStatus, rollbackFailures: applied.rollbackFailures,
+      } : {}),
+    };
+  }
+
+  try {
+    result.postState = await refreshGameState(request.gameId, report);
+    result.refreshStatus = 'complete';
+  } catch (err) {
+    result.refreshError = (err as Error).message;
+    markGameChanged(request.gameId);
+  }
+  return result;
 }
 
 /* ---------------------------------------------------------------- ipc */
@@ -354,15 +711,8 @@ function handle<T>(channel: string, fn: (...args: never[]) => Promise<T> | T): v
 /** Serialises every filesystem mutation and makes pending work quit-visible. */
 function handleMutation<T>(channel: string, fn: (...args: never[]) => Promise<T> | T): void {
   handle(channel, (...args: never[]) => {
-    pendingMutations += 1;
-    const result = mutationQueue.then(() => fn(...args));
-    mutationQueue = result.then(
-      () => undefined,
-      () => undefined,
-    );
-    return result.finally(() => {
-      pendingMutations -= 1;
-    });
+    if (operations.isActive()) throw new Error(t('ui.operation.busy', undefined, 'Wait for the current file operation to finish.'));
+    return enqueueMutation(() => fn(...args));
   });
 }
 
@@ -413,20 +763,26 @@ function register(): void {
     return loadConfig();
   });
 
-  handleMutation('root:remove', async (root: string) => removeRoot(String(root)));
+  handleMutation('root:remove', async (root: string) => {
+    const config = await removeRoot(String(root));
+    libraryRoots = config.roots;
+    rememberGames((await loadLibrary()).games.filter((game) => withinLibraryRoot(game.path)));
+    return config;
+  });
 
   // Adding a root always goes through the OS picker: the path comes from the
   // user via a native dialog, never from the renderer.
   handleMutation('root:pick', async () => {
     const result = await dialog.showOpenDialog({ properties: ['openDirectory'], title: 'Add a library root' });
     if (result.canceled || result.filePaths.length === 0) return undefined;
-    await addRoot(result.filePaths[0]!);
+    libraryRoots = (await addRoot(result.filePaths[0]!)).roots;
     return result.filePaths[0];
   });
 
   handle('library:load', async () => {
+    await mutationQueue;
     const index = await loadLibrary();
-    return libraryPayload(index);
+    return libraryPayload(index, safeResolveOptions((await loadConfig()).defaults));
   });
 
   handleMutation('library:scan', async (options: { depth?: number; deep?: boolean }) => {
@@ -436,66 +792,38 @@ function register(): void {
     if (typeof options?.depth === 'number') scanOptions.depth = options.depth;
     if (typeof options?.deep === 'boolean') scanOptions.deep = options.deep;
     const index = await refreshLibrary(registry, scanOptions);
-    return libraryPayload(index);
+    return libraryPayload(index, safeResolveOptions((await loadConfig()).defaults));
   });
 
   handle('game:detail', async (gameId: string, options: ResolveOptions) => {
-    const gamePath = requireGamePath(gameId);
-    const detected = detectGame(registry, gamePath, { deep: true });
-    if (!detected) throw new Error('No known engine detected here any more - the folder may have changed.');
-    const profile = localiseProfile(registry, detected);
-
-    const safeOptions: ResolveOptions = {
-      targetLanguage: String(options?.targetLanguage ?? 'en'),
-      sourceLanguage: String(options?.sourceLanguage ?? 'ja'),
-      endpoint: String(options?.endpoint ?? 'GoogleTranslate'),
-      includeNonViable: true,
-    };
-
-    return {
-      profile: withId(profile),
-      plans: cachePlans(gameId, summarisePlans(resolvePlans(registry, profile, safeOptions))),
-      audit: auditGame(registry, profile, {
-        targetLanguage: safeOptions.targetLanguage,
-        endpoint: safeOptions.endpoint,
-      }),
-      receipts: await readReceipts(profile.path),
-      mods: await listMods(registry, profile),
-      hosts: modHosts(registry, profile).map((h) => ({ loaderId: h.loader.id, name: h.loader.name, dir: h.dir })),
-    };
-  });
-
-  handleMutation('game:install', async (gameId: string, planId: string, options: { dryRun?: boolean }) => {
     requireGamePath(gameId);
-    const plan = requirePlan(gameId, planId);
-    return applyPlan(plan, {
-      dryRun: options?.dryRun === true,
-      logger: {
-        level: 'info',
-        debug: () => {},
-        info: (msg: string) => mainWindow?.webContents.send('install:progress', msg),
-        warn: (msg: string) => mainWindow?.webContents.send('install:progress', msg),
-        error: (msg: string) => mainWindow?.webContents.send('install:progress', msg),
-        child: () => ({}) as never,
-      },
-      onProgress: (received, total) => mainWindow?.webContents.send('install:bytes', { received, total: total ?? 0 }),
-    });
+    return stableGameRead(gameId, () => gameDetailPayload(gameId, safeResolveOptions(options)));
   });
 
-  handleMutation('game:uninstall', async (gameId: string, componentId?: string) => {
-    const gamePath = requireGamePath(gameId);
-    const receipts = await readReceipts(gamePath);
-    const selected = componentId ? receipts.filter((r) => r.componentId === componentId) : receipts;
-    const results = [];
-    for (const receipt of selected) results.push(await uninstallReceipt(receipt));
-    return results;
+  handleMutation('game:refresh', async (gameId: string) => refreshGameState(gameId, () => {}));
+
+  handle('maintenance:start', (input: OperationRequest) => {
+    if (!input || typeof input !== 'object') throw new Error('Malformed operation request.');
+    requireGamePath(input.gameId);
+    const request: OperationRequest = {
+      requestId: input.requestId, gameId: input.gameId, kind: input.kind,
+      ...(input.kind === 'install' ? { planId: input.planId } : {}),
+    };
+    const plan = request.kind === 'install' ? requirePlan(request.gameId, request.planId) : undefined;
+    const options = planOptionsById.get(request.planId ?? '') ?? {};
+    if (plan && !plan.viable) throw new Error('That plan cannot be installed.');
+    return operations.start(request, (report) => runMaintenance(request, plan, options, report));
   });
+  handle('maintenance:current', () => operations.current());
+  handle('maintenance:outcome', (operationId: string) => operations.outcome(String(operationId)));
+  handle('maintenance:acknowledge', (operationId: string) => operations.acknowledge(String(operationId)));
 
   handleMutation('mods:toggle', async (gameId: string, modId: string, enabled: boolean) => {
     const gamePath = requireGamePath(gameId);
     const profile = detectGame(registry, gamePath);
     if (!profile) throw new Error('Game folder is gone.');
     await setModEnabled(registry, profile, String(modId), enabled === true);
+    markGameChanged(gameId);
     return listMods(registry, profile);
   });
 
@@ -510,12 +838,14 @@ function register(): void {
     });
     if (picked.canceled || picked.filePaths.length === 0) return undefined;
     await installModFromFile(registry, profile, picked.filePaths[0]!);
+    markGameChanged(gameId);
     return listMods(registry, profile);
   });
 
   // The executable is resolved main-side from the detected profile: the
   // renderer cannot name an arbitrary binary to spawn.
   handle('game:launch', async (gameId: string) => {
+    if (pendingMutations > 0) throw new Error(t('ui.operation.busy', undefined, 'Wait for the current file operation to finish.'));
     const gamePath = requireGamePath(gameId);
     const profile = detectGame(registry, gamePath);
     if (!profile?.executable) throw new Error('No launchable executable was detected in this folder.');
@@ -527,24 +857,11 @@ function register(): void {
   });
 
   handle('config:read', async (gameId: string, translatorId: string) => {
-    const gamePath = requireGamePath(gameId);
-    const profile = detectGame(registry, gamePath, { deep: true });
-    if (!profile) throw new Error('Game folder is gone.');
-    const schemas = registry.configSchemas as Map<string, ConfigSchema>;
-    const id = pickTranslator(schemas, profile, translatorId);
     // Renderer reads are always redacted.  Main-side planning below may read
     // the raw file so unchanged credentials are preserved, but those values
     // never cross the IPC boundary.
-    const config = await readGameConfig(registry, schemas, profile, id);
-    const schema = schemas.get(id);
-    return {
-      config,
-      categories: (schema?.categories ?? []).map((category) => ({
-        id: category.id,
-        label: tRegistry(`configSchema.${id}.categories.${category.id}`, category.label),
-      })),
-      fontBundles: profile.installedFontBundles,
-    };
+    requireGamePath(gameId);
+    return stableGameRead(gameId, () => translatorConfigPayload(requireDetectedGame(gameId), translatorId));
   });
 
   handle('config:plan', async (gameId: string, translatorId: string, changes: ConfigChange[]) => {
@@ -564,6 +881,7 @@ function register(): void {
     // The plan is rebuilt here from the current file rather than trusting one
     // the renderer held on to, so a stale form cannot overwrite newer values.
     const result = await writeGameConfig(profile, config, plan);
+    markGameChanged(gameId);
     return { plan: redactConfigPlan(plan), result };
   });
 
@@ -578,11 +896,14 @@ function register(): void {
 }
 
 void app.whenReady().then(async () => {
+  if (!ownsInstance) return;
   try {
     // Language before anything else: the registry load itself can throw a
     // translated error.
     if (app.isPackaged) loadCatalogs(path.join(app.getAppPath(), 'locales'));
-    setLocale((await loadConfig()).locale);
+    const config = await loadConfig();
+    setLocale(config.locale);
+    libraryRoots = config.roots;
     registry = loadRegistry(app.isPackaged ? path.join(app.getAppPath(), 'registry') : undefined);
   } catch (err) {
     dialog.showErrorBox('Registry not found', (err as Error).message);

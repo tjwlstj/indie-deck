@@ -34,8 +34,15 @@
       </div>
 
       <div class="topbar-actions">
-        <!-- Transient task indicator, not a permanent control (§4.1). -->
-        <span id="taskStatus" class="task-status" hidden></span>
+        <!-- Active or retained task indicator; hidden when there is no task. -->
+        <button
+          id="taskStatus"
+          class="task-status"
+          type="button"
+          data-i18n-attr="title:ui.operation.openTarget"
+          title="Open the game for this task"
+          hidden
+        ></button>
         <button id="scan" class="ghost" data-i18n-attr="title:ui.app.refreshTitle" title="Rescan library roots">
           <span data-i18n="ui.app.refresh">Refresh</span>
         </button>

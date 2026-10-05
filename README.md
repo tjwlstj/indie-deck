@@ -116,7 +116,19 @@ The window is a thin shell over the same core the CLI uses - it renders the
 library, the compatibility findings for the selected game, and installs with one
 click. It runs with context isolation on and no node integration in the
 renderer; the only bridge is a fixed list of IPC channels in
-[`preload.cjs`](packages/desktop/preload.cjs).
+[`preload.cjs`](packages/desktop/preload.cjs). Install/removal progress stays attached to its game while you
+open settings or select another game. The launcher shows the current stage,
+download bytes and a collapsible log, then refreshes that game's badges,
+statistics, detail and redacted config together. Reloading the renderer recovers
+the active operation from main.
+
+Safe update/repair and duplicate cleanup remain planned. The desktop currently
+shows a reason and blocks reinstalling an already managed translator when that
+would overwrite its original install record.
+
+The offline `npm run desktop:flow` check exercises installation, settings
+navigation, renderer reload, small-window sticky actions and removal in Korean
+and English using disposable game folders and mocked downloads.
 
 Maintainers can find the versioning, tag, artifact, signing and updater procedure
 in [docs/releasing.md](docs/releasing.md).

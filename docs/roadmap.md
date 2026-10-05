@@ -45,7 +45,7 @@ remains deliberately small while the application is pre-1.0.
 - [x] Installed-app update checks through GitHub Releases. The updater never
       forces a restart, and a normal close is blocked while writes are queued;
       portable builds remain manual. The updater packaging path is verified,
-      while a real `N → N+1` upgrade remains to be exercised when 0.1.1 exists.
+      while a real `N → N+1` upgrade pair remains to be verified and recorded.
 - [ ] In-app registry update check (the data ages faster than the code)
 
 ## P1 — Config Manager  ✅ done
@@ -100,7 +100,26 @@ Cleanups that make the layers above cheaper to add to.
 - [x] `isNativeLoader()` replaces four duplicated hardcoded lists
 - [x] Dead exports removed
 - [ ] Split `packages/cli/src/commands.ts` by group
-- [ ] Shared test fixtures module
+- [x] Shared test fixtures module
+
+## P1.6 — Installation and recovery UX
+
+The detailed contract and remaining acceptance criteria live in
+[launcher-ux-guide.md](launcher-ux-guide.md).
+
+- [x] Disk-evidenced translator health, variants, versions and receipt drift
+- [x] Settings view and sticky Play / Open folder actions
+- [x] Structured install progress, current-asset loading bar and collapsible logs
+- [x] Operation handshake, renderer-reload snapshots and acknowledged outcomes
+- [x] Targeted post-install/removal refresh with persisted library revisions
+- [x] Selection/revision guards and redacted config in the same post-state
+- [x] Preserve changed modified/snapshot files and unresolved removal receipts
+- [x] Offline Electron flow checks in Korean and English
+- [ ] Atomic maintenance plan with original-baseline receipt inheritance
+- [ ] Durable transaction journal and app/OS crash recovery
+- [ ] Safe update, repair, replacement and duplicate consolidation with previews
+- [ ] Strict damaged-index reconstruction and incremental evidence hash cache
+- [ ] Real-game translator runtime and interrupted-install acceptance tests
 
 ## P1 — GameSession
 

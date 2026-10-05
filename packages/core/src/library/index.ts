@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import type { GameProfile, Registry } from '../types.ts';
@@ -23,7 +24,11 @@ export interface LibraryIndex {
   games: GameProfile[];
   scannedAt: string;
   roots: string[];
+  /** Monotonic persisted-state token. Legacy indexes load as revision 0. */
+  revision: number;
 }
+
+type LibrarySaveInput = Omit<LibraryIndex, 'revision'> & { revision?: number };
 
 const DEFAULT_CONFIG: LauncherConfig = {
   roots: [],
@@ -81,17 +86,57 @@ export async function removeRoot(root: string, dataDir = defaultDataDir()): Prom
 
 export async function loadLibrary(dataDir = defaultDataDir()): Promise<LibraryIndex> {
   const file = libraryPath(dataDir);
-  if (!(await pathExists(file))) return { games: [], scannedAt: '', roots: [] };
+  if (!(await pathExists(file))) return { games: [], scannedAt: '', roots: [], revision: 0 };
   try {
-    return JSON.parse(await fsp.readFile(file, 'utf8')) as LibraryIndex;
+    const parsed = JSON.parse(await fsp.readFile(file, 'utf8')) as Omit<LibraryIndex, 'revision'> & {
+      revision?: unknown;
+    };
+    return {
+      ...parsed,
+      revision:
+        typeof parsed.revision === 'number' && Number.isSafeInteger(parsed.revision) && parsed.revision >= 0
+          ? parsed.revision
+          : 0,
+    };
   } catch {
-    return { games: [], scannedAt: '', roots: [] };
+    return { games: [], scannedAt: '', roots: [], revision: 0 };
   }
 }
 
-export async function saveLibrary(index: LibraryIndex, dataDir = defaultDataDir()): Promise<void> {
+/**
+ * Persists an index with an atomic same-directory replace.
+ *
+ * The desktop main process serialises library read/write mutations. Within that
+ * boundary, reading the on-disk revision immediately before the replace makes a
+ * stale caller advance rather than rewind the revision. The optional revision
+ * in the input keeps callers that construct the pre-revision shape compatible.
+ */
+export async function saveLibrary(index: LibrarySaveInput, dataDir = defaultDataDir()): Promise<LibraryIndex> {
   await ensureDir(dataDir);
-  await fsp.writeFile(libraryPath(dataDir), JSON.stringify(index, null, 2), 'utf8');
+  const file = libraryPath(dataDir);
+  const current = await loadLibrary(dataDir);
+  const requested =
+    typeof index.revision === 'number' && Number.isSafeInteger(index.revision) && index.revision >= 0 ? index.revision : 0;
+  const persisted: LibraryIndex = {
+    ...index,
+    revision: Math.max(current.revision, requested) + 1,
+  };
+  const temp = path.join(path.dirname(file), `.${path.basename(file)}.${process.pid}.${crypto.randomUUID()}.tmp`);
+
+  try {
+    const handle = await fsp.open(temp, 'wx');
+    try {
+      await handle.writeFile(JSON.stringify(persisted, null, 2), 'utf8');
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await fsp.rename(temp, file);
+  } finally {
+    await fsp.rm(temp, { force: true });
+  }
+
+  return persisted;
 }
 
 export interface RefreshOptions extends ScanOptions {
@@ -99,6 +144,20 @@ export interface RefreshOptions extends ScanOptions {
   roots?: string[];
   /** Keep entries whose folder still exists but was not re-scanned. */
   merge?: boolean;
+}
+
+export interface RefreshLibraryGameOptions {
+  dataDir?: string;
+  /** Targeted mutation refreshes are deep by default; tests/tools may opt out. */
+  deep?: boolean;
+  /** Keep the expensive recursive size measurement opt-in. */
+  measureSize?: boolean;
+}
+
+export interface RefreshLibraryGameResult {
+  index: LibraryIndex;
+  /** Fresh profile, or null when the folder vanished or no longer matches a known engine. */
+  profile: GameProfile | null;
 }
 
 /** Rescans configured roots and persists the result. */
@@ -128,9 +187,53 @@ export async function refreshLibrary(reg: Registry, options: RefreshOptions = {}
     games = [...byPath.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  const index: LibraryIndex = { games, scannedAt: new Date().toISOString(), roots };
-  await saveLibrary(index, dataDir);
-  return index;
+  return saveLibrary({ games, scannedAt: new Date().toISOString(), roots }, dataDir);
+}
+
+/**
+ * Deep-detects one game and atomically replaces only its saved library row.
+ *
+ * Other games, roots and the full-scan timestamp are preserved. A missing
+ * folder (or one whose engine markers disappeared) removes the stale row and
+ * returns `profile: null`, giving mutation callers an explicit deletion signal.
+ */
+export async function refreshLibraryGame(
+  reg: Registry,
+  gamePath: string,
+  options: RefreshLibraryGameOptions = {},
+): Promise<RefreshLibraryGameResult> {
+  const dataDir = options.dataDir ?? defaultDataDir();
+  const previous = await loadLibrary(dataDir);
+  const resolved = path.resolve(gamePath);
+  const key = resolved.toLowerCase();
+  const detectOptions: { deep: boolean; measureSize?: boolean } = { deep: options.deep ?? true };
+  if (options.measureSize !== undefined) detectOptions.measureSize = options.measureSize;
+  const profile = detectGame(reg, resolved, detectOptions) ?? null;
+
+  let replaced = false;
+  const games: GameProfile[] = [];
+  for (const existing of previous.games) {
+    if (path.resolve(existing.path).toLowerCase() !== key) {
+      games.push(existing);
+      continue;
+    }
+    if (profile && !replaced) {
+      games.push(profile);
+      replaced = true;
+    }
+  }
+  if (profile && !replaced) games.push(profile);
+
+  const index = await saveLibrary(
+    {
+      games,
+      scannedAt: previous.scannedAt,
+      roots: previous.roots,
+      revision: previous.revision,
+    },
+    dataDir,
+  );
+  return { index, profile };
 }
 
 /** Finds a game by exact path, folder name, or case-insensitive substring. */

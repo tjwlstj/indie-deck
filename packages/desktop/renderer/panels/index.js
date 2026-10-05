@@ -2,8 +2,9 @@
  * The detail column, as data.
  *
  * Adding a section to the launcher is one entry here plus a render function.
- * Each section gets `(panel, ctx, refresh, onInstall)` where `ctx` is whatever
- * `game:detail` returned, and `when` decides whether it appears at all.
+ * Each section gets `(panel, ctx, refresh, onInstall, onUninstall)` where
+ * `ctx` is whatever `game:detail` returned, and `when` decides whether it
+ * appears at all.
  */
 
 import { renderAudit, renderFacts, renderHeader, renderMods, renderPlans } from './detail.js';

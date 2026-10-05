@@ -133,6 +133,11 @@
         "no-location": "이 게임에서 {translator}의 설정 파일 위치를 알 수 없습니다."
       }
     },
+    "progress": {
+      "preflight": "현재 게임 폴더에서 {translator} {version} 설치 계획 확인 중",
+      "rollback": "실패한 단계 이전의 게임 폴더로 복원 중",
+      "receipt": "IndieDeck 설치 기록 저장 중"
+    },
     "error": {
       "no-roots": "라이브러리 루트가 설정되지 않았습니다. `indiedeck root add <경로>`로 추가하세요.",
       "no-engine": "{path}에서 알려진 엔진을 찾지 못했습니다.",
@@ -262,6 +267,56 @@
       "written": "{path}에 설정 {count}개를 저장했습니다",
       "backedUp": "원본을 {path}에 백업했습니다",
       "saved": "설정 {count}개 저장됨"
+    },
+    "operation": {
+      "openTarget": "이 작업의 게임 열기",
+      "installing": "번역기 설치",
+      "removing": "번역기 제거",
+      "installingShort": "설치 중…",
+      "removingShort": "제거 중…",
+      "completeShort": "완료",
+      "actionShort": "추가 작업 필요",
+      "refreshNeededShort": "상태 새로고침 필요",
+      "failedShort": "실패",
+      "step": "{current}/{total}단계",
+      "unknownSize": "다운로드 크기 불명",
+      "fromCache": "캐시에서 사용",
+      "folderNote": "폴더는 열 수 있지만, 작업이 끝날 때까지 파일을 수정하지 마세요.",
+      "busy": "현재 파일 작업이 끝날 때까지 기다려 주세요.",
+      "receiptBlocked": "설치 기록이 손상됐거나 지원하지 않는 형식입니다. 관리 파일을 바꾸기 전에 기록을 확인하세요.",
+      "reinstallBlocked": "이 구성 요소의 설치 기록이 이미 있습니다. 안전한 업데이트와 복구는 후속 유지보수 흐름에서 지원합니다.",
+      "cleanupBlocked": "기존 번역기를 먼저 확인하거나 정리해야 이 설치를 시작할 수 있습니다.",
+      "planChanged": "게임 또는 설치 계획이 바뀌었습니다. 게임을 다시 열고 최신 계획을 선택하세요.",
+      "needsAction": "자동 단계가 끝났습니다 — 사용자가 마저 할 작업이 있습니다.",
+      "installComplete": "설치 완료",
+      "removeComplete": "제거 완료",
+      "refreshFailed": "파일 작업은 끝났지만 최신 상태를 불러오지 못했습니다.",
+      "failedRolledBack": "작업이 실패했습니다. 변경 사항은 되돌렸습니다.",
+      "failedCommitted": "변경은 적용됐지만 설치 기록 또는 마지막 단계가 실패했습니다. 오류와 현재 게임 상태를 확인하세요.",
+      "stoppedBeforeChanges": "게임 파일을 바꾸기 전에 작업이 멈췄습니다.",
+      "failedRollbackPartial": "작업이 실패했고 일부 변경을 복원하지 못했습니다.",
+      "showLog": "작업 기록",
+      "refreshState": "상태 새로고침",
+      "dismiss": "닫기",
+      "refreshingState": "게임 상태 새로고침 중…",
+      "stateRefreshed": "게임 상태를 새로고쳤습니다",
+      "keptModified": "직접 수정한 파일 {count}개를 보존했습니다. 확인이 필요합니다.",
+      "missingFiles": "관리 파일 {count}개가 이미 없는 상태였습니다.",
+      "phase": {
+        "queued": "현재 파일 작업을 기다리는 중…",
+        "preflight": "게임과 설치 계획 확인 중…",
+        "download": "파일 다운로드 중…",
+        "verify": "다운로드 파일 무결성 확인 중…",
+        "backup": "기존 파일 백업 중…",
+        "cleanup": "기존 파일 준비 중…",
+        "extract": "번역기 파일 작성 중…",
+        "configure": "번역 설정 적용 중…",
+        "manual": "수동 후속 절차 준비 중…",
+        "receipt": "설치 기록 저장 중…",
+        "rollback": "이전 상태 복원 중…",
+        "redetect": "변경된 게임 폴더 읽는 중…",
+        "audit": "설치 상태 점검 중…"
+      }
     },
     "status": {
       "reading": "게임 폴더 읽는 중…",

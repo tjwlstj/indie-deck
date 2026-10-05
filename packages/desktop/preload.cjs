@@ -50,10 +50,16 @@ contextBridge.exposeInMainWorld('indiedeck', {
 
   game: {
     detail: (gameId, options) => call('game:detail', gameId, options ?? {}),
-    install: (gameId, planId, options) => call('game:install', gameId, planId, options ?? {}),
-    uninstall: (gameId, componentId) => call('game:uninstall', gameId, componentId),
+    refresh: (gameId) => call('game:refresh', gameId),
     launch: (gameId) => call('game:launch', gameId),
     openFolder: (gameId) => call('shell:openGameFolder', gameId),
+  },
+
+  maintenance: {
+    start: (request) => call('maintenance:start', request),
+    current: () => call('maintenance:current'),
+    outcome: (operationId) => call('maintenance:outcome', operationId),
+    acknowledge: (operationId) => call('maintenance:acknowledge', operationId),
   },
 
   translatorConfig: {
@@ -73,7 +79,7 @@ contextBridge.exposeInMainWorld('indiedeck', {
 
   on: {
     scanProgress: (fn) => subscribe('scan:progress', fn),
-    installProgress: (fn) => subscribe('install:progress', fn),
-    installBytes: (fn) => subscribe('install:bytes', fn),
+    maintenanceProgress: (fn) => subscribe('maintenance:progress', fn),
+    maintenanceOutcome: (fn) => subscribe('maintenance:outcome', fn),
   },
 });

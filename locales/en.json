@@ -133,6 +133,11 @@
         "no-location": "Could not work out where {translator} keeps its config in this game."
       }
     },
+    "progress": {
+      "preflight": "Checking {translator} {version} against the current game folder",
+      "rollback": "Restoring the game folder after the failed step",
+      "receipt": "Saving IndieDeck's install record"
+    },
     "error": {
       "no-roots": "No library roots configured. Add one with `indiedeck root add <path>`.",
       "no-engine": "No known engine detected in {path}.",
@@ -262,6 +267,56 @@
       "written": "{count} setting(s) written to {path}",
       "backedUp": "original backed up to {path}",
       "saved": "{count} setting(s) saved"
+    },
+    "operation": {
+      "openTarget": "Open the game for this task",
+      "installing": "Installing translator",
+      "removing": "Removing translator",
+      "installingShort": "Installing…",
+      "removingShort": "Removing…",
+      "completeShort": "Complete",
+      "actionShort": "Action needed",
+      "refreshNeededShort": "Refresh needed",
+      "failedShort": "Failed",
+      "step": "Step {current}/{total}",
+      "unknownSize": "download size unknown",
+      "fromCache": "from cache",
+      "folderNote": "Folder view stays available; avoid editing files until this task finishes.",
+      "busy": "Wait for the current file operation to finish.",
+      "receiptBlocked": "An install record is damaged or unsupported. Review it before changing managed files.",
+      "reinstallBlocked": "This component already has an install record. Safe updates and repairs require the upcoming maintenance flow.",
+      "cleanupBlocked": "The existing translator needs review or cleanup before this install can run.",
+      "planChanged": "The game or install plan changed. Reopen the game and choose a fresh plan.",
+      "needsAction": "Automatic steps finished — more action is required.",
+      "installComplete": "Installation complete",
+      "removeComplete": "Removal complete",
+      "refreshFailed": "The file operation finished, but the latest state could not be loaded.",
+      "failedRolledBack": "The task failed. Changes were rolled back.",
+      "failedCommitted": "Changes were applied, but the install record or final step failed. Review the error and current game state.",
+      "stoppedBeforeChanges": "The task stopped before any game files were changed.",
+      "failedRollbackPartial": "The task failed and some changes could not be restored.",
+      "showLog": "Task log",
+      "refreshState": "Refresh state",
+      "dismiss": "Dismiss",
+      "refreshingState": "Refreshing game state…",
+      "stateRefreshed": "Game state refreshed",
+      "keptModified": "{count} hand-edited file(s) were kept and need review.",
+      "missingFiles": "{count} managed file(s) were already missing.",
+      "phase": {
+        "queued": "Waiting for the current file task…",
+        "preflight": "Checking the game and install plan…",
+        "download": "Downloading files…",
+        "verify": "Verifying downloaded files…",
+        "backup": "Backing up existing files…",
+        "cleanup": "Preparing existing files…",
+        "extract": "Writing translator files…",
+        "configure": "Applying translation settings…",
+        "manual": "Preparing manual follow-up steps…",
+        "receipt": "Saving the install record…",
+        "rollback": "Restoring the previous state…",
+        "redetect": "Reading the changed game folder…",
+        "audit": "Checking install health…"
+      }
     },
     "status": {
       "reading": "Reading game folder…",

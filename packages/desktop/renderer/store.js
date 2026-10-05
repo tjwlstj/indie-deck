@@ -3,10 +3,12 @@
  *
  * Everything the UI knows lives here; panels read it and call `refresh()` /
  * `selectGame()` rather than holding their own copies. Games and plans are
- * addressed by opaque id - the renderer never sees or sends a filesystem path.
+ * addressed by opaque id for privileged calls. The renderer may display paths
+ * returned by main, but it cannot choose arbitrary filesystem targets.
  */
 
 import { applyCatalog } from './i18n.js';
+import { isOperationActive, mergeLibraryPayload } from './state-model.js';
 
 export const api = window.indiedeck;
 
@@ -21,7 +23,12 @@ export const state = {
   query: '',
   selected: null,
   detail: null,
-  busy: false,
+  /** The one global install/removal operation, active or retained terminal. */
+  operation: null,
+  libraryRevision: 0,
+  gameRevisions: new Map(),
+  translatorConfigs: new Map(),
+  selectionRequestToken: 0,
   /** App-level view. Settings stays in this document - no navigation, so the
    * CSP and IPC boundary of the single window are untouched (§7.3). */
   view: 'library',
@@ -71,9 +78,24 @@ export function resolveOptions() {
 }
 
 export function applyLibraryPayload(payload) {
-  state.games = payload.index.games;
-  state.stats = payload.stats;
-  state.audits = new Map(payload.audits.map((audit) => [audit.id, audit]));
+  const previousGameIds = new Set(state.games.map((game) => game.id));
+  const applied = mergeLibraryPayload(state, payload);
+  if (!applied) return false;
+
+  const remainingGameIds = new Set(state.games.map((game) => game.id));
+  for (const gameId of previousGameIds) {
+    if (remainingGameIds.has(gameId)) continue;
+    // Main drops revision authority when a game leaves the library. Mirroring
+    // that reset prevents a later re-add of the same path from being rejected
+    // as older than the renderer's now-orphaned revision cache.
+    state.gameRevisions.delete(gameId);
+    state.translatorConfigs.delete(gameId);
+  }
+  return true;
+}
+
+export function mutationBlocked() {
+  return isOperationActive(state.operation);
 }
 
 /** Pulls the catalogue for the active language and applies it. */

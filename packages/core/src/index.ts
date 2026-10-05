@@ -100,6 +100,13 @@ export {
 } from './audit/index.ts';
 
 export {
+  collectTranslatorEvidence,
+  readReceiptEvidence,
+  type EvidenceOptions,
+  type ReceiptEvidence,
+} from './health/index.ts';
+
+export {
   downloadAsset,
   resolveAssetUrl,
   latestReleaseTag,
@@ -108,13 +115,20 @@ export {
   defaultCacheDir,
   defaultToolsDir,
   type DownloadOptions,
+  type DownloadProgressEvent,
   type DownloadResult,
 } from './install/download.ts';
 
 export { extract7z, find7zExtractor, findExtractedEntry, type Extractor } from './install/sevenzip.ts';
 export { extractZip, readZipEntries, readEntryData, safeJoin, type ZipEntry } from './install/unzip.ts';
 
-export { FileTransaction, withTransaction, type TransactionOptions } from './install/transaction.ts';
+export {
+  FileTransaction,
+  withTransaction,
+  type RollbackFailure,
+  type RollbackResult,
+  type TransactionOptions,
+} from './install/transaction.ts';
 
 export {
   applyPlan,
@@ -122,10 +136,14 @@ export {
   writeReceipt,
   readReceipts,
   uninstallReceipt,
+  isSafeReceiptComponentId,
   RECEIPT_DIR,
   BACKUP_DIR,
   type ApplyOptions,
+  type ApplyProgress,
+  type ApplyProgressPhase,
   type ApplyResult,
+  type ApplyRollbackFailure,
   type UninstallResult,
   type UninstallOptions,
 } from './install/apply.ts';
@@ -151,6 +169,7 @@ export {
   loadLibrary,
   saveLibrary,
   refreshLibrary,
+  refreshLibraryGame,
   findGames,
   resolveGameArg,
   libraryStats,
@@ -158,6 +177,8 @@ export {
   libraryPath,
   type LauncherConfig,
   type LibraryIndex,
+  type RefreshLibraryGameOptions,
+  type RefreshLibraryGameResult,
   type LibraryStats,
 } from './library/index.ts';
 
