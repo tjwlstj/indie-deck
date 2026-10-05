@@ -12,6 +12,8 @@ import { SECTIONS } from './panels/index.js';
 import { resetConfigPanel } from './panels/config.js';
 import { operationCard } from './panels/detail.js';
 import { refreshMToolStatus } from './panels/mtool.js';
+import { archiveProgressLabel, bindArchiveEvents, recoverArchiveProgress, refreshArchiveRecords } from './panels/archives.js';
+import { isArchiveActive } from './archive-model.js';
 import {
   populateDefaultsForm,
   populateLocaleSelect,
@@ -124,7 +126,7 @@ function operationLabel(operation) {
 function renderOperationChrome() {
   const operation = state.operation;
   const task = $('taskStatus');
-  if (operation) {
+  if (operation && !state.archiveBusy && !isArchiveActive(state.archiveProgress)) {
     task.hidden = false;
     task.textContent = operationLabel(operation);
     task.classList.toggle('terminal', Boolean(operation.outcome));
@@ -137,6 +139,12 @@ function renderOperationChrome() {
           (operation.outcome.status === 'needs-user-action' || operation.outcome.refreshStatus === 'failed'),
       ),
     );
+  } else if (state.archiveProgress || state.archiveBusy) {
+    task.hidden = false;
+    task.textContent = state.archiveProgress ? archiveProgressLabel() : t('ui.archive.inspecting', undefined, 'Inspecting archive contents…');
+    task.classList.toggle('terminal', Boolean(state.archiveProgress && !isArchiveActive(state.archiveProgress)));
+    task.classList.toggle('failed', state.archiveProgress?.status === 'failed');
+    task.classList.remove('warning');
   } else if (!libraryBusy) {
     task.hidden = true;
     task.textContent = '';
@@ -213,7 +221,11 @@ async function startMaintenance(kind, gameId, planId) {
   const id = requestId();
   state.operation = createProvisionalOperation({ requestId: id, gameId, kind, planId });
   setStatus(
-    kind === 'uninstall'
+    kind === 'remove-translator'
+      ? t('ui.maintenance.removing', undefined, 'Cleaning up existing translator…')
+      : kind === 'reinstall-translator'
+        ? t('ui.maintenance.reinstalling', undefined, 'Cleaning up and reinstalling translator…')
+        : kind === 'uninstall'
       ? t('ui.status.removing', undefined, 'Removing…')
       : kind === 'install-font'
         ? t('ui.operation.installingFont', undefined, 'Installing recommended font')
@@ -258,7 +270,11 @@ function outcomeStatus(outcome) {
     if (outcome.refreshStatus === 'failed') {
       return t('ui.operation.refreshFailed', undefined, 'The file operation finished, but the latest state could not be loaded.');
     }
-    return outcome.kind === 'uninstall'
+    return outcome.kind === 'remove-translator'
+      ? t('ui.maintenance.removeComplete', undefined, 'Existing translator cleanup complete')
+      : outcome.kind === 'reinstall-translator'
+        ? t('ui.maintenance.reinstallComplete', undefined, 'Translator reinstallation complete')
+        : outcome.kind === 'uninstall'
       ? t('ui.operation.removeComplete', undefined, 'Removal complete')
       : outcome.kind === 'install-font'
         ? t('ui.operation.fontComplete', undefined, 'Recommended font setup complete')
@@ -445,6 +461,7 @@ function openSettings() {
   renderView();
   renderOperationChrome();
   void refreshMToolStatus().catch((err) => setStatus(err.message, 'err'));
+  void refreshArchiveRecords().catch((err) => setStatus(err.message, 'err'));
 }
 
 function closeSettings() {
@@ -497,9 +514,22 @@ async function boot() {
   // Subscribe before asking for a snapshot so no progress/outcome can fall in
   // the gap between renderer creation and reload recovery.
   bindMaintenanceEvents();
+  bindArchiveEvents();
   const recovery = recoverMaintenance().catch((err) => setStatus(err.message, 'err'));
+  // current() does not wait for main's mutation queue, so a reload during an
+  // import can display its progress while the library read is still waiting.
+  const archiveRecovery = recoverArchiveProgress().then(() => {
+    if (!isArchiveActive(state.archiveProgress)) return;
+    state.view = 'settings';
+    renderView();
+    $('archiveSettings')?.scrollIntoView({ block: 'nearest' });
+  }).catch((err) => setStatus(err.message, 'err'));
 
   await loadLocale();
+  // Re-render recovered progress in the saved locale before any queued
+  // filesystem read can hold the rest of boot behind an active import.
+  applyStaticTranslations();
+  renderOperationChrome();
   state.appInfo = await api.app.info();
   state.registry = await api.registry();
   state.config = await api.config.get();
@@ -512,6 +542,11 @@ async function boot() {
   $('openSettings').addEventListener('click', openSettings);
   $('closeSettings').addEventListener('click', closeSettings);
   $('taskStatus').addEventListener('click', () => {
+    if (state.archiveBusy || isArchiveActive(state.archiveProgress) || (!state.operation && state.archiveProgress)) {
+      openSettings();
+      $('archiveSettings')?.scrollIntoView({ block: 'nearest' });
+      return;
+    }
     const gameId = state.operation?.gameId;
     if (!gameId || !state.games.some((game) => game.id === gameId)) return;
     state.view = 'library';
@@ -529,7 +564,22 @@ async function boot() {
   window.addEventListener('indiedeck:open-settings', (event) => {
     openSettings();
     const section = event.detail?.section;
-    if (section === 'mtoolSettings') $('mtoolSettings')?.scrollIntoView({ block: 'nearest' });
+    if (['mtoolSettings', 'archiveSettings'].includes(section)) $(section)?.scrollIntoView({ block: 'nearest' });
+  });
+  $('importArchive').addEventListener('click', () => {
+    openSettings();
+    $('archiveSettings')?.scrollIntoView({ block: 'nearest' });
+  });
+  window.addEventListener('indiedeck:select-game', (event) => {
+    const gameId = event.detail?.gameId;
+    if (!gameId || !state.games.some((game) => game.id === gameId)) return;
+    closeSettings();
+    void selectGame(gameId);
+  });
+  window.addEventListener('indiedeck:translator-maintenance', (event) => {
+    const { gameId, kind, planId } = event.detail ?? {};
+    if (state.selected !== gameId || !['remove-translator', 'reinstall-translator'].includes(kind)) return;
+    void startMaintenance(kind, gameId, planId);
   });
   window.addEventListener('indiedeck:refresh-detail', () => void refreshDetail());
   window.addEventListener('indiedeck:dismiss-operation', () => {
@@ -548,8 +598,12 @@ async function boot() {
   $('addRoot').addEventListener('click', () => void pickRootAndScan());
 
   await recovery;
+  await archiveRecovery;
   bootReady = true;
   await refreshLibraryView(false);
+  // Records need the loaded library's opaque game ids. A normal restart also
+  // restores version labels, without waiting for the user to open settings.
+  await refreshArchiveRecords();
 }
 
 boot().catch((err) => setStatus(err.message, 'err'));

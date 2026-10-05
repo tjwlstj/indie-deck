@@ -12,15 +12,17 @@ import { localeOptions, t } from '../i18n.js';
 import { api, applyLibraryPayload, emit, mutationBlocked, state } from '../store.js';
 import { resetConfigPanel } from './config.js';
 import { renderMToolSettings } from './mtool.js';
+import { renderArchiveSettings } from './archives.js';
 
 export function setSettingsMutationDisabled() {
   const disabled = mutationBlocked();
-  for (const id of ['uiLocale', 'targetLanguage', 'sourceLanguage', 'endpoint', 'saveDefaults', 'addRoot', 'rescanRoots']) {
+  for (const id of ['uiLocale', 'targetLanguage', 'sourceLanguage', 'endpoint', 'saveDefaults', 'addRoot', 'rescanRoots', 'importArchive']) {
     const node = $(id);
     if (node) node.disabled = disabled;
   }
   for (const button of document.querySelectorAll('#rootList button')) button.disabled = disabled;
   renderMToolSettings();
+  renderArchiveSettings();
 }
 
 export function renderRoots() {

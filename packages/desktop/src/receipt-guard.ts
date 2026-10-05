@@ -8,6 +8,9 @@ const RECEIPT_DIR = '.indiedeck/receipts';
 const BACKUP_PREFIX = '.indiedeck/backups/';
 const RECEIPT_KINDS = new Set<InstallReceipt['kind']>(['loader', 'translator', 'mod', 'font']);
 const SHA256 = /^[a-fA-F0-9]{64}$/;
+const MAX_RECEIPT_BYTES = 2 * 1024 * 1024;
+const MAX_RECEIPTS = 128;
+const MAX_RECEIPT_ENTRIES = 10_000;
 
 function fail(name: string, reason: string): never {
   throw new Error(`Unsafe install receipt ${JSON.stringify(name)}: ${reason}`);
@@ -75,6 +78,7 @@ async function assertNoLinkedAncestor(root: string, relative: string, name: stri
 async function readReceiptOnce(file: string, name: string): Promise<unknown> {
   const before = await fsp.lstat(file);
   if (!before.isFile() || before.isSymbolicLink()) fail(name, 'the receipt itself is not a regular file.');
+  if (before.size > MAX_RECEIPT_BYTES) fail(name, 'the receipt exceeds the 2 MiB metadata limit.');
 
   // O_NOFOLLOW is available on POSIX but not on all Windows Node builds. The
   // lstat + opened-handle identity checks remain fail-closed on those builds.
@@ -82,10 +86,21 @@ async function readReceiptOnce(file: string, name: string): Promise<unknown> {
   const handle = await fsp.open(file, constants.O_RDONLY | noFollow);
   try {
     const opened = await handle.stat();
-    if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino) {
+    if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino || opened.size !== before.size) {
       fail(name, 'the receipt changed while it was being opened.');
     }
-    const text = await handle.readFile('utf8');
+    if (opened.size > MAX_RECEIPT_BYTES) fail(name, 'the receipt exceeds the 2 MiB metadata limit.');
+    // Read a bounded snapshot plus one sentinel byte; concurrent growth must
+    // not turn metadata admission into an unbounded readFile allocation.
+    const bytes = Buffer.alloc(opened.size + 1);
+    let length = 0;
+    while (length < bytes.length) {
+      const { bytesRead } = await handle.read(bytes, length, bytes.length - length, length);
+      if (bytesRead === 0) break;
+      length += bytesRead;
+    }
+    if (length !== opened.size) fail(name, 'the receipt changed while it was being read.');
+    const text = bytes.subarray(0, length).toString('utf8');
     const after = await handle.stat();
     if (opened.dev !== after.dev || opened.ino !== after.ino || opened.size !== after.size || opened.mtimeMs !== after.mtimeMs) {
       fail(name, 'the receipt changed while it was being read.');
@@ -174,6 +189,7 @@ async function validateReceipt(
 
   const entriesValue = raw['entries'];
   if (!Array.isArray(entriesValue)) fail(name, 'entries must be an array.');
+  if (entriesValue.length > MAX_RECEIPT_ENTRIES) fail(name, 'too many receipt entries.');
   const entries: ReceiptEntry[] = [];
   for (let index = 0; index < entriesValue.length; index += 1) {
     entries.push(await validateEntry(entriesValue[index], gameRoot, protectedPaths, name, index));
@@ -215,6 +231,7 @@ export async function readSafeRemovalReceipts(gameRoot: string, protectedPaths: 
   }
 
   const jsonEntries = dirents.filter((entry) => entry.name.toLowerCase().endsWith('.json'));
+  if (jsonEntries.length > MAX_RECEIPTS) fail('<receipt directory>', 'too many receipt records.');
   jsonEntries.sort((a, b) => a.name.localeCompare(b.name));
   const receipts: InstallReceipt[] = [];
   for (const entry of jsonEntries) {

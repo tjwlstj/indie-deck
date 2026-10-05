@@ -121,9 +121,13 @@ The detailed contract and remaining acceptance criteria live in
       `D:\MTool` probe, system-picked folder or explicit disconnect, game-path
       argument/open-only/manual fallback and targeted refresh. This does not
       install, update or own MTool or its external game changes; Wolf is excluded.
-- [ ] Atomic maintenance plan with original-baseline receipt inheritance
+- [x] Bounded Unity XUnity payload cleanup/reinstall with preview, retained backups,
+      original-baseline receipt inheritance and process-local failure rollback
+- [x] Classic ZIP game recognition and side-by-side version import with source hashes,
+      optional labels and automatic library registration; 7z/RAR recognition only
+- [ ] General maintenance across loaders/patchers and durable original-baseline chains
 - [ ] Durable transaction journal and app/OS crash recovery
-- [ ] Safe update, repair, replacement and duplicate consolidation with previews
+- [ ] General loader/patcher replacement and unknown-payload duplicate consolidation
 - [ ] Per-game font rendering verification and measured translator success history
 - [ ] Strict damaged-index reconstruction and incremental evidence hash cache
 - [ ] Real-game translator runtime and interrupted-install acceptance tests

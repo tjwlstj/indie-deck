@@ -18,6 +18,20 @@ const success: OperationResult = {
   refreshStatus: 'complete', postState: { gameId, gameRevision: 2 },
 };
 
+test('Unity remove/reinstall uses the same recoverable slot and preview correlation', async () => {
+  const h = harness();
+  for (const kind of ['remove-translator', 'reinstall-translator'] as const) {
+    const started = h.manager.start({ gameId, kind, requestId: kind, planId: 'opaque-preview' }, async (report) => {
+      report({ phase: 'backup', stepIndex: 3, stepCount: 5 });
+      return success;
+    });
+    assert.equal(h.manager.current().active?.kind, kind);
+    await h.queue.at(-1)!();
+    assert.equal(h.manager.outcome(started.operationId)?.planId, 'opaque-preview');
+    assert.equal(h.manager.acknowledge(started.operationId), true);
+  }
+});
+
 test('font maintenance uses the same queue, correlation and recoverable outcome', async () => {
   const h = harness();
   h.manager.start({ gameId, kind: 'install-font', requestId: 'font-request', planId: 'opaque-font-plan' }, async (report) => {

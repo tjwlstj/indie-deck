@@ -37,7 +37,11 @@ function terminalText(operation) {
     if (outcome.refreshStatus === 'failed') {
       return t('ui.operation.refreshFailed', undefined, 'The file operation finished, but the latest state could not be loaded.');
     }
-    return operation.kind === 'uninstall'
+    return operation.kind === 'remove-translator'
+      ? t('ui.maintenance.removeComplete', undefined, 'Existing translator cleanup complete')
+      : operation.kind === 'reinstall-translator'
+        ? t('ui.maintenance.reinstallComplete', undefined, 'Translator reinstallation complete')
+        : operation.kind === 'uninstall'
       ? t('ui.operation.removeComplete', undefined, 'Removal complete')
       : operation.kind === 'install-font'
         ? t('ui.operation.fontComplete', undefined, 'Recommended font setup complete')
@@ -79,7 +83,11 @@ export function operationCard(operation) {
     el(
       'strong',
       null,
-      operation.kind === 'uninstall'
+      operation.kind === 'remove-translator'
+        ? t('ui.maintenance.removing', undefined, 'Cleaning up existing translator…')
+        : operation.kind === 'reinstall-translator'
+          ? t('ui.maintenance.reinstalling', undefined, 'Cleaning up and reinstalling translator…')
+          : operation.kind === 'uninstall'
         ? t('ui.operation.removing', undefined, 'Removing translator')
         : operation.kind === 'install-font'
           ? t('ui.operation.installingFont', undefined, 'Installing recommended font')
@@ -150,6 +158,8 @@ export function operationCard(operation) {
   }
 
   if (outcome?.error) card.append(el('div', 'operation-error', outcome.error));
+  const backup = outcome?.result?.backupDirectory ?? outcome?.result?.quarantine ?? outcome?.result?.backupPath ?? outcome?.result?.backup;
+  if (typeof backup === 'string') card.append(el('p', 'operation-backup', t('ui.maintenance.backupLocation', { path: backup }, 'Cleanup backup: {path}')));
   if (outcome?.refreshError) card.append(el('div', 'operation-error', outcome.refreshError));
   if ((outcome?.rollbackFailures ?? []).length > 0) {
     const list = el('ul', 'operation-errors');

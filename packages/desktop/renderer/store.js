@@ -9,6 +9,7 @@
 
 import { applyCatalog } from './i18n.js';
 import { isOperationActive, mergeLibraryPayload } from './state-model.js';
+import { isArchiveActive } from './archive-model.js';
 
 export const api = window.indiedeck;
 
@@ -22,6 +23,12 @@ export const state = {
   mtoolStatusRequestToken: 0,
   /** Only the handoff/config IPC request is pending, not external translation. */
   mtoolBusy: false,
+  archiveRecords: [],
+  archiveRecordsLoaded: false,
+  archiveCandidate: null,
+  archiveLabel: '',
+  archiveProgress: null,
+  archiveBusy: false,
   registry: null,
   engineFilter: 'all',
   statusFilter: 'all',
@@ -100,7 +107,7 @@ export function applyLibraryPayload(payload) {
 }
 
 export function mutationBlocked() {
-  return isOperationActive(state.operation) || state.mtoolBusy;
+  return isOperationActive(state.operation) || state.mtoolBusy || state.archiveBusy || isArchiveActive(state.archiveProgress);
 }
 
 /** Pulls the catalogue for the active language and applies it. */

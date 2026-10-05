@@ -123,3 +123,39 @@ test('MTool handoff keeps paths and arguments in main and out of renderer author
   assert.match(configSet, /\.\.\.current/);
   assert.doesNotMatch(configSet, /config\??\.externalTools|config\??\.roots/);
 });
+
+test('Unity cleanup uses opaque cached previews and never promotes ordinary install to repair', () => {
+  assert.match(main, /translatorMaintenanceById = new Map/);
+  assert.match(main, /entry\.path !== requireGamePath\(gameId\)/);
+  assert.match(main, /requireTranslatorMaintenance\(request\.gameId, request\.planId\)/);
+  assert.match(main, /previewTranslatorMaintenance\(registry, profile, options\)/);
+  assert.match(main, /runTranslatorMaintenance\(translatorMaintenance/);
+  assert.match(main, /input\.kind === 'remove-translator' \|\| input\.kind === 'reinstall-translator'/);
+  const publicPreview = main.slice(main.indexOf('function cacheTranslatorMaintenance'), main.indexOf('function requireTranslatorMaintenance'));
+  assert.doesNotMatch(publicPreview, /\.\.\.preview|context:|plan: preview/);
+  assert.match(main, /request\.kind === 'install' \? installBlockReason/);
+});
+
+test('game archive import can select paths only through the OS picker and cannot name destinations', () => {
+  assert.match(preload, /import: \(candidateId, label\) => call\('archives:import', candidateId, label\)/);
+  assert.match(preload, /pick: \(\) => call\('archives:pick'\)/);
+  assert.match(main, /archiveCandidates\.set\(id, \{ path: source, inspection \}\)/);
+  assert.match(main, /importGameArchive\(candidate\.path/);
+  assert.match(main, /dataDir: defaultDataDir\(\), registry/);
+  assert.match(main, /expectedSha256: candidate\.inspection\.sha256/);
+  assert.match(main, /handle\('archives:current', \(\) => structuredClone\(archiveTask\)\)/);
+  assert.match(main, /sequence: \+\+archiveSequence/);
+  const importStart = main.slice(main.indexOf('function importSelectedArchive'), main.indexOf('/** Serialises every filesystem mutation'));
+  assert.match(importStart, /pendingMutations > 0 \|\| operations\.isActive\(\)/);
+  assert.match(importStart, /return enqueueMutation/);
+  assert.doesNotMatch(importStart, /label\s*:\s*path|destination:\s*label|candidateId\s*:\s*path/);
+});
+
+test('desktop smoke isolates its Electron profile and requires actual scenario completion, not only exit zero', () => {
+  const runner = fs.readFileSync(new URL('../../../scripts/check-desktop-flow.mjs', import.meta.url), 'utf8');
+  const bootstrap = fs.readFileSync(new URL('../../../scripts/desktop-flow-bootstrap.mjs', import.meta.url), 'utf8');
+  assert.match(bootstrap, /app\.setPath\('userData', smokeProfile\)/);
+  assert.match(bootstrap, /path\.join\(process\.env\.INDIEDECK_HOME, 'electron-profile'\)/);
+  assert.match(runner, /requiredSmokeMarkers\.some\(\(marker\) => !smokeOutput\.includes\(marker\)\)/);
+  assert.match(runner, /Desktop exited without completing every required smoke flow/);
+});

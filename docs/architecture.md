@@ -32,11 +32,16 @@ translator is usually a JSON edit, not a code change.
 5. Installed loaders, translators and TMP font bundles are detected from the
    registry's `installedMarkers`, including negative markers — BepInEx 5 and 6
    both ship `BepInEx.dll`, so `BepInEx.Core.dll` is what tells them apart.
+   XUnity additionally requires a recognised active plugin/patcher payload:
+   retained settings, translation cache or Common DLL alone are not an
+   installed-translator badge.
 
 Deep probes read IL2CPP metadata (tens of megabytes) to find TextMeshPro and the
 new Input System. They are off during bulk scans and on for single-game commands.
 
-`scanLibrary` walks roots to a configurable depth and does **not** descend into a
+`scanLibrary` detects explicitly registered ordinary game roots themselves,
+deduplicates overlapping roots, then walks library roots to a configurable
+depth and does **not** descend into a
 folder that already matched — installers commonly nest the real game one level
 down, which is why the default depth is 2.
 
@@ -134,6 +139,8 @@ operations and post-install hashes for created/modified files. It reads and
 validates each record once, rejects linked receipt/target/backup paths and
 out-of-scope backups, and protects the detected executable and its containing
 directories. Legacy records need manual review before desktop removal. This
+admission is bounded to 2 MiB per receipt, 10,000 entries and 128 records.
+The opened file is read as a bounded snapshot, not an unbounded JSON read. This
 does not guarantee atomic exclusion against an external process replacing a
 target after validation.
 
@@ -259,9 +266,46 @@ responses from overwriting a newer selection or post-mutation state.
 Existing managed translator installs cannot be reapplied through the desktop
 Install action: overwriting their fixed-name receipts would lose the original
 baseline. Duplicate/drifted payloads are also blocked with a visible reason.
-The upcoming maintenance planner must add safe update, repair and consolidation
-before those actions can be offered. The general core/CLI installer has not been
-promoted to that maintenance contract.
+The separate `translator-maintenance.ts` now offers bounded XUnity remove and
+reinstall actions. Main-owned previews enumerate exact recognised files with
+hashes, and confirmation is separate from scanning or the normal Install
+action. Settings, translations, fonts, game executables and loaders are
+preserved. Shared Common/ResourceRedirector/MonoMod/Cecil copies need unchanged
+canonical translator ownership before maintenance can replace them; unknown
+copies are preserved. Unknown dedicated-tree files, ambiguous ownership,
+linked paths and ReiPatcher installations block maintenance.
+
+Reinstall reuses a compatible existing BepInEx/MelonLoader host, validates the
+entire registered ZIP before mutation, then quarantines old files and metadata
+under `.indiedeck/backups/maintenance-<uuid>/`. It carries the original receipt
+baselines and untouched config/font entries forward, retaining install
+chronology. File budgets are 32 MiB each and 128 MiB per current snapshot/new
+payload. Process-local failures restore the pre-operation state where possible;
+partial rollback remains visible with recovery paths. This is not durable OS
+crash recovery, arbitrary translator migration or loader replacement. The
+general core/CLI installer has not been promoted to this maintenance contract.
+
+## Game archive versions
+
+`game-archives.ts` inspects OS-picked ZIP/7z/RAR sources and exposes display
+metadata through an opaque candidate id. Main alone owns the source path and
+binds import to its inspected SHA-256. Classic stored/deflate ZIP import streams
+bounded entries into an owned hidden staging directory, verifies CRC and
+output sizes, requires one detected game with an executable, then publishes a
+new `game-versions/<uuid>` directory under launcher data. The actual game root
+is registered so targeted refresh and ordinary full rescan retain the row.
+
+Original archives, previous game versions and unrelated library folders are
+never overwritten or deleted. Same-hash valid stored copies are reused.
+Records contain original name/hash, import time, engine, optional user label
+and a filename-derived version guess explicitly not asserted as game version.
+No saves/mods/config are automatically migrated between versions. 7z/RAR are
+recognised-only; ZIP64, encryption, split archives, unsupported encodings,
+unsafe/linked/colliding paths and forged IndieDeck metadata are rejected.
+Budgets are a source below 4 GiB, 50,000 entries, 32 GiB expanded and 16 path
+components. Disk-space availability and game runtime compatibility are not
+guaranteed. Import shares the pending-write gate and retains a monotonic
+main-owned progress snapshot across renderer reload, not OS/app restart.
 
 ## i18n
 

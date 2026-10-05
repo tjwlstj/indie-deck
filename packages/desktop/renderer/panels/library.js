@@ -3,6 +3,7 @@
 import { $, clear, el } from '../dom.js';
 import { t } from '../i18n.js';
 import { emit, mutationBlocked, state, visibleGames } from '../store.js';
+import { archiveRecordForGame } from '../archive-model.js';
 
 function operationBadge(gameId) {
   const operation = state.operation;
@@ -11,7 +12,7 @@ function operationBadge(gameId) {
     return el(
       'span',
       'pill operation-badge active',
-      operation.kind === 'uninstall'
+      operation.kind === 'uninstall' || operation.kind === 'remove-translator'
         ? t('ui.operation.removingShort', undefined, 'Removing…')
         : t('ui.operation.installingShort', undefined, 'Installing…'),
     );
@@ -106,6 +107,17 @@ export function renderGameList(onSelectGame) {
       .join(' ');
     if (runtime) meta.append(el('span', null, runtime));
     if (game.arch !== 'unknown') meta.append(el('span', null, game.arch));
+    const versionRecord = archiveRecordForGame(state.archiveRecords, game.id);
+    if (versionRecord) {
+      const versionLabel = versionRecord.label
+        ? t('ui.archive.listLabel', { label: versionRecord.label }, 'Copy: {label}')
+        : versionRecord.versionHint
+          ? t('ui.archive.listHint', { version: versionRecord.versionHint }, 'Filename: {version} (?)')
+          : t('ui.archive.importedCopy', undefined, 'Imported copy');
+      const badge = el('span', 'pill archive-version-label', versionLabel);
+      badge.title = versionRecord.archiveName;
+      meta.append(badge);
+    }
     const task = operationBadge(game.id);
     if (task) meta.append(task);
     for (const translator of game.installedTranslators) {

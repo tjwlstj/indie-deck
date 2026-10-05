@@ -19,6 +19,11 @@
   box-sizing: border-box;
 }
 
+/* Author grid/flex rules must not override native view/control visibility. */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;
@@ -1073,3 +1078,54 @@ select {
 .mtool-steps li + li { margin-top: 5px; }
 .mtool-safety,
 .mtool-block-reason { color: var(--warn); font-size: 11.5px; }
+
+/* ---------------------------------------------------- safe maintenance */
+.translator-maintenance,
+.archive-candidate,
+.archive-record,
+.archive-progress {
+  margin: 10px 0;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+}
+.translator-maintenance { border-left: 3px solid var(--warn); }
+.maintenance-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.maintenance-help,
+.maintenance-safety,
+.archive-warning { font-size: 11.5px; line-height: 1.6; }
+.maintenance-help { color: var(--text-faint); }
+.maintenance-safety,
+.archive-warning { color: var(--warn); }
+.maintenance-files { padding-left: 19px; max-height: 280px; overflow: auto; line-height: 1.8; }
+.maintenance-files code { overflow-wrap: anywhere; }
+.maintenance-confirm {
+  width: min(640px, calc(100vw - 48px));
+  max-height: calc(100vh - 60px);
+  overflow: auto;
+  padding: 22px;
+  color: var(--text);
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.maintenance-confirm::backdrop { background: rgb(0 0 0 / 65%); }
+.maintenance-confirm h2 { margin-top: 0; font-size: 18px; }
+.operation-backup,
+.archive-name,
+.archive-hash,
+.archive-record .path { overflow-wrap: anywhere; }
+.archive-hash { font-size: 10.5px; color: var(--text-faint); }
+.archive-label-row { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
+.archive-label-row input {
+  width: 100%;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+}
+.archive-label-row input:focus-visible { outline: 1px solid var(--accent); }
+.archive-progress progress { display: block; width: 100%; margin: 12px 0; }
+.list-toolbar { padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.list-toolbar button { width: 100%; }

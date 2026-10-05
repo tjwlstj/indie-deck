@@ -49,7 +49,7 @@ export function libraryPath(dataDir = defaultDataDir()): string {
 
 export async function loadConfig(dataDir = defaultDataDir()): Promise<LauncherConfig> {
   const file = configPath(dataDir);
-  if (!(await pathExists(file))) return { ...DEFAULT_CONFIG };
+  if (!(await pathExists(file))) return structuredClone(DEFAULT_CONFIG);
   try {
     const parsed = JSON.parse(await fsp.readFile(file, 'utf8')) as Partial<LauncherConfig>;
     const externalTools = parsed.externalTools;
@@ -68,7 +68,7 @@ export async function loadConfig(dataDir = defaultDataDir()): Promise<LauncherCo
       externalTools: mtoolRoot === undefined ? undefined : { mtoolRoot },
     };
   } catch {
-    return { ...DEFAULT_CONFIG };
+    return structuredClone(DEFAULT_CONFIG);
   }
 }
 

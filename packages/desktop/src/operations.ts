@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 
-export type OperationKind = 'install' | 'install-font' | 'uninstall';
+export type OperationKind = 'install' | 'install-font' | 'uninstall' | 'remove-translator' | 'reinstall-translator';
 export type OperationPhase =
   | 'queued' | 'preflight' | 'download' | 'verify' | 'backup' | 'extract'
   | 'configure' | 'manual' | 'receipt' | 'rollback' | 'redetect' | 'audit';
@@ -78,7 +78,7 @@ export class OperationManager {
     if (typeof request.requestId !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(request.requestId)) {
       throw new Error('Malformed operation request id.');
     }
-    if (request.kind !== 'install' && request.kind !== 'install-font' && request.kind !== 'uninstall') throw new Error('Unknown operation kind.');
+    if (!['install', 'install-font', 'uninstall', 'remove-translator', 'reinstall-translator'].includes(request.kind)) throw new Error('Unknown operation kind.');
     if (!/^[0-9a-f]{16}$/.test(request.gameId)) throw new Error('Malformed game id.');
 
     const operationId = crypto.randomUUID();

@@ -94,6 +94,18 @@ test('returns the same sanitised object it validated instead of reading the rece
   assert.deepEqual(receipts[0]?.entries, [{ path: 'plugin.dll', operation: 'create', sha256: HASH }]);
 });
 
+test('bounds receipt metadata bytes, entries and record count before accepting authority', async () => {
+  const oversized = root('oversized-metadata');
+  await fsp.writeFile(path.join(oversized, '.indiedeck/receipts/translator-demo.json'), ' '.repeat(2 * 1024 * 1024 + 1));
+  await assert.rejects(() => readSafeRemovalReceipts(oversized, []), /2 MiB metadata limit/);
+  const manyEntries = root('many-metadata-entries');
+  await writeRaw(manyEntries, 'translator-demo.json', rawReceipt('demo', Array.from({ length: 10_001 }, () => ({ path: 'a', operation: 'create', sha256: HASH }))));
+  await assert.rejects(() => readSafeRemovalReceipts(manyEntries, []), /too many receipt entries/);
+  const manyRecords = root('many-metadata-records');
+  await Promise.all(Array.from({ length: 129 }, (_, index) => writeRaw(manyRecords, `translator-demo${index}.json`, rawReceipt(`demo${index}`))));
+  await assert.rejects(() => readSafeRemovalReceipts(manyRecords, []), /too many receipt records/);
+});
+
 test('blocks a canonical receipt from deleting the protected main executable', async () => {
   const gameRoot = root('protected-exe');
   await writeRaw(

@@ -104,6 +104,23 @@ export function detectInstalledLoaders(reg: Registry, probe: FsProbe, dataDir?: 
 export function detectInstalledTranslators(reg: Registry, probe: FsProbe, backend?: string): InstalledTranslator[] {
   const found: InstalledTranslator[] = [];
   for (const translator of reg.translators) {
+    // Cleanup intentionally preserves user configuration/translations. Those
+    // traces (or an empty plugin folder/shared Common DLL) are not an active
+    // XUnity translator payload and must not keep the installed badge alive.
+    if (translator.id === 'xunity-autotranslator') {
+      const activePayloads = [
+        'BepInEx/plugins/XUnity.AutoTranslator/XUnity.AutoTranslator.Plugin.Core.dll',
+        'BepInEx/plugins/XUnity.AutoTranslator/XUnity.AutoTranslator.dll',
+        'BepInEx/plugins/XUnity.AutoTranslator.Plugin.Core.dll',
+        'Mods/XUnity.AutoTranslator.Plugin.MelonMod.dll',
+        'UserLibs/XUnity.AutoTranslator.Plugin.Core.dll',
+        'UnityInjector/XUnity.AutoTranslator.Plugin.Core.dll',
+        'Plugins/XUnity.AutoTranslator.Plugin.Core.dll',
+        'AutoTranslator/XUnity.AutoTranslator.Plugin.Core.dll',
+        'ReiPatcher/ReiPatcher.exe', 'SetupReiPatcherAndAutoTranslator.exe',
+      ];
+      if (!activePayloads.some((file) => probe.hasFile(file))) continue;
+    }
     const markerHits: string[] = [];
 
     for (const p of translator.installedMarkers?.paths ?? []) if (probe.has(p)) markerHits.push(p);
@@ -264,12 +281,47 @@ export interface ScanOptions extends DetectOptions {
  * (`Game/ReleaseVer1.1.2_Win/`), which is why the default depth is 2.
  */
 export function scanLibrary(reg: Registry, roots: string[], options: ScanOptions = {}): GameProfile[] {
-  const depth = options.depth ?? 2;
+  const depth = typeof options.depth === 'number' && Number.isFinite(options.depth) && options.depth >= 0
+    ? Math.floor(options.depth) : 2;
   const results: GameProfile[] = [];
   const seen = new Set<string>();
+  const detected = new Set<string>();
+  const walked = new Map<string, number>();
+
+  // OS-picked roots may themselves be games (including managed archive
+  // versions). Do not follow a junction into a different root, and never probe
+  // a broad drive/share root as a game. Parent-root child scanning stays intact.
+  const ordinaryRoot = (absolute: string): boolean => {
+    const parsed = path.parse(absolute);
+    let current = parsed.root;
+    const candidates = [current, ...absolute.slice(parsed.root.length).split(path.sep).filter(Boolean)
+      .map((part) => { current = path.join(current, part); return current; })];
+    try {
+      return candidates.every((candidate) => {
+        const stat = fs.lstatSync(candidate);
+        return stat.isDirectory() && !stat.isSymbolicLink();
+      });
+    } catch { return false; }
+  };
+
+  const probe = (dir: string): boolean => {
+    const key = dir.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      options.onProgress?.(dir, results.length);
+      const profile = detectGame(reg, dir, options);
+      if (profile) { results.push(profile); detected.add(key); }
+    }
+    return detected.has(key);
+  };
 
   const walk = (dir: string, level: number): void => {
     if (level > depth) return;
+    const key = dir.toLowerCase(), remaining = depth - level;
+    // A later directly-registered parent can have a larger search budget than
+    // an earlier overlapping library root; don't lose its deeper children.
+    if ((walked.get(key) ?? -1) >= remaining) return;
+    walked.set(key, remaining);
     let entries: fs.Dirent[];
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -282,20 +334,18 @@ export function scanLibrary(reg: Registry, roots: string[], options: ScanOptions
       if (entry.name.startsWith('.')) continue;
 
       const child = path.join(dir, entry.name);
-      const key = child.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-
-      options.onProgress?.(child, results.length);
-      const profile = detectGame(reg, child, options);
-      if (profile) {
-        results.push(profile);
-        continue; // do not descend into a detected game
-      }
+      if (probe(child)) continue; // do not descend into a detected game
       walk(child, level + 1);
     }
   };
 
-  for (const root of roots) walk(path.resolve(root), 1);
+  for (const root of roots) {
+    const resolved = path.resolve(root), name = path.basename(resolved).toLowerCase();
+    if (!ordinaryRoot(resolved) || name.startsWith('.staging-') || name.startsWith('.indiedeck')) continue;
+    // The child-directory exclusions are not authority to discard an explicit
+    // game root: many archives name their real executable folder "Windows".
+    if (resolved !== path.parse(resolved).root && probe(resolved)) continue;
+    walk(resolved, 1);
+  }
   return results.sort((a, b) => a.name.localeCompare(b.name));
 }

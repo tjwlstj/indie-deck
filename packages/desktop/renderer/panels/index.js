@@ -11,11 +11,14 @@ import { renderAudit, renderFacts, renderFontRecommendation, renderHeader, rende
 import { renderConfigSection } from './config.js';
 import { renderMToolIntegration } from './mtool.js';
 import { hasMToolIntegration } from '../mtool-model.js';
+import { renderTranslatorMaintenance } from './maintenance.js';
+import { hasTranslatorMaintenance } from '../maintenance-model.js';
 
 export const SECTIONS = [
   { id: 'header', render: renderHeader },
   { id: 'facts', render: renderFacts },
   { id: 'audit', render: renderAudit, when: (ctx) => ctx.audit.issues.length > 0 },
+  { id: 'translator-maintenance', render: renderTranslatorMaintenance, when: hasTranslatorMaintenance },
   { id: 'font', render: renderFontRecommendation, when: (ctx) => Boolean(ctx.fontRecommendation) },
   { id: 'mtool', render: renderMToolIntegration, when: hasMToolIntegration },
   { id: 'plans', render: renderPlans },

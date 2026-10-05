@@ -5,8 +5,11 @@ import path from 'node:path';
 import { after, test } from 'node:test';
 import { detectGame } from '../src/detect/index.ts';
 import {
+  addRoot,
+  configPath,
   libraryPath,
   libraryStats,
+  loadConfig,
   loadLibrary,
   refreshLibraryGame,
   saveLibrary,
@@ -64,6 +67,25 @@ test('legacy library indexes load at revision zero', async () => {
   assert.deepEqual(loaded.roots, ['D:/Games']);
 });
 
+test('missing and damaged configs have independent roots and defaults across isolated data folders', async () => {
+  const firstData = testDir('config-isolation-first'), secondData = testDir('config-isolation-second');
+  const firstRoot = testDir('config-isolation-games');
+  await addRoot(firstRoot, firstData);
+  const first = await loadConfig(firstData);
+  assert.deepEqual(first.roots, [firstRoot]);
+  first.roots.push(testDir('config-isolation-unsaved'));
+  first.defaults.targetLanguage = 'ko';
+  const second = await loadConfig(secondData);
+  assert.deepEqual(second.roots, []); assert.equal(second.defaults.targetLanguage, 'en');
+  const damagedData = testDir('config-isolation-damaged');
+  fs.writeFileSync(configPath(damagedData), '{ damaged JSON');
+  const damaged = await loadConfig(damagedData);
+  damaged.roots.push(firstRoot); damaged.defaults.targetLanguage = 'ja';
+  const next = await loadConfig(secondData);
+  assert.deepEqual(next.roots, []); assert.equal(next.defaults.targetLanguage, 'en');
+  assert.deepEqual((await loadConfig(firstData)).roots, [firstRoot], 'unsaved caller edits do not leak into persisted or default roots');
+});
+
 test('saveLibrary atomically replaces the file and advances from the newest revision', async () => {
   const dataDir = testDir('save-data');
   fs.writeFileSync(
@@ -101,7 +123,7 @@ test('refreshLibraryGame deep-refreshes one row and keeps library metadata and s
   assert.ok(preservedOther);
   assert.equal(libraryStats(seeded).withTranslator, 0);
 
-  const translatorMarker = path.join(targetPath, 'BepInEx/core/XUnity.Common.dll');
+  const translatorMarker = path.join(targetPath, 'BepInEx/plugins/XUnity.AutoTranslator/XUnity.AutoTranslator.Plugin.Core.dll');
   fs.mkdirSync(path.dirname(translatorMarker), { recursive: true });
   fs.writeFileSync(translatorMarker, 'translator marker');
 

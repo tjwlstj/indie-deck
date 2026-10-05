@@ -38,8 +38,9 @@
 | **RESEARCH** | 도구별 소유권·보존 경계를 검증해야 하며 아직 자동 동작을 약속하지 않는 영역 |
 
 로딩 바, 설정 페이지, 설치·제거 후 단일 게임 인덱스 갱신과 고정 액션
-바는 구현됐다. 설치 상태 조정 계획, 원자적 업데이트·복구·중복 정리,
-프로세스 종료 후 journal 복구는 **PLANNED**다.
+바는 구현됐다. §18의 알려진 Unity XUnity payload 정리·재설치와 §19의 ZIP
+게임 버전 가져오기도 구현됐다. 모든 도구·로더를 아우르는 설치 상태 조정,
+범용 업데이트·복구·중복 정리와 프로세스 종료 후 journal 복구는 **PLANNED**다.
 
 ## 3. 현재 기준선
 
@@ -52,14 +53,16 @@
 | 설치 로그 | **CURRENT** | 상태 기반 작업 카드의 접는 로그이며 화면 전환·재렌더에도 유지된다. 로그는 보조 정보이고 terminal outcome이 완료를 결정한다. |
 | 설치·제거 직후 상세 갱신 | **CURRENT** | 실패·복원 이후에도 deep 재감지하며 상세·감사·receipt·mods·redacted config를 함께 반환한다. 선택 token과 gameRevision이 늦은 응답을 거른다. |
 | 설치·제거 직후 목록 갱신 | **CURRENT** | refreshLibraryGame이 해당 항목만 교체/제거하고 revision을 원자 저장한다. postState의 목록·감사·통계를 함께 병합한다. 다른 게임을 선택해도 설치 대상의 목록 갱신은 반영된다. |
-| 오래된 번역기 탐지 | **PARTIAL** | 게임별 호환 목표 버전 비교는 구현됐다. 안전한 update·repair 실행과 연결하는 maintenance 조정 계획은 남아 있다. |
-| 중복 번역기 탐지 | **CURRENT** | `packages/core/src/health`가 변형·DLL 버전·영수증 증거를 개별 수집하고 duplicate-variants, multiple-versions, managed-drift 등을 분류한다. 단위 테스트는 `packages/core/test/health.test.ts`(§13.3 fixture 12종). 정리 동작 자체는 여전히 **PLANNED**다. |
-| 재설치 안전성 | **PARTIAL** | desktop은 기존 managed component 영수증 재설치와 중복·drift·다른 변형 덮어쓰기를 차단하고 사유를 먼저 표시한다. core/CLI의 일반 applyPlan은 maintenance가 아니며 update·repair·정리 버튼으로 승격하지 않는다. |
+| 오래된 번역기 탐지 | **PARTIAL** | 게임별 호환 목표 버전 비교와 §18의 제한된 XUnity 정리·재설치는 구현됐다. 범용 update·repair 조정 계획은 남아 있다. |
+| 중복 번역기 탐지 | **CURRENT** | `packages/core/src/health`가 변형·DLL 버전·영수증 증거를 수집한다. §18은 알려진 XUnity 파일의 제한된 정리를 제공하며, 알 수 없는 payload/패처/로더의 자동 통합은 **PLANNED**다. |
+| 재설치 안전성 | **PARTIAL** | 일반 Install의 기존 기록 덮어쓰기는 계속 차단한다. §18의 별도 XUnity 유지보수만 미리보기·백업·원본 baseline 계승을 적용한다. core/CLI의 일반 applyPlan은 maintenance가 아니다. |
 | 설치 후 사용자 수정 보호 | **PARTIAL** | create·modify의 설치 후 hash 변경은 보존한다. post hash가 없는 snapshot은 baseline과 다르면 보존하고, 미해결 entry의 receipt를 남긴다. 변경 미리보기와 receipt v3의 원자 계승은 남아 있다. |
 | 상단 바 | **CURRENT** | 브랜드(버전 표기 포함), 검색, 새로고침, 설정만 남았다. 언어·엔드포인트 기본값과 폴더 관리는 설정 페이지가 소유한다. |
 | 게임 액션 | **CURRENT** | 게임 실행과 폴더 열기가 상세 화면의 sticky 영역에 고정되어 스크롤 중에도 보인다. 작업 중에는 실행이 비활성화되고 이유가 인접 문구로 안내된다. 제거 동작은 계획 섹션으로 옮겨져 고정 영역 밖이다. |
 | 추천 TMP 폰트 | **CURRENT** | 감지한 Unity·TMP·대상 언어와 등록 범위로 추천하며, 번역기 동시 설치 선택과 기존 호환 XUnity의 폰트 단독 추가·폴백 연결을 제공한다. 등록/추정 범위와 실제 게임 출력 미검증을 표시한다. |
 | RPG Maker 로컬 MTool 연계 | **CURRENT** | MV/MZ·RGSS 상세 카드와 설정의 기존 MTool 연결, 게임 실행 파일 단일 인수 전달·도구만 열기·위치 열기·적용 후 갱신을 제공한다. 복사 설치·자동 번역이 아니며, 실제 자동 선택과 번역 동작은 미검증이다. Wolf RPG는 제외한다. |
+| Unity 번역기 정리·재설치 | **CURRENT** | §18의 알려진 XUnity 파일 한정, 확인 후 백업·정리·호환 재설치. 로더·타 모드·설정·번역문·폰트 보존, stale hash/unsafe metadata 차단, 프로세스 내 오류 복원. |
+| 게임 압축파일·버전 관리 | **PARTIAL** | §19의 classic ZIP 검증·별도 버전 폴더 가져오기와 원본 hash/사용자 라벨 기록은 구현. 7z/RAR는 인식만 하며 ZIP64·암호·분할 압축과 게임 자체의 정확한 버전 추출은 미지원. |
 
 ### 3.1 이번 구현 범위와 검증 근거
 
@@ -93,9 +96,10 @@
   디스크에 유지되고, gameRevision은 현재 main 프로세스의 snapshot token이다.
 - 이번 이벤트는 `maintenance:start({kind,gameId,planId?,requestId})`와
   `maintenance:current/outcome/acknowledge`다. §5의 actionId 기반 원자적
-  maintenance 계획은 후속 계약이며, 현재 설치·제거에만 이 수명 모델을 적용한다.
+  maintenance 계획은 후속 계약이며, 현재 설치·제거·제한된 XUnity 정리/재설치에
+  이 수명 모델을 적용한다.
 
-### 3.2 현재 재설치를 업데이트로 사용하면 안 되는 이유
+### 3.2 일반 Install을 업데이트로 사용하면 안 되는 이유
 
 현재 영수증 파일 이름은 kind와 componentId 조합으로 고정된다. 같은
 번역기를 다시 적용하면 새 영수증이 이전 영수증을 대체할 수 있고, 새
@@ -1180,3 +1184,73 @@ IndieDeck 제거의 복원 범위에 포함되지 않는다. 따라서 사용자
 CWD, 도구만 열기, 실제 합성 marker의 targeted refresh, 파일 무효화·복구 뒤
 설정 상태 재조회, 명시적 연결 해제와 IPC 경계를 검증한다. 이는 실제 게임의
 자동 선택·번역 성공에 대한 증거가 아니다.
+
+## 18. 후속 구현: Unity XUnity 번역기 정리·재설치
+
+게임을 스캔했다는 이유만으로 파일을 지우지 않는다. Unity 상세의 별도
+유지보수 카드에서 인식한 파일 목록을 확인하고 “기존 번역기 정리” 또는
+“정리 후 재설치”를 선택한 뒤 확인해야 작업을 시작한다. main이 발급한
+previewId만 전달하며, renderer는 삭제 경로나 파일 내용·다운로드 주소를
+지정할 수 없다. 시작 전과 다운로드/백업 후 hash·소유권을 다시 확인한다.
+
+정리 대상은 알려진 XUnity component 파일이다. 다른 모드의 파일·로더를
+통째로 지우지 않는다. 게임 EXE, 설정, 저장된 번역문과 폰트는 유지한다.
+Common·ResourceRedirector·MonoMod/Cecil 같은 공유 라이브러리는 확인된 XUnity
+소유권과 기록된 hash 일치 없이는 자동 삭제·대체하지 않는다. 다른 모드의
+의존성을 런처가 완전히 판별할 수 있는 것은 아니다.
+알 수 없는 전용 폴더 파일, 손상/위조된 기록, 경로 링크, ReiPatcher처럼
+게임 어셈블리를 패치하는 설치는 자동 작업을 차단하고 사유를 표시한다.
+
+정리 전에 `.indiedeck/backups/maintenance-<uuid>`에 해당 파일의 정확한
+내용과 기존 translator 기록·manifest를 보관한다. 재설치는 이미 설치된
+호환 BepInEx 또는 MelonLoader에 맞는 등록된 XUnity ZIP만 사용하고,
+완전한 다운로드·경로·크기·CRC 검증을 마친 뒤 기존 파일을 변경한다.
+새 translator 기록은 기존 create/modify 원본 backup을 계승한다. 따라서
+나중 제거가 이전 번역기 payload를 되살리는 단순 덮어쓰기 체인이 되지 않는다.
+보존하는 config와 폰트 overlay 기록의 원래 chronology도 유지한다.
+
+정리/재설치는 기존 단일 작업 큐와 진행 이벤트·reload/ACK·postState 갱신을
+사용한다. 잡힌 프로세스 내 오류는 작업 직전 payload/기록으로 복원을
+시도하고, 실패 경로가 있으면 부분 복원으로 보고한다. 보관된 manifest는
+백업 증거이며, 앱 강제 종료/OS crash 후 자동 복구 엔진이 구현된 것은 아니다.
+백업을 삭제하지 말고 실제 게임에서 번역과 모드가 정상인지 확인해야 한다.
+다른 프로그램으로 실행한 게임·외부 도구는 감시하지 않으므로 먼저 종료한다.
+
+도구별 배치 차이와 로더 중첩 주의는
+[XUnity 공식 설치 안내](https://github.com/bbepis/XUnity.AutoTranslator#installation)를
+근거로 하되, 실제 게임의 번역 성공은 별도 검증이다.
+
+검증은 합성 게임의 유지보수 행동 테스트 22개와 ko/en offline Electron
+flow로 수행했다. 공식 v5.6.1 BepInEx·BepInEx IL2CPP·MelonMod·MelonMod IL2CPP
+ZIP 자체도 임시 합성 게임에 `runTranslatorMaintenance`로 재설치했다.
+각 경우 기존 게임·로더·설정·사용자 파일 7개의 바이트가 보존됐고 다음
+유지보수 preview도 유효했다. 실제 게임·번역기 실행은 하지 않았으므로,
+이는 실제 배포 파일의 파싱·설치 계약 검증이지 번역 런타임 성공 증명이 아니다.
+
+## 19. 후속 구현: 게임 압축파일 인식·별도 버전 가져오기
+
+설정의 압축파일 관리에서 시스템 파일 선택기로 게임 ZIP/7z/RAR을 고른다.
+확장자만 믿지 않고 signature와 ZIP의 실제 central/local metadata를 검사한다.
+renderer에는 opaque candidate ID, 파일명·크기·형식·hash 등 표시 정보만
+반환한다. 가져오기 직전 같은 source SHA-256인지 재확인한다.
+
+**CURRENT 가져오기 범위는 classic ZIP의 stored/deflate**다. 원본 압축파일,
+기존 게임과 이전 가져오기 버전을 수정/삭제/덮어쓰지 않고 launcher data의
+`game-versions/<uuid>` 안에 새로 펼친다. 검증 중에는 별도 stage를 사용하고
+전체 추출·CRC·실제 출력 크기와 단일 게임 감지가 성공한 뒤에만 publish한다.
+성공한 게임 폴더는 라이브러리에 등록되며, 전체 재검색에서도 등록 폴더
+자체를 감지해 목록에 유지한다. 같은 원본 hash의 중복 가져오기는 이미
+보관한 버전을 재사용한다. 기본 제한은 4 GiB 미만 ZIP, 50,000 entry,
+총 32 GiB 출력이다. 디스크 여유 공간과 실제 게임 실행 성공을 보장하지 않는다.
+
+7z/RAR는 형식을 인식하지만 자동 추출은 **PLANNED**다. ZIP64·암호·분할 ZIP,
+legacy non-UTF8 파일명·미지원 압축 방법은 거부하고 안내한다. 절대/부모 경로,
+Windows ADS/예약 이름, symlink/junction 및 archive link, 대소문자 충돌,
+위조 `.indiedeck` 메타데이터와 CRC/실제 크기 불일치도 차단한다.
+
+버전 기록에는 원본 파일명·SHA-256·가져온 시각·감지 엔진·사용자 라벨과
+게임 위치가 남는다. 파일명의 `v1.2` 같은 표기는 **추정**이며 실제 게임 버전,
+Unity 엔진 버전 또는 게임 패치 호환성을 증명하지 않는다. 라벨은 사용자가
+구분하는 이름이다. 세이브·모드·번역 설정을 다른 버전으로 자동 이식하지 않는다.
+가져오기 수명은 main의 별도 상태 snapshot과 단조 progress sequence로
+renderer reload를 복구하며, 프로세스/OS crash 후 자동 stage 복구는 미구현이다.

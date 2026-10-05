@@ -11,6 +11,7 @@ import {
   auditGame,
   auditLibrary,
   detectGame,
+  defaultDataDir,
   installModFromFile,
   libraryStats,
   localiseProfile,
@@ -60,6 +61,8 @@ import { OperationManager, type OperationRequest, type OperationResult, type Pro
 import { readSafeRemovalReceipts } from './receipt-guard.ts';
 import { fontWriteBlockKey } from './font-guard.ts';
 import { getMToolStatus, isMToolGame, mtoolLaunchSpec, getMToolGameExecutable, type MToolStatus } from './mtool.ts';
+import { previewTranslatorMaintenance, runTranslatorMaintenance, type TranslatorMaintenancePreview } from './translator-maintenance.ts';
+import { inspectGameArchive, importGameArchive, listGameArchives, type GameArchiveInspection } from './game-archives.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const { autoUpdater } = electronUpdater;
@@ -122,6 +125,20 @@ function markGameChanged(gameId: string): number {
 const gamePathsById = new Map<string, string>();
 const plansById = new Map<string, TranslatorPlan>();
 const planOptionsById = new Map<string, FontResolveOptions>();
+const translatorMaintenanceById = new Map<string, { gameId: string; path: string; preview: TranslatorMaintenancePreview }>();
+const archiveCandidates = new Map<string, { path: string; inspection: GameArchiveInspection }>();
+interface ArchiveTask {
+  id: string;
+  sequence: number;
+  status: 'running' | 'complete' | 'failed';
+  phase: 'inspect' | 'extract' | 'publish' | 'complete' | 'failed';
+  completedFiles: number; totalFiles: number;
+  completedBytes: number; totalBytes: number;
+  error?: string;
+  result?: unknown;
+}
+let archiveTask: ArchiveTask | null = null;
+let archiveSequence = 0;
 
 function idFor(gamePath: string): string {
   return crypto.createHash('sha1').update(path.resolve(gamePath).toLowerCase()).digest('hex').slice(0, 16);
@@ -132,6 +149,7 @@ function rememberGames(profiles: GameProfile[]): void {
   for (const id of gamePathsById.keys()) if (!currentIds.has(id)) {
     gamePathsById.delete(id);
     gameRevisions.delete(id);
+    for (const [key, entry] of translatorMaintenanceById) if (entry.gameId === id) translatorMaintenanceById.delete(key);
     for (const key of plansById.keys()) if (key.startsWith(`${id}:`)) {
       plansById.delete(key);
       planOptionsById.delete(key);
@@ -184,6 +202,27 @@ function requirePlan(gameId: string, planId: unknown): TranslatorPlan {
   // Belt and braces: the cached plan must still point at the game it was made for.
   if (path.resolve(plan.gamePath) !== requireGamePath(gameId)) throw new Error('Plan target mismatch.');
   return plan;
+}
+
+function cacheTranslatorMaintenance(gameId: string, profile: GameProfile, preview: TranslatorMaintenancePreview) {
+  while (translatorMaintenanceById.size >= 100) translatorMaintenanceById.delete(translatorMaintenanceById.keys().next().value!);
+  const previewId = `${gameId}:${crypto.randomUUID()}`;
+  translatorMaintenanceById.set(previewId, { gameId, path: path.resolve(profile.path), preview });
+  return {
+    previewId, supported: preview.supported, eligible: preview.eligible,
+    canRemove: preview.removeEligible, canReinstall: preview.reinstallEligible,
+    blockedReason: preview.blockReasonKey ? t(preview.blockReasonKey) : undefined,
+    reinstallBlockedReason: preview.reinstallBlockReasonKey ? t(preview.reinstallBlockReasonKey) : undefined,
+    files: preview.files, currentVersions: preview.currentVersions, targetVersion: preview.version,
+    variantId: preview.variantId, preservedPaths: preview.preservedPaths,
+  };
+}
+
+function requireTranslatorMaintenance(gameId: string, previewId: unknown): TranslatorMaintenancePreview {
+  if (typeof previewId !== 'string' || !previewId.startsWith(`${gameId}:`)) throw new Error('Maintenance preview does not belong to this game.');
+  const entry = translatorMaintenanceById.get(previewId);
+  if (!entry || entry.gameId !== gameId || entry.path !== requireGamePath(gameId)) throw new Error(t('ui.maintenance.reason.stale'));
+  return entry.preview;
 }
 
 /* ------------------------------------------------------------- window */
@@ -429,7 +468,7 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
   })()`);
   if (fontBefore.bundles.length !== 0 || !fontBefore.hasPlan) throw new Error(`Font opt-out did not allow later font maintenance: ${JSON.stringify(fontBefore)}`);
   const gamePath = requireGamePath(start.gameId);
-  const dllPath = path.join(gamePath, 'BepInEx/plugins/XUnity.AutoTranslator/XUnity.AutoTranslator.dll');
+  const dllPath = path.join(gamePath, 'BepInEx/plugins/XUnity.AutoTranslator/XUnity.AutoTranslator.Plugin.Core.dll');
   const beforeHash = crypto.createHash('sha256').update(await readFile(dllPath)).digest('hex');
   const beforeMtime = (await stat(dllPath)).mtimeMs;
   await evaluate(`document.querySelector('#detail .install-font').click()`);
@@ -474,6 +513,55 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
   const shot = process.env['INDIEDECK_FLOW_SCREENSHOT'];
   if (shot) await writeFile(shot, (await window.webContents.capturePage()).toPNG());
 
+  // Duplicate/manual old payload beside a managed translator: keep the loader,
+  // unrelated mod, user configuration, translations and font overlay untouched.
+  const duplicateRel = 'Mods/XUnity.AutoTranslator.Plugin.MelonMod.dll';
+  const userFiles = [
+    'Mods/OtherMod.dll', 'BepInEx/Translation/ko/_AutoGeneratedTranslations.txt',
+  ];
+  for (const rel of [duplicateRel, ...userFiles]) {
+    const target = path.join(gamePath, rel);
+    await (await import('node:fs/promises')).mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, rel === duplicateRel ? Buffer.from('ProductVersion5.4.0\0', 'utf16le') : 'user fixture kept byte-for-byte');
+  }
+  const preserved = [path.join(gamePath, 'Game.exe'), path.join(gamePath, 'BepInEx/core/BepInEx.dll'),
+    path.join(gamePath, 'BepInEx/config/AutoTranslatorConfig.ini'), path.join(gamePath, 'arialuni_sdf_u2019'),
+    ...userFiles.map((rel) => path.join(gamePath, rel))];
+  const preservedHashes = await Promise.all(preserved.map(async (file) => crypto.createHash('sha256').update(await readFile(file)).digest('hex')));
+  await evaluate(`window.dispatchEvent(new CustomEvent('indiedeck:refresh-detail'))`);
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return state.detail?.translatorMaintenance?.canReinstall
+      && state.detail.translatorMaintenance.files.some((file) => file.path === ${JSON.stringify(duplicateRel)});
+  })()`, 'safe duplicate cleanup preview');
+  await evaluate(`document.querySelector('#detail .translator-reinstall').click()`);
+  const previewConfirmed = await evaluate<boolean>(`!!document.querySelector('#translatorMaintenanceConfirm[open] .translator-confirm')`);
+  if (!previewConfirmed || !(await stat(path.join(gamePath, duplicateRel))).isFile()) throw new Error('Cleanup deleted files before confirmation.');
+  window.setSize(1360, 880);
+  const maintenanceShot = process.env['INDIEDECK_MAINTENANCE_SCREENSHOT'];
+  if (maintenanceShot) await writeFile(maintenanceShot, (await window.webContents.capturePage()).toPNG());
+  await evaluate(`document.querySelector('#translatorMaintenanceConfirm .translator-confirm').click()`);
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return state.operation?.kind === 'reinstall-translator' && !!state.operation.outcome;
+  })()`, 'duplicate cleanup and managed reinstall');
+  const maintained = await evaluate<{ status: string; backup: string; files: string[] }>(`(async () => {
+    const { state } = await import('./store.js');
+    return { status: state.operation.outcome.status, backup: state.operation.outcome.result?.backupDirectory,
+      files: state.operation.outcome.result?.removed ?? [] };
+  })()`);
+  if (maintained.status !== 'success' || !maintained.backup || !maintained.files.includes(duplicateRel)) {
+    throw new Error(`Safe reinstall did not complete: ${JSON.stringify(maintained)}`);
+  }
+  if (await stat(path.join(gamePath, duplicateRel)).then(() => true, () => false)) throw new Error('Duplicate old variant survived cleanup.');
+  if (!(await stat(path.join(maintained.backup, 'files', duplicateRel))).isFile()) throw new Error('Cleanup discarded the old payload without a backup.');
+  for (let index = 0; index < preserved.length; index++) {
+    if (crypto.createHash('sha256').update(await readFile(preserved[index]!)).digest('hex') !== preservedHashes[index]) {
+      throw new Error(`Translator maintenance changed a preserved game/user file: ${preserved[index]}`);
+    }
+  }
+  console.log('[smoke] exact-file confirmation → duplicate cleanup/reinstall → retained backup and unchanged loader/mod/config/translation/font passed');
+
   await evaluate(`document.querySelector('#detail .uninstall').click()`);
   await waitFor(`(async () => {
     const { state } = await import('./store.js');
@@ -487,6 +575,26 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
     throw new Error(`Removal did not refresh translator badges/statistics: ${JSON.stringify(removed)}`);
   }
   if (requireDetectedGame(start.gameId).installedFontBundles.length) throw new Error('Uninstall left the managed standalone font behind.');
+  // Manually installed payloads can be removed without deleting their user
+  // settings. Retained settings must not keep an installed-translator badge.
+  await (await import('node:fs/promises')).mkdir(path.dirname(dllPath), { recursive: true });
+  await writeFile(dllPath, Buffer.from('ProductVersion5.4.0\0', 'utf16le'));
+  const manualConfig = path.join(gamePath, 'BepInEx/config/AutoTranslatorConfig.ini');
+  await (await import('node:fs/promises')).mkdir(path.dirname(manualConfig), { recursive: true });
+  await writeFile(manualConfig, '[General]\nLanguage=ko\n[Service]\nEndpoint=GoogleTranslate\n');
+  const manualConfigBytes = await readFile(manualConfig);
+  await evaluate(`window.dispatchEvent(new CustomEvent('indiedeck:refresh-detail'))`);
+  await waitFor(`!!document.querySelector('#detail .translator-remove:not(:disabled)')`, 'manual translator cleanup');
+  await evaluate(`document.querySelector('#detail .translator-remove').click()`);
+  await evaluate(`document.querySelector('#translatorMaintenanceConfirm .translator-confirm').click()`);
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return state.operation?.kind === 'remove-translator' && state.operation.outcome?.status === 'success'
+      && state.stats.withTranslator === 0 && state.detail.profile.installedTranslators.length === 0;
+  })()`, 'manual payload removal without false config-only badge');
+  if (!(await readFile(manualConfig)).equals(manualConfigBytes) || await stat(dllPath).then(() => true, () => false)) {
+    throw new Error('Manual cleanup deleted configuration or retained the active payload.');
+  }
   // A different game keeps the default opt-in and exercises the integrated
   // translator + font plan rather than reusing the standalone path above.
   await evaluate(`document.querySelectorAll('#gameList .game')[1].click()`);
@@ -601,6 +709,84 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
   })()`);
   if (!disconnected || mtoolCalls().length !== 2) throw new Error('Disconnect silently fell back to a default MTool or launched it.');
   console.log('[smoke] RPG Maker → mocked single-exe handoff → tool-only fallback → external file refresh → live status invalidation/restoration → disconnect and IPC authority checks passed; no real MTool/game process was started');
+
+  const archiveBoundary = await evaluate<boolean>(`(async () => {
+    const { api } = await import('./store.js');
+    try { await api.archives.import('renderer-chosen-path', '../injected'); return false; } catch { return true; }
+  })()`);
+  if (!archiveBoundary) throw new Error('Archive import accepted an unissued candidate.');
+  await evaluate(`document.getElementById('importArchive').click()`);
+  await waitFor(`document.body.dataset.view === 'settings'
+    && getComputedStyle(document.getElementById('libraryView')).display === 'none'
+    && getComputedStyle(document.getElementById('settingsView')).display !== 'none'`, 'exclusive archive settings view');
+  await evaluate(`document.querySelector('#archiveSettings .archive-pick').click()`);
+  await waitFor(`!!document.querySelector('#archiveSettings .archive-import:not(:disabled)')`, 'safe game ZIP inspection');
+  await evaluate(`(() => {
+    const input = document.getElementById('archiveVersionLabel'); input.value = '1.0 smoke'; input.dispatchEvent(new Event('input'));
+    document.querySelector('#archiveSettings .archive-import').click();
+  })()`);
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return !state.archiveBusy && state.archiveProgress?.status === 'complete'
+      && state.archiveRecords.length === 1 && state.games.length === 4;
+  })()`, 'first side-by-side game import');
+  const firstArchive = await evaluate<{ gameRoot: string; id: string; hash: string }>(`(async () => {
+    const record = (await import('./store.js')).state.archiveRecords[0];
+    return { gameRoot: record.gameRoot, id: record.id, hash: record.sourceSha256 };
+  })()`);
+  const firstGameHash = crypto.createHash('sha256').update(await readFile(path.join(firstArchive.gameRoot, 'Game.exe'))).digest('hex');
+  await new Promise<void>((resolve) => {
+    window.webContents.once('did-finish-load', () => resolve()); window.webContents.reload();
+  });
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return document.body.dataset.libraryState === 'ready' && state.archiveRecords.length === 1
+      && state.archiveProgress?.status === 'complete' && state.games.length === 4;
+  })()`, 'archive completed snapshot/record reload recovery');
+  await evaluate(`document.getElementById('importArchive').click()`);
+  await evaluate(`document.querySelector('#archiveSettings .archive-pick').click()`);
+  await waitFor(`!!document.querySelector('#archiveSettings .archive-import:not(:disabled)')`, 'second ZIP inspection');
+  await evaluate(`(() => {
+    const input = document.getElementById('archiveVersionLabel'); input.value = '2.0 smoke'; input.dispatchEvent(new Event('input'));
+    document.querySelector('#archiveSettings .archive-import').click();
+  })()`);
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return !state.archiveBusy && state.archiveProgress?.status === 'complete'
+      && state.archiveRecords.length === 2 && state.games.length === 5;
+  })()`, 'second side-by-side version import');
+  const versions = await evaluate<boolean>(`(async () => {
+    const { state } = await import('./store.js');
+    return state.archiveRecords.every((record) => record.gameId && record.versionHintIsGuess)
+      && new Set(state.archiveRecords.map((record) => record.gameRoot)).size === 2
+      && state.archiveRecords.some((record) => record.label === '1.0 smoke')
+      && state.archiveRecords.some((record) => record.label === '2.0 smoke');
+  })()`);
+  if (!versions || firstGameHash !== crypto.createHash('sha256').update(await readFile(path.join(firstArchive.gameRoot, 'Game.exe'))).digest('hex')) {
+    throw new Error('Archive versions overwrote their predecessor or lost version provenance/labels.');
+  }
+  for (const source of [process.env['INDIEDECK_SMOKE_GAME_ARCHIVE']!, process.env['INDIEDECK_SMOKE_GAME_ARCHIVE_V2']!]) {
+    if (!(await stat(source)).isFile()) throw new Error('Game import removed its original archive.');
+  }
+  const beforeFullScan = await evaluate<number>(`(async () => (await import('./store.js')).state.libraryRevision)()`);
+  await evaluate(`document.getElementById('rescanRoots').click()`);
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return state.libraryRevision > ${beforeFullScan} && state.games.length === 5 && state.archiveRecords.length === 2
+      && state.archiveRecords.every((record) => record.gameId && state.games.some((game) => game.id === record.gameId));
+  })()`, 'direct registered archive versions survive full library rescan');
+  const archiveShot = process.env['INDIEDECK_ARCHIVES_SCREENSHOT'];
+  await evaluate(`document.getElementById('archiveSettings').scrollIntoView({ block: 'start' })`);
+  await evaluate(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
+  if (archiveShot) await writeFile(archiveShot, (await window.webContents.capturePage()).toPNG());
+  await evaluate(`document.querySelector('#archiveSettings .archive-open-game').click()`);
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return state.view === 'library' && state.archiveRecords.some((record) => record.gameId === state.selected)
+      && document.querySelectorAll('#gameList .game').length === 5
+      && document.querySelectorAll('#gameList .archive-version-label').length === 2;
+  })()`, 'imported version selected with library label');
+  console.log('[smoke] OS-picked ZIP inspection → two side-by-side labeled game versions → library refresh/selection → original archives and predecessor preserved passed');
 }
 
 /* ------------------------------------------------------------ updates */
@@ -743,6 +929,8 @@ async function gameDetailPayload(gameId: string, options: ResolveOptions, detect
     plans,
     fontRecommendation,
     fontPlan,
+    ...(profile.engineId === 'unity' ? { translatorMaintenance: cacheTranslatorMaintenance(gameId, profile,
+      await previewTranslatorMaintenance(registry, profile, options)) } : {}),
     ...(isMToolGame(profile) ? { mtoolIntegration: {
       ...await currentMToolStatus(), supported: true, gameExecutable: profile.executable,
       autoApply: false, docsUrl: 'https://mtool.app/tutorial.php?lang=en',
@@ -885,6 +1073,7 @@ function installBlockReason(
 async function runMaintenance(
   request: OperationRequest, plan: TranslatorPlan | undefined, options: FontResolveOptions,
   report: (update: ProgressUpdate) => void,
+  translatorMaintenance?: TranslatorMaintenancePreview,
 ): Promise<OperationResult> {
   let result: OperationResult = {
     status: 'failed', mutationStatus: 'rolled-back', rollbackStatus: 'not-run',
@@ -895,7 +1084,14 @@ async function runMaintenance(
     report({ phase: 'preflight' });
     const profile = requireDetectedGame(request.gameId);
     validateManagedReceipts(profile.path);
-    if (request.kind === 'install' || request.kind === 'install-font') {
+    if (request.kind === 'remove-translator' || request.kind === 'reinstall-translator') {
+      if (!translatorMaintenance) throw new Error(t('ui.maintenance.reason.stale'));
+      const maintained = await runTranslatorMaintenance(translatorMaintenance,
+        request.kind === 'remove-translator' ? 'remove' : 'reinstall', { onEvent: (event) => report(event) });
+      result = { ...result, status: maintained.pendingUserActions.length ? 'needs-user-action' : 'success',
+        mutationStatus: maintained.mutationStatus, rollbackStatus: maintained.rollbackStatus,
+        rollbackFailures: maintained.rollbackFailures, result: maintained };
+    } else if (request.kind === 'install' || request.kind === 'install-font') {
       if (!plan?.viable) throw new Error('That plan cannot be installed.');
       const fontConfig = request.kind === 'install-font' ? (await translatorConfigPayload(profile, 'xunity-autotranslator')).config : undefined;
       const fresh = request.kind === 'install-font'
@@ -937,10 +1133,10 @@ async function runMaintenance(
       };
     }
   } catch (err) {
-    const error = err as Error & { applyResult?: ApplyResult };
-    const applied = error.applyResult;
+    const error = err as Error & { applyResult?: ApplyResult; maintenanceResult?: Awaited<ReturnType<typeof runTranslatorMaintenance>> };
+    const applied = error.maintenanceResult ?? error.applyResult;
     result = {
-      ...result, status: 'failed', error: error.message,
+      ...result, status: 'failed', error: localiseTaskError(error),
       ...(applied ? {
         result: applied, mutationStatus: applied.mutationStatus,
         rollbackStatus: applied.rollbackStatus, rollbackFailures: applied.rollbackFailures,
@@ -966,7 +1162,66 @@ function handle<T>(channel: string, fn: (...args: never[]) => Promise<T> | T): v
     try {
       return { ok: true as const, data: await fn(...(args as never[])) };
     } catch (err) {
-      return { ok: false as const, error: (err as Error).message };
+      return { ok: false as const, error: localiseTaskError(err) };
+    }
+  });
+}
+
+function localiseTaskError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return /^ui\.(maintenance|archives)\.[a-zA-Z0-9.]+$/.test(message) ? t(message) : message;
+}
+
+async function archiveRecords() {
+  return (await listGameArchives(defaultDataDir())).map((record) => {
+    const gameId = idFor(record.gameRoot);
+    return { ...record, ...(gamePathsById.has(gameId) && withinLibraryRoot(record.gameRoot) ? { gameId } : {}) };
+  });
+}
+
+function publishArchiveTask(update: Partial<ArchiveTask>): void {
+  if (!archiveTask) return;
+  archiveTask = { ...archiveTask, ...update, sequence: ++archiveSequence };
+  send('archives:progress', structuredClone(archiveTask));
+}
+
+function importSelectedArchive(candidateId: unknown, label: unknown) {
+  if (pendingMutations > 0 || operations.isActive()) throw new Error(t('ui.operation.busy'));
+  if (typeof candidateId !== 'string') throw new Error(t('ui.archives.reason.stale'));
+  const candidate = archiveCandidates.get(candidateId);
+  if (!candidate) throw new Error(t('ui.archives.reason.stale'));
+  if (!candidate.inspection.canImport) throw new Error(t(candidate.inspection.reasonKey ?? 'ui.archives.reason.unsupported'));
+  if (label !== undefined && (typeof label !== 'string' || label.length > 80 || /[\u0000-\u001f\u007f]/u.test(label))) {
+    throw new Error(t('ui.archives.reason.invalidLabel'));
+  }
+  archiveTask = { id: candidateId, sequence: ++archiveSequence, status: 'running', phase: 'inspect',
+    completedFiles: 0, totalFiles: candidate.inspection.fileCount ?? 0,
+    completedBytes: 0, totalBytes: candidate.inspection.unpackedBytes ?? 0 };
+  send('archives:progress', structuredClone(archiveTask));
+  return enqueueMutation(async () => {
+    try {
+      const imported = await importGameArchive(candidate.path, {
+        dataDir: defaultDataDir(), registry, label: typeof label === 'string' ? label.trim() : undefined,
+        expectedSha256: candidate.inspection.sha256,
+        onProgress: (event) => publishArchiveTask({
+          phase: event.phase === 'verify' || event.phase === 'detect' ? 'inspect' : event.phase,
+          completedFiles: event.filesDone, totalFiles: event.filesTotal,
+          completedBytes: event.bytesDone, totalBytes: event.bytesTotal,
+        }),
+      });
+      const config = await addRoot(imported.record.gameRoot);
+      libraryRoots = config.roots;
+      const refreshed = await refreshLibraryGame(registry, imported.record.gameRoot);
+      const library = libraryPayload(refreshed.index, safeResolveOptions(config.defaults));
+      const gameId = idFor(imported.record.gameRoot);
+      markGameChanged(gameId);
+      const result = { record: { ...imported.record, gameId }, duplicate: imported.duplicate,
+        records: await archiveRecords(), config, library, gameId };
+      publishArchiveTask({ status: 'complete', phase: 'complete', result });
+      return result;
+    } catch (error) {
+      publishArchiveTask({ status: 'failed', phase: 'failed', error: localiseTaskError(error) });
+      throw error;
     }
   });
 }
@@ -1006,6 +1261,21 @@ function register(): void {
   }));
 
   handle('config:get', () => loadConfig());
+  handle('archives:current', () => structuredClone(archiveTask));
+  handle('archives:list', async () => { await mutationQueue; return { records: await archiveRecords() }; });
+  handleMutation('archives:pick', async () => {
+    const picked = await dialog.showOpenDialog({ properties: ['openFile'],
+      title: t('ui.archives.pickTitle'), filters: [{ name: t('ui.archives.archiveFiles'), extensions: ['zip', '7z', 'rar'] }] });
+    const records = await archiveRecords();
+    const source = picked.filePaths[0];
+    if (picked.canceled || !source) return { candidate: null, records };
+    const inspection = await inspectGameArchive(source);
+    while (archiveCandidates.size >= 20) archiveCandidates.delete(archiveCandidates.keys().next().value!);
+    const id = crypto.randomUUID();
+    archiveCandidates.set(id, { path: source, inspection });
+    return { candidate: { id, ...inspection }, records };
+  });
+  handle('archives:import', (candidateId: unknown, label: unknown) => importSelectedArchive(candidateId, label));
   handle('mtool:status', async () => { await mutationQueue; return currentMToolStatus(); });
   handleMutation('mtool:pick', async () => {
     const picked = await dialog.showOpenDialog({
@@ -1105,16 +1375,22 @@ function register(): void {
 
   handle('maintenance:start', (input: OperationRequest) => {
     if (!input || typeof input !== 'object') throw new Error('Malformed operation request.');
+    if (pendingMutations > 0 || operations.isActive()) throw new Error(t('ui.operation.busy'));
     requireGamePath(input.gameId);
+    const translatorKind = input.kind === 'remove-translator' || input.kind === 'reinstall-translator';
     const request: OperationRequest = {
       requestId: input.requestId, gameId: input.gameId, kind: input.kind,
-      ...(input.kind === 'install' || input.kind === 'install-font' ? { planId: input.planId } : {}),
+      ...(input.kind === 'install' || input.kind === 'install-font' || translatorKind ? { planId: input.planId } : {}),
     };
     const plan = request.kind === 'install' || request.kind === 'install-font' ? requirePlan(request.gameId, request.planId) : undefined;
+    const translatorMaintenance = translatorKind ? requireTranslatorMaintenance(request.gameId, request.planId) : undefined;
+    if (translatorMaintenance && !(request.kind === 'remove-translator' ? translatorMaintenance.removeEligible : translatorMaintenance.reinstallEligible)) {
+      throw new Error(t(request.kind === 'remove-translator' ? translatorMaintenance.blockReasonKey! : translatorMaintenance.reinstallBlockReasonKey!));
+    }
     if (plan && (request.kind === 'install-font') !== (plan.purpose === 'font')) throw new Error('The operation kind does not match the selected plan.');
     const options = planOptionsById.get(request.planId ?? '') ?? {};
     if (plan && !plan.viable) throw new Error('That plan cannot be installed.');
-    return operations.start(request, (report) => runMaintenance(request, plan, options, report));
+    return operations.start(request, (report) => runMaintenance(request, plan, options, report, translatorMaintenance));
   });
   handle('maintenance:current', () => operations.current());
   handle('maintenance:outcome', (operationId: string) => operations.outcome(String(operationId)));

@@ -1,7 +1,15 @@
 import fs from 'node:fs/promises';
+import path from 'node:path';
 import childProcess from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { syncBuiltinESMExports } from 'node:module';
+import electron from 'electron';
+
+// Isolate Electron's single-instance/profile state as well as launcher data.
+// A second smoke must neither focus a user's app nor silently exit as success.
+const smokeProfile = path.join(process.env.INDIEDECK_HOME, 'electron-profile');
+await fs.mkdir(smokeProfile, { recursive: true });
+electron.app.setPath('userData', smokeProfile);
 
 // This entry point replaces downloads only inside the disposable smoke app.
 // Production main/core have no mock network or plan bypass.
@@ -24,6 +32,18 @@ childProcess.spawn = (executable, args, options) => {
   return originalSpawn(executable, args, options);
 };
 syncBuiltinESMExports();
+// Only the game-archive picker is mocked. Every selected source stays within
+// this runner's disposable fixture tree; production uses the actual OS picker.
+const originalDialog = electron.dialog.showOpenDialog.bind(electron.dialog);
+let archivePickCount = 0;
+electron.dialog.showOpenDialog = async (...args) => {
+  const options = args.at(-1);
+  if (options?.filters?.some((filter) => filter.extensions?.includes('zip')) && process.env.INDIEDECK_SMOKE_GAME_ARCHIVE) {
+    const picked = archivePickCount++ === 0 ? process.env.INDIEDECK_SMOKE_GAME_ARCHIVE : process.env.INDIEDECK_SMOKE_GAME_ARCHIVE_V2;
+    return { canceled: false, filePaths: [picked] };
+  }
+  return originalDialog(...args);
+};
 globalThis.fetch = async (input) => {
   const url = String(input);
   if (url.startsWith('https://api.github.com/repos/bbepis/XUnity.AutoTranslator/releases/')) {

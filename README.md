@@ -146,9 +146,27 @@ download bytes and a collapsible log, then refreshes that game's badges,
 statistics, detail and redacted config together. Reloading the renderer recovers
 the active operation from main.
 
-Safe update/repair and duplicate cleanup remain planned. The desktop currently
-shows a reason and blocks reinstalling an already managed translator when that
-would overwrite its original install record.
+Unity XUnity.AutoTranslator now has a separate **Clean up existing translator**
+and **Clean up and reinstall** preview. Only recognized component files are
+eligible. The launcher retains exact pre-operation backups and install metadata,
+preserves loaders, unrelated mods, configuration, translations and fonts, and
+inherits a managed translator's original uninstall baseline. Reinstall uses a
+compatible registered ZIP package and an existing BepInEx/MelonLoader host;
+ReiPatcher, unknown files and unsafe ownership block automatic maintenance.
+Scanning alone never deletes anything. This is bounded payload maintenance,
+not universal loader replacement or durable crash recovery. Ordinary Install
+continues to block overwriting an existing managed install record.
+
+**Game archives and versions.** Choose a game archive in Settings or use the
+archive-import entry point. Classic ZIP games can be validated and imported
+into new side-by-side folders under the launcher data directory. The original
+archive and older versions are never overwritten or removed. Imports record a
+source SHA-256, optional user label and detected engine, then register the game
+in the library. A filename version hint is explicitly a guess, not a measured
+game version or Unity engine version. 7z and RAR are recognized but require
+manual extraction; encrypted, split, ZIP64 and unsafe archives are rejected.
+Current limits are a ZIP smaller than 4 GiB, at most 50,000 entries and 32 GiB
+total unpacked bytes. Importing files does not execute or certify a game.
 
 The offline `npm run desktop:flow` check exercises installation, settings
 navigation, renderer reload, optional and standalone fonts, config/receipt

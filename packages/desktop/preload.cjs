@@ -65,6 +65,14 @@ contextBridge.exposeInMainWorld('indiedeck', {
     selectGameFile: (gameId) => call('mtool:selectGameFile', gameId),
   },
 
+  archives: {
+    list: () => call('archives:list'),
+    pick: () => call('archives:pick'),
+    import: (candidateId, label) => call('archives:import', candidateId, label),
+    current: () => call('archives:current'),
+    onProgress: (fn) => subscribe('archives:progress', fn),
+  },
+
   maintenance: {
     start: (request) => call('maintenance:start', request),
     current: () => call('maintenance:current'),

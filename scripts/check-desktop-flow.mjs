@@ -19,6 +19,8 @@ const archive = path.join(temp, 'translator.zip');
 const fontArchive = path.join(temp, 'fonts.7z');
 const mtoolRoot = path.join(temp, 'local-mtool');
 const mtoolExecutable = path.join(mtoolRoot, 'Tool', 'MTool.exe');
+const gameArchive = path.join(temp, 'Delta-v1.0.zip');
+const gameArchiveV2 = path.join(temp, 'Delta-v2.0.zip');
 const registry = loadRegistry();
 const version = registry.translators.find((t) => t.id === 'xunity-autotranslator').versions[0].version;
 
@@ -36,10 +38,17 @@ function zip(files) {
   const central = [];
   let offset = 0;
   for (const [name, data] of files) {
+    let crc = 0xffffffff;
+    for (const byte of data) {
+      crc ^= byte;
+      for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+    }
+    crc = (crc ^ 0xffffffff) >>> 0;
     const nameBytes = Buffer.from(name);
     const header = Buffer.alloc(30 + nameBytes.length);
     header.writeUInt32LE(0x04034b50, 0);
     header.writeUInt16LE(20, 4);
+    header.writeUInt32LE(crc, 14);
     header.writeUInt32LE(data.length, 18);
     header.writeUInt32LE(data.length, 22);
     header.writeUInt16LE(nameBytes.length, 26);
@@ -48,6 +57,7 @@ function zip(files) {
     entry.writeUInt32LE(0x02014b50, 0);
     entry.writeUInt16LE(20, 4);
     entry.writeUInt16LE(20, 6);
+    entry.writeUInt32LE(crc, 16);
     entry.writeUInt32LE(data.length, 20);
     entry.writeUInt32LE(data.length, 24);
     entry.writeUInt16LE(nameBytes.length, 28);
@@ -97,9 +107,16 @@ try {
   await fs.writeFile(path.join(mtoolRoot, 'Tool', 'package.json'), JSON.stringify({ name: 'MToolClient_smoke', main: 'www/index.html' }));
   await fs.writeFile(path.join(mtoolRoot, 'Tool', 'www', 'index.html'), '<!doctype html><title>Offline MTool fixture</title>');
   await fs.writeFile(archive, zip([
-    ['BepInEx/plugins/XUnity.AutoTranslator/XUnity.AutoTranslator.dll', Buffer.from(`ProductVersion${version}\0`, 'utf16le')],
-    ['BepInEx/plugins/XUnity.AutoTranslator/smoke.bin', crypto.randomBytes(4 * 1024 * 1024)],
+    ['BepInEx/plugins/XUnity.AutoTranslator/XUnity.AutoTranslator.Plugin.Core.dll', Buffer.from(`ProductVersion${version}\0`, 'utf16le')],
+    ['BepInEx/plugins/XUnity.AutoTranslator/Translators/GoogleTranslate.dll', crypto.randomBytes(4 * 1024 * 1024)],
   ]));
+  const importFiles = [
+    ['Delta/Game.exe', fakeExe()], ['Delta/UnityPlayer.dll', Buffer.from('offline Unity marker')],
+    ['Delta/Game_Data/globalgamemanagers', Buffer.from('2019.4.0f1')],
+    ['Delta/Game_Data/Managed/Assembly-CSharp.dll', Buffer.from('offline game logic fixture')],
+  ];
+  await fs.writeFile(gameArchive, zip(importFiles));
+  await fs.writeFile(gameArchiveV2, zip([...importFiles, ['Delta/version.txt', Buffer.from('second offline version')]]));
   const fontDir = path.join(temp, 'font-source');
   await fs.mkdir(fontDir);
   for (const bundle of registry.fonts.bundles) await fs.writeFile(path.join(fontDir, bundle.file), `offline atlas fixture ${bundle.id}`);
@@ -123,22 +140,38 @@ try {
   }));
   const electron = createRequire(import.meta.url)('electron');
   const child = spawn(electron, [appDir], {
-    cwd: path.resolve('.'), windowsHide: true, stdio: 'inherit',
+    cwd: path.resolve('.'), windowsHide: true, stdio: ['ignore', 'pipe', 'inherit'],
     env: { ...process.env, INDIEDECK_HOME: dataDir, INDIEDECK_SMOKE: '1', INDIEDECK_SMOKE_FLOW: '1',
       INDIEDECK_SMOKE_ARCHIVE: archive, INDIEDECK_SMOKE_VERSION: version,
       INDIEDECK_SMOKE_FONT_ARCHIVE: fontArchive, INDIEDECK_SMOKE_FONT_ASSET: registry.fonts.source.asset,
       INDIEDECK_SMOKE_MTOOL_EXE: mtoolExecutable,
+      INDIEDECK_SMOKE_GAME_ARCHIVE: gameArchive,
+      INDIEDECK_SMOKE_GAME_ARCHIVE_V2: gameArchiveV2,
       INDIEDECK_FLOW_SCREENSHOT: screenshot, INDIEDECK_FLOW_PROGRESS_SCREENSHOT: progressScreenshot,
       INDIEDECK_FONT_SCREENSHOT: path.resolve('out', `desktop-fonts-${locale}.png`),
       INDIEDECK_MTOOL_SCREENSHOT: path.resolve('out', `desktop-mtool-${locale}.png`),
+      INDIEDECK_MAINTENANCE_SCREENSHOT: path.resolve('out', `desktop-maintenance-${locale}.png`),
+      INDIEDECK_ARCHIVES_SCREENSHOT: path.resolve('out', `desktop-archives-${locale}.png`),
       INDIEDECK_DISABLE_UPDATES: '1',
       INDIEDECK_REGISTRY: path.resolve('registry') },
   });
+  let smokeOutput = '';
+  child.stdout.on('data', (chunk) => {
+    process.stdout.write(chunk);
+    smokeOutput = (smokeOutput + chunk.toString()).slice(-64 * 1024);
+  });
   const exitCode = await new Promise((resolve, reject) => {
     child.once('error', reject);
-    child.once('exit', (code) => resolve(code));
+    child.once('close', (code) => resolve(code));
   });
   if (exitCode !== 0) throw new Error(`Desktop flow failed with exit code ${exitCode}.`);
+  const requiredSmokeMarkers = [
+    '[smoke] rendered 3 game rows', '[smoke] exact-file confirmation',
+    '[smoke] font opt-out', '[smoke] RPG Maker', '[smoke] OS-picked ZIP inspection',
+  ];
+  if (requiredSmokeMarkers.some((marker) => !smokeOutput.includes(marker))) {
+    throw new Error('Desktop exited without completing every required smoke flow.');
+  }
   console.log(`[desktop-flow] ${locale} passed; screenshot: ${screenshot}`);
 } finally {
   if (path.dirname(path.resolve(temp)) !== tempParent || !path.basename(temp).startsWith('indiedeck-desktop-flow-')) {
