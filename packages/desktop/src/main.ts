@@ -59,6 +59,7 @@ import {
 import { OperationManager, type OperationRequest, type OperationResult, type ProgressUpdate } from './operations.ts';
 import { readSafeRemovalReceipts } from './receipt-guard.ts';
 import { fontWriteBlockKey } from './font-guard.ts';
+import { getMToolStatus, isMToolGame, mtoolLaunchSpec, getMToolGameExecutable, type MToolStatus } from './mtool.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const { autoUpdater } = electronUpdater;
@@ -392,6 +393,13 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
   })()`);
   const settings = await evaluate<boolean>(`!document.getElementById('taskStatus').hidden && document.getElementById('saveDefaults').disabled`);
   if (!settings) throw new Error('Settings lost the active operation or enabled a file mutation.');
+  const busyMTool = await evaluate<boolean>(`(async () => {
+    const { api, state } = await import('./store.js');
+    if (!document.getElementById('mtoolPick').disabled || !document.getElementById('mtoolClear').disabled) return false;
+    try { await api.mtool.launch(state.games.find((game) => game.engineId === 'rpgmaker-mv').id); return false; }
+    catch { return true; }
+  })()`);
+  if (!busyMTool) throw new Error('MTool handoff was permitted during an active file operation.');
   await new Promise<void>((resolve) => {
     window.webContents.once('did-finish-load', () => resolve());
     window.webContents.reload();
@@ -507,6 +515,92 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
   })()`);
   if (!secondRemoved) throw new Error('Integrated font removal left managed files or stale statistics.');
   console.log('[smoke] font opt-out → translator install → reload → standalone font + config/receipt refresh → ordered removal → integrated font install/removal passed');
+
+  const boundary = await evaluate<boolean>(`(async () => {
+    const { api, state } = await import('./store.js');
+    if (document.querySelector('#detail .mtool-integration')) return false;
+    const saved = await api.config.set({ ...state.config, externalTools: { mtoolRoot: 'Z:/renderer-injected' } });
+    if (saved.externalTools?.mtoolRoot !== state.config.externalTools?.mtoolRoot) return false;
+    for (const id of ['unknown-game-id', ${JSON.stringify(start.gameId)}]) {
+      try { await api.mtool.launch(id); return false; } catch { /* expected opaque/engine rejection */ }
+    }
+    return true;
+  })()`);
+  if (!boundary) throw new Error('MTool renderer target/settings authority escaped its boundary.');
+  await evaluate(`document.querySelectorAll('#gameList .game')[2].click()`);
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return state.detail?.profile.engineId === 'rpgmaker-mv'
+      && !!document.querySelector('#detail .mtool-integration.ready .mtool-launch:not(:disabled)');
+  })()`, 'RPG Maker MTool card');
+  const rpg = await evaluate<{ gameId: string; revision: number; clean: boolean }>(`(async () => {
+    const { state } = await import('./store.js');
+    return { gameId: state.selected, revision: state.libraryRevision,
+      clean: state.detail.mtoolIntegration.autoApply === false && state.stats.withTranslator === 0
+        && state.detail.profile.installedTranslators.length === 0 && state.detail.receipts.length === 0 };
+  })()`);
+  if (!rpg.clean) throw new Error('Connecting MTool invented translator files or install receipts.');
+  const mtoolCalls = () => (globalThis as typeof globalThis & {
+    __indiedeckMToolSmokeCalls: Array<{ executable: string; args: string[]; cwd: string; shell: boolean }>
+  }).__indiedeckMToolSmokeCalls;
+  await evaluate(`document.querySelector('#detail .mtool-integration .mtool-launch').click()`);
+  await waitFor(`(async () => !(await import('./store.js')).state.mtoolBusy)()`, 'MTool game handoff acknowledgement');
+  const expectedExe = await getMToolGameExecutable(requireMToolGame(rpg.gameId));
+  const firstCall = mtoolCalls()[0];
+  if (mtoolCalls().length !== 1 || firstCall?.args.length !== 1 || firstCall.args[0] !== expectedExe
+      || firstCall.executable !== process.env['INDIEDECK_SMOKE_MTOOL_EXE']
+      || firstCall.cwd !== path.dirname(firstCall.executable) || firstCall.shell !== false) {
+    throw new Error(`MTool handoff did not use the validated single argument/cwd: ${JSON.stringify(mtoolCalls())}`);
+  }
+  await evaluate(`document.querySelector('#detail .mtool-integration .mtool-open').click()`);
+  await waitFor(`(async () => !(await import('./store.js')).state.mtoolBusy)()`, 'MTool tool-only acknowledgement');
+  if (mtoolCalls().length !== 2 || mtoolCalls()[1]!.args.length !== 0) throw new Error('Tool-only fallback passed a game argument.');
+  window.setSize(1360, 880);
+  await evaluate(`document.querySelector('#detail .mtool-integration').scrollIntoView({ block: 'center' })`);
+  await evaluate(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
+  const mtoolShot = process.env['INDIEDECK_MTOOL_SCREENSHOT'];
+  if (mtoolShot) await writeFile(mtoolShot, (await window.webContents.capturePage()).toPNG());
+
+  // A synthetic external marker tests file evidence refresh, not MTool runtime
+  // translation. The disposable fixture is removed by the outer smoke runner.
+  await writeFile(path.join(requireGamePath(rpg.gameId), 'TrsData.bin'), 'offline external marker fixture');
+  await evaluate(`document.querySelector('#detail .mtool-integration .mtool-refresh').click()`);
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return !state.mtoolBusy && state.libraryRevision > ${rpg.revision}
+      && state.stats.withTranslator === 1
+      && state.detail.profile.installedTranslators.some((entry) => entry.translatorId === 'mtool')
+      && state.detail.receipts.length === 0;
+  })()`, 'actual external marker refresh without fabricated receipts');
+  const toolFixture = process.env['INDIEDECK_SMOKE_MTOOL_EXE']!;
+  const originalTool = await readFile(toolFixture);
+  await writeFile(toolFixture, 'invalid offline PE fixture');
+  await evaluate(`document.getElementById('openSettings').click()`);
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return !state.mtoolStatusLoading && state.mtoolStatus.status === 'invalid'
+      && document.querySelector('#mtoolSettings .mtool-open').disabled;
+  })()`, 'fresh settings status after external tool invalidation');
+  await writeFile(toolFixture, originalTool);
+  await evaluate(`(() => { document.getElementById('closeSettings').click(); document.getElementById('openSettings').click(); })()`);
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return !state.mtoolStatusLoading && state.mtoolStatus.status === 'ready'
+      && !document.getElementById('mtoolClear').disabled;
+  })()`, 'fresh settings status after external tool restoration');
+  await evaluate(`document.getElementById('mtoolClear').click()`);
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return !state.mtoolBusy && state.mtoolStatus.status === 'disabled' && state.config.externalTools.mtoolRoot === null;
+  })()`, 'MTool explicit disconnect');
+  const disconnected = await evaluate<boolean>(`(async () => {
+    const { api, state } = await import('./store.js');
+    const saved = await api.config.set({ ...state.config, externalTools: { mtoolRoot: 'D:/MTool' } });
+    if (saved.externalTools.mtoolRoot !== null || (await api.mtool.status()).status !== 'disabled') return false;
+    try { await api.mtool.launch(${JSON.stringify(rpg.gameId)}); return false; } catch { return true; }
+  })()`);
+  if (!disconnected || mtoolCalls().length !== 2) throw new Error('Disconnect silently fell back to a default MTool or launched it.');
+  console.log('[smoke] RPG Maker → mocked single-exe handoff → tool-only fallback → external file refresh → live status invalidation/restoration → disconnect and IPC authority checks passed; no real MTool/game process was started');
 }
 
 /* ------------------------------------------------------------ updates */
@@ -649,6 +743,10 @@ async function gameDetailPayload(gameId: string, options: ResolveOptions, detect
     plans,
     fontRecommendation,
     fontPlan,
+    ...(isMToolGame(profile) ? { mtoolIntegration: {
+      ...await currentMToolStatus(), supported: true, gameExecutable: profile.executable,
+      autoApply: false, docsUrl: 'https://mtool.app/tutorial.php?lang=en',
+    } } : {}),
     audit: auditGame(registry, profile, options),
     receipts: await readReceipts(profile.path),
     mods: await listMods(registry, profile),
@@ -664,6 +762,51 @@ function installedFontOptions(options: ResolveOptions, config?: Awaited<ReturnTy
     targetLanguage: config.values.find((value) => value.id === 'xunity.targetLanguage')?.value ?? options.targetLanguage,
     currentFallbackFontTextMeshPro: config.values.find((value) => value.id === 'xunity.fallbackFontTextMeshPro')?.value ?? '',
   };
+}
+
+async function currentMToolStatus(): Promise<MToolStatus> {
+  return getMToolStatus((await loadConfig()).externalTools?.mtoolRoot);
+}
+
+function requireReadyMTool(status: MToolStatus): void {
+  if (status.status !== 'ready') throw new Error(status.reasonKey ? t(status.reasonKey, undefined, status.reason) : status.reason ?? 'MTool is unavailable.');
+}
+
+/** A spawn acknowledgement is not game connection or translation success.
+ * MTool stays an independent process; IndieDeck never patches its settings or
+ * implements its injector. Arguments and cwd come only from validated main
+ * state, never from renderer text or a shell command. */
+async function openMTool(profile?: GameProfile) {
+  const status = await currentMToolStatus();
+  requireReadyMTool(status);
+  const spec = await mtoolLaunchSpec(status, profile).catch((error: Error) => {
+    throw new Error(/^ui\.mtool\.reason\./.test(error.message) ? t(error.message) : error.message);
+  });
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(spec.executable, spec.args, {
+      cwd: spec.cwd, shell: false, detached: true, stdio: 'ignore',
+      windowsHide: false, // Explicit user action opens an interactive GUI.
+    });
+    child.once('error', (error) => reject(new Error(t('ui.mtool.launchFailed', { error: error.message }, 'Could not open MTool: {error}'))));
+    child.once('spawn', () => { child.unref(); resolve(); });
+  });
+  return { opened: true, ...(profile ? { gameId: idFor(profile.path) } : {}), autoApply: false };
+}
+
+function requireMToolGame(gameId: string): GameProfile {
+  const profile = requireDetectedGame(gameId);
+  if (!isMToolGame(profile)) throw new Error(t('ui.mtool.gameUnsupported', undefined,
+    'Only RPG Maker MV/MZ/XP/VX/VX Ace games can currently be handed to MTool.'));
+  if (!profile.executable) throw new Error(t('ui.mtool.gameUnavailable', undefined,
+    'The game executable is missing or unsafe. Refresh its folder before trying again.'));
+  return profile;
+}
+
+function enqueueMToolLaunch(gameId?: string) {
+  if (pendingMutations > 0 || operations.isActive()) throw new Error(t('ui.operation.busy', undefined, 'Wait for the current file operation to finish.'));
+  // Reserve synchronously: double clicks cannot queue two external launches,
+  // and a normal quit is blocked until the spawn acknowledgement settles.
+  return enqueueMutation(() => openMTool(gameId === undefined ? undefined : requireMToolGame(gameId)));
 }
 
 function requireDetectedGame(gameId: string): GameProfile {
@@ -863,6 +1006,44 @@ function register(): void {
   }));
 
   handle('config:get', () => loadConfig());
+  handle('mtool:status', async () => { await mutationQueue; return currentMToolStatus(); });
+  handleMutation('mtool:pick', async () => {
+    const picked = await dialog.showOpenDialog({
+      properties: ['openDirectory'],
+      title: t('ui.mtool.pickTitle', undefined, 'Select the MTool bundle or its Tool subfolder'),
+    });
+    const current = await loadConfig();
+    if (picked.canceled || !picked.filePaths[0]) return { config: current, mtoolStatus: await currentMToolStatus() };
+    const mtoolStatus = await getMToolStatus(picked.filePaths[0]);
+    requireReadyMTool(mtoolStatus);
+    const config = { ...current, externalTools: { ...current.externalTools, mtoolRoot: mtoolStatus.root! } };
+    await saveConfig(config);
+    return { config, mtoolStatus };
+  });
+  handleMutation('mtool:clear', async () => {
+    const current = await loadConfig();
+    const config = { ...current, externalTools: { ...current.externalTools, mtoolRoot: null } };
+    await saveConfig(config);
+    return { config, mtoolStatus: await getMToolStatus(null) };
+  });
+  handle('mtool:launch', (gameId: string) => {
+    requireGamePath(gameId);
+    return enqueueMToolLaunch(gameId);
+  });
+  handle('mtool:open', () => enqueueMToolLaunch());
+  handle('mtool:openFolder', async () => {
+    const status = await currentMToolStatus(); requireReadyMTool(status);
+    const error = await shell.openPath(status.toolDirectory!);
+    if (error) throw new Error(error);
+    return true;
+  });
+  handle('mtool:selectGameFile', async (gameId: string) => {
+    const target = await getMToolGameExecutable(requireMToolGame(gameId)).catch((error: Error) => {
+      throw new Error(/^ui\.mtool\.reason\./.test(error.message) ? t(error.message) : error.message);
+    });
+    shell.showItemInFolder(target);
+    return true;
+  });
   handleMutation('config:set', async (config: LauncherConfig) => {
     // Only the fields the UI owns are honoured; roots are managed separately so
     // a config round-trip cannot quietly add a scan root.

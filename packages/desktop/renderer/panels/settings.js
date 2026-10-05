@@ -11,6 +11,7 @@ import { $, clear, el, setStatus } from '../dom.js';
 import { localeOptions, t } from '../i18n.js';
 import { api, applyLibraryPayload, emit, mutationBlocked, state } from '../store.js';
 import { resetConfigPanel } from './config.js';
+import { renderMToolSettings } from './mtool.js';
 
 export function setSettingsMutationDisabled() {
   const disabled = mutationBlocked();
@@ -19,6 +20,7 @@ export function setSettingsMutationDisabled() {
     if (node) node.disabled = disabled;
   }
   for (const button of document.querySelectorAll('#rootList button')) button.disabled = disabled;
+  renderMToolSettings();
 }
 
 export function renderRoots() {

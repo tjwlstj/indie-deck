@@ -183,6 +183,41 @@ One model over very different hosts, driven by `modLayout` in `loaders.json`:
 External loaders only appear as hosts once actually installed; native hosts
 (RPG Maker, Ren'Py) always apply.
 
+## Local external-tool handoff
+
+The desktop's `mtool.ts` is a separate Windows handoff adapter, not a core
+translator installer. `LauncherConfig.externalTools.mtoolRoot` distinguishes
+an omitted value (probe the fixed `D:\MTool` default), an explicit system-picked
+folder, and `null` (disconnected, with no default fallback). A known bundle
+parent or `Tool` folder is accepted. Validation only reads the public manifest
+and bounded PE header, checks the expected `MToolClient`/`www/index.html`
+layout, and rejects linked path ancestors. It does not authenticate a publisher
+or inspect MTool's settings, game library or activation files.
+
+Only `rpgmaker-mv`, `rpgmaker-mz` and `rpgmaker-rgss` profiles receive the
+detail card. Main re-detects a registered game, validates the contained `.exe`,
+revalidates the tool, then spawns `MTool.exe` with either no arguments or one
+absolute game-executable argument. The working directory is the validated Tool
+directory; `shell: false` prevents the path from becoming shell syntax. Renderer
+requests contain only a main-owned game id; folder configuration comes from
+main's system picker, not renderer-provided executable/argument text. The
+handoff waits for spawn acknowledgement and shares the launcher's pending-write
+gate, but does not supervise MTool's later task or reserve the game for its
+whole external session.
+
+The result explicitly reports `autoApply: false`. It means the open request
+was acknowledged, not that MTool selected the game or translated it. The
+separate **Refresh after applying** action uses the targeted game refresh and
+normal revision merge to read external disk changes. No receipt or automatic
+backup is created by opening MTool. MTool files, game changes, updates and
+removal are outside IndieDeck ownership; users must back up first and avoid
+concurrent external work and IndieDeck installs/mod edits. Wolf RPG and other
+MTool-supported engines are not enabled by this adapter. Actual MTool runtime
+selection and translation remain unverified; the
+[official tutorial](https://mtool.app/tutorial.php?lang=en) and
+[author's CLI discussion](https://bbs.mtool.app/topic/850/mtool%E5%90%AF%E5%8A%A8%E5%91%BD%E4%BB%A4%E6%98%AF%E5%90%A6%E6%9C%89%E5%8F%82%E6%95%B0/3)
+are documented handoff guidance, not local runtime evidence.
+
 ## The desktop trust boundary
 
 The renderer is treated as untrusted even though it is our own code. It never

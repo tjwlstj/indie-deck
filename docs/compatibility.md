@@ -136,19 +136,51 @@ identify and remove.
 
 | variant | how to tell | route |
 | --- | --- | --- |
-| MZ | `js/rmmz_core.js` | data-file translation, or OCR |
-| MV | `js/rpg_core.js` | data-file translation, or OCR |
-| XP / VX / VX Ace | `Data/*.rxdata` / `*.rvdata` / `*.rvdata2` | scripts live inside the archive — no clean automated route |
+| MZ | `js/rmmz_core.js` | data-file translation; optional local MTool handoff, or OCR |
+| MV | `js/rpg_core.js` | data-file translation; optional local MTool handoff, or OCR |
+| XP / VX / VX Ace | `Data/*.rxdata` / `*.rvdata` / `*.rvdata2` | scripts live inside the archive; optional local MTool handoff, not an IndieDeck automated patch |
 
 MV and MZ keep text in `data/*.json` (or `www/data/*.json` on older MV builds),
-so translation means rewriting those files. IndieDeck snapshots the data folder
-before any tool touches it.
+so translation means rewriting those files. IndieDeck-managed plans can snapshot
+the data folder before their own patch steps; this is not automatic protection
+for an external MTool session.
 
-The widely used tools here — **MTool** and **Translator++** — are closed source
-and not distributed through a fetchable release channel, so IndieDeck detects
-them (MTool leaves `MTool_Game.exe` and `TrsData.bin`) and links out instead of
-pretending it can install them. **RPGMakerTranslator** (MIT) is the installable
-open-source option.
+The widely used tools here — **MTool** and **Translator++** — are not installed
+through IndieDeck's release-download path. IndieDeck detects their game-side
+markers (MTool leaves `MTool_Game.exe` and `TrsData.bin`). **RPGMakerTranslator**
+(MIT) is the installable open-source option.
+
+### Local MTool connection — CURRENT handoff, runtime unverified
+
+On Windows the launcher checks an existing `D:\MTool` bundle by default. Settings
+also accepts a bundle parent or its `Tool` folder through the system folder
+picker. Validation checks the known `MTool.exe`/NW.js manifest layout, PE file
+format and ordinary non-linked paths. This identifies a compatible package
+layout, not its publisher authenticity or binary safety. Explicit disconnect
+stores a disabled connection (`null`), so the default path is not silently
+reactivated; all external files stay in place.
+
+For MV/MZ and the detected RGSS family, **Open game in MTool** sends the freshly
+detected, validated absolute game `.exe` as one argument, with the working
+directory set to MTool's `Tool` directory. It does not pass shell text or run a
+batch file. **Open MTool only** and **Locate game executable** remain available
+for the documented manual drag/drop or file-selection route. Select source and
+target languages and start translation in MTool itself. After it finishes,
+**Refresh after applying** rescans game files and updates the launcher view.
+
+The [official tutorial](https://mtool.app/tutorial.php?lang=en) describes manual
+game selection and translation. The
+[official author's argument-handoff discussion](https://bbs.mtool.app/topic/850/mtool%E5%90%AF%E5%8A%A8%E5%91%BD%E4%BB%A4%E6%98%AF%E5%90%A6%E6%9C%89%E5%8F%82%E6%95%B0/3)
+documents an executable-path argument route, but automatic selection and actual
+translation have not been verified with the local MTool/game combination.
+Acknowledging a process launch, or finding markers on refresh, proves neither.
+
+IndieDeck does not copy, install, update or reconfigure MTool, and does not read
+its activation files, private settings or game library. Make a separate game
+backup first: external changes have no IndieDeck receipt, are not reversed by
+IndieDeck removal, and should not overlap an IndieDeck translator/mod operation.
+This handoff is restricted to RPG Maker; Wolf RPG is deliberately excluded even
+though upstream MTool advertises other engines.
 
 Plugins are `js/plugins/*.js` plus an entry in `js/plugins.js`, a JS array
 literal. IndieDeck parses and edits it with a regex rather than evaluating it —

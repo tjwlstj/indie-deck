@@ -17,6 +17,11 @@ export const state = {
   audits: new Map(),
   stats: null,
   config: null,
+  mtoolStatus: null,
+  mtoolStatusLoading: false,
+  mtoolStatusRequestToken: 0,
+  /** Only the handoff/config IPC request is pending, not external translation. */
+  mtoolBusy: false,
   registry: null,
   engineFilter: 'all',
   statusFilter: 'all',
@@ -95,7 +100,7 @@ export function applyLibraryPayload(payload) {
 }
 
 export function mutationBlocked() {
-  return isOperationActive(state.operation);
+  return isOperationActive(state.operation) || state.mtoolBusy;
 }
 
 /** Pulls the catalogue for the active language and applies it. */

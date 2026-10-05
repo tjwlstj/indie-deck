@@ -98,3 +98,28 @@ test('standalone font requests cannot execute a normal translator plan or change
   assert.match(main, /fontWriteBlockKey\(profile, fresh, receiptsEvidence, installations, fontConfig\)/);
   assert.match(main, /receipts\.sort\(\(a, b\) => Number\(b\.kind === 'font'\) - Number\(a\.kind === 'font'\)\)/);
 });
+
+test('MTool handoff keeps paths and arguments in main and out of renderer authority', () => {
+  assert.match(preload, /launch: \(gameId\) => call\('mtool:launch', gameId\)/);
+  assert.match(preload, /pick: \(\) => call\('mtool:pick'\)/);
+  assert.match(preload, /open: \(\) => call\('mtool:open'\)/);
+  const open = main.slice(main.indexOf('async function openMTool'), main.indexOf('function requireDetectedGame'));
+  assert.match(open, /mtoolLaunchSpec\(status, profile\)/);
+  assert.match(open, /spawn\(spec\.executable, spec\.args/);
+  assert.match(open, /cwd: spec\.cwd, shell: false/);
+  assert.match(open, /isMToolGame\(profile\)/);
+  assert.match(open, /pendingMutations > 0 \|\| operations\.isActive\(\)/);
+  assert.match(open, /enqueueMutation\(\(\) => openMTool/);
+  assert.match(open, /autoApply: false/);
+  assert.doesNotMatch(open, /applyPlan|writeReceipt|exec\(|\.bat/);
+
+  const handlers = main.slice(main.indexOf("handle('mtool:status'"), main.indexOf("handleMutation('config:set'"));
+  assert.match(handlers, /dialog\.showOpenDialog\(\{\s+properties: \['openDirectory'\]/);
+  assert.match(handlers, /getMToolStatus\(picked\.filePaths\[0\]/);
+  assert.match(handlers, /mtoolRoot: null/);
+  assert.match(handlers, /requireGamePath\(gameId\)/);
+  assert.match(handlers, /getMToolGameExecutable\(requireMToolGame\(gameId\)\)/);
+  const configSet = main.slice(main.indexOf("handleMutation('config:set'"), main.indexOf("handleMutation('root:remove'"));
+  assert.match(configSet, /\.\.\.current/);
+  assert.doesNotMatch(configSet, /config\??\.externalTools|config\??\.roots/);
+});

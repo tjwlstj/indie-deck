@@ -17,6 +17,8 @@ const dataDir = path.join(temp, 'data');
 const gamesRoot = path.join(temp, 'games');
 const archive = path.join(temp, 'translator.zip');
 const fontArchive = path.join(temp, 'fonts.7z');
+const mtoolRoot = path.join(temp, 'local-mtool');
+const mtoolExecutable = path.join(mtoolRoot, 'Tool', 'MTool.exe');
 const registry = loadRegistry();
 const version = registry.translators.find((t) => t.id === 'xunity-autotranslator').versions[0].version;
 
@@ -80,6 +82,20 @@ try {
       await fs.writeFile(path.join(game, file), content);
     }
   }
+  const rpg = path.join(gamesRoot, 'Cherry RPG Test');
+  const rpgFiles = {
+    'Game.exe': fakeExe(), 'nw.dll': 'fixture', 'package.json': '{"name":"rpg-smoke"}',
+    'js/rpg_core.js': '// offline RPG Maker MV marker',
+    'data/System.json': JSON.stringify({ gameTitle: 'Cherry RPG Test', locale: 'ja_JP' }),
+  };
+  for (const [file, content] of Object.entries(rpgFiles)) {
+    await fs.mkdir(path.dirname(path.join(rpg, file)), { recursive: true });
+    await fs.writeFile(path.join(rpg, file), content);
+  }
+  await fs.mkdir(path.join(mtoolRoot, 'Tool', 'www'), { recursive: true });
+  await fs.writeFile(mtoolExecutable, fakeExe());
+  await fs.writeFile(path.join(mtoolRoot, 'Tool', 'package.json'), JSON.stringify({ name: 'MToolClient_smoke', main: 'www/index.html' }));
+  await fs.writeFile(path.join(mtoolRoot, 'Tool', 'www', 'index.html'), '<!doctype html><title>Offline MTool fixture</title>');
   await fs.writeFile(archive, zip([
     ['BepInEx/plugins/XUnity.AutoTranslator/XUnity.AutoTranslator.dll', Buffer.from(`ProductVersion${version}\0`, 'utf16le')],
     ['BepInEx/plugins/XUnity.AutoTranslator/smoke.bin', crypto.randomBytes(4 * 1024 * 1024)],
@@ -94,9 +110,9 @@ try {
   if (packed.status !== 0) throw new Error(`Cannot create the offline 7z font fixture: ${packed.stderr || packed.error}`);
   await saveConfig({ roots: [gamesRoot], locale, defaults: {
     targetLanguage: 'ko', sourceLanguage: 'ja', endpoint: 'GoogleTranslate',
-  }, scanDepth: 2 }, dataDir);
+  }, scanDepth: 2, externalTools: { mtoolRoot } }, dataDir);
   const index = await refreshLibrary(registry, { dataDir });
-  if (index.games.length !== 2) throw new Error('The disposable game fixtures did not detect.');
+  if (index.games.length !== 3) throw new Error('The disposable game fixtures did not detect.');
   await fs.mkdir(path.dirname(screenshot), { recursive: true });
   const appDir = path.join(temp, 'app');
   await fs.mkdir(appDir);
@@ -111,8 +127,10 @@ try {
     env: { ...process.env, INDIEDECK_HOME: dataDir, INDIEDECK_SMOKE: '1', INDIEDECK_SMOKE_FLOW: '1',
       INDIEDECK_SMOKE_ARCHIVE: archive, INDIEDECK_SMOKE_VERSION: version,
       INDIEDECK_SMOKE_FONT_ARCHIVE: fontArchive, INDIEDECK_SMOKE_FONT_ASSET: registry.fonts.source.asset,
+      INDIEDECK_SMOKE_MTOOL_EXE: mtoolExecutable,
       INDIEDECK_FLOW_SCREENSHOT: screenshot, INDIEDECK_FLOW_PROGRESS_SCREENSHOT: progressScreenshot,
       INDIEDECK_FONT_SCREENSHOT: path.resolve('out', `desktop-fonts-${locale}.png`),
+      INDIEDECK_MTOOL_SCREENSHOT: path.resolve('out', `desktop-mtool-${locale}.png`),
       INDIEDECK_DISABLE_UPDATES: '1',
       INDIEDECK_REGISTRY: path.resolve('registry') },
   });

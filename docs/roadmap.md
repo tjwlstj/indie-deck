@@ -117,12 +117,18 @@ The detailed contract and remaining acceptance criteria live in
 - [x] Offline Electron flow checks in Korean and English
 - [x] Optional Unity TMP font recommendation and standalone fallback installation,
       with original translator receipt preservation and ordered removal
+- [x] **CURRENT: local MTool handoff** for RPG Maker MV/MZ and RGSS: default
+      `D:\MTool` probe, system-picked folder or explicit disconnect, game-path
+      argument/open-only/manual fallback and targeted refresh. This does not
+      install, update or own MTool or its external game changes; Wolf is excluded.
 - [ ] Atomic maintenance plan with original-baseline receipt inheritance
 - [ ] Durable transaction journal and app/OS crash recovery
 - [ ] Safe update, repair, replacement and duplicate consolidation with previews
 - [ ] Per-game font rendering verification and measured translator success history
 - [ ] Strict damaged-index reconstruction and incremental evidence hash cache
 - [ ] Real-game translator runtime and interrupted-install acceptance tests
+- [ ] Verify local MTool automatic game selection and actual translation with
+      representative real games; documented argument support is not runtime proof
 
 ## P1 — GameSession
 

@@ -11,6 +11,7 @@ import { renderGameList, renderSidebar } from './panels/library.js';
 import { SECTIONS } from './panels/index.js';
 import { resetConfigPanel } from './panels/config.js';
 import { operationCard } from './panels/detail.js';
+import { refreshMToolStatus } from './panels/mtool.js';
 import {
   populateDefaultsForm,
   populateLocaleSelect,
@@ -443,6 +444,7 @@ function openSettings() {
   populateDefaultsForm(state.registry.translators.find((x) => x.id === 'xunity-autotranslator')?.endpoints ?? []);
   renderView();
   renderOperationChrome();
+  void refreshMToolStatus().catch((err) => setStatus(err.message, 'err'));
 }
 
 function closeSettings() {
@@ -501,6 +503,7 @@ async function boot() {
   state.appInfo = await api.app.info();
   state.registry = await api.registry();
   state.config = await api.config.get();
+  await refreshMToolStatus();
 
   applyStaticTranslations();
   renderAbout();
@@ -523,6 +526,12 @@ async function boot() {
   $('saveDefaults').addEventListener('click', () => void saveDefaults());
 
   window.addEventListener('indiedeck:add-root', () => void pickRootAndScan());
+  window.addEventListener('indiedeck:open-settings', (event) => {
+    openSettings();
+    const section = event.detail?.section;
+    if (section === 'mtoolSettings') $('mtoolSettings')?.scrollIntoView({ block: 'nearest' });
+  });
+  window.addEventListener('indiedeck:refresh-detail', () => void refreshDetail());
   window.addEventListener('indiedeck:dismiss-operation', () => {
     if (!state.operation?.outcome) return;
     state.operation = null;

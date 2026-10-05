@@ -55,6 +55,16 @@ contextBridge.exposeInMainWorld('indiedeck', {
     openFolder: (gameId) => call('shell:openGameFolder', gameId),
   },
 
+  mtool: {
+    status: () => call('mtool:status'),
+    pick: () => call('mtool:pick'),
+    clear: () => call('mtool:clear'),
+    launch: (gameId) => call('mtool:launch', gameId),
+    open: () => call('mtool:open'),
+    openFolder: () => call('mtool:openFolder'),
+    selectGameFile: (gameId) => call('mtool:selectGameFile', gameId),
+  },
+
   maintenance: {
     start: (request) => call('maintenance:start', request),
     current: () => call('maintenance:current'),

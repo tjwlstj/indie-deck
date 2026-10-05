@@ -83,6 +83,20 @@ is patched in that separate operation; other settings and comments are retained.
 Recommendations are not proof of rendering in a particular game. Non-TMP and
 unknown-version games do not get a forced TMP installation action.
 
+**Local MTool handoff for RPG Maker.** The Windows launcher can connect an
+existing MTool bundle for RPG Maker MV/MZ and XP/VX/VX Ace (RGSS). It checks
+`D:\MTool` by default, or a bundle folder selected in Settings. The game detail
+card can open MTool with the detected game executable as one argument, open
+MTool alone, locate the executable, and rescan the game after an external change.
+This is not an MTool installer or proof of automatic game selection or working
+translation: choose the languages and start translation in MTool, using its
+manual drag/drop route if necessary. IndieDeck does not copy, download, update
+or modify MTool's settings, library or activation files. Disconnecting only
+disables the connection; it deletes nothing. Back up the game before using
+MTool, and do not overlap its work with IndieDeck installs or mod changes.
+External changes are outside IndieDeck's receipts and cannot be undone by its
+Uninstall action. Wolf RPG is not part of this launcher handoff.
+
 ## Install
 
 ### Windows app
@@ -234,9 +248,12 @@ Installable: XUnity.AutoTranslator (all 7 packaging variants), BepInEx 5 /
 BepInEx 6 Mono / BepInEx 6 IL2CPP, MelonLoader, MORT, LunaTranslator, Textractor,
 GDWeave, UE4SS, renpy-translator, projz_renpy_translation, RPGMakerTranslator.
 
-Detect-only, because they are closed source or distributed outside GitHub: MTool,
-Translator++, Unity Mod Manager. IndieDeck reports them so the library view stays
-honest, and links out rather than pretending it can install them.
+Not installable by IndieDeck, because they are closed source or distributed
+outside its release-download path: MTool, Translator++, Unity Mod Manager.
+IndieDeck detects their installed markers. MTool additionally has the explicit
+desktop-only local handoff described above; it is not downloaded, copied or
+managed as an installed component. Translator++ and Unity Mod Manager remain
+detect-and-link-only.
 
 ## Design notes
 

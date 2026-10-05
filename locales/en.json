@@ -193,6 +193,58 @@
       "library": "Library",
       "rescan": "Full rescan"
     },
+    "mtool": {
+      "settingsTitle": "Local MTool integration",
+      "title": "RPG Maker · local MTool",
+      "recommended": "Use your local MTool",
+      "description": "Opens your existing MTool with this game’s executable. It does not install a second translator or start translation automatically.",
+      "settingsHint": "Choose an existing MTool package folder. IndieDeck does not download, copy or update MTool. Disconnecting keeps all MTool files.",
+      "pick": "Choose MTool folder",
+      "pickTitle": "Choose MTool folder (package folder or its Tool subfolder)",
+      "disconnect": "Disconnect",
+      "open": "Open MTool only",
+      "folder": "MTool folder",
+      "configure": "Connect MTool in settings",
+      "launch": "Open game in MTool",
+      "gameFile": "Locate game executable",
+      "refresh": "Refresh after applying",
+      "refreshed": "Game files rescanned. This does not verify translation worked.",
+      "opened": "Requested MTool to open. Select the language and start translation in its window.",
+      "stepOpen": "Open the game in MTool. If it is not selected automatically, drag the game executable into MTool.",
+      "stepApply": "Select the language and press Start Translation in MTool. Its game detection and translation result must be checked there.",
+      "stepRefresh": "After MTool finishes, refresh here to read the latest files.",
+      "externalChanges": "MTool may change game files outside IndieDeck’s install records. Back up the game first; IndieDeck’s uninstall action cannot undo those changes.",
+      "concurrentWarning": "While MTool is working, do not run translator or mod installs for the same game in IndieDeck. Finish the external task and refresh before continuing.",
+      "runtimeCaveat": "This is a local-tool handoff, not verified translation. MTool runtime behavior has not been tested from this launcher.",
+      "docs": "MTool usage guide",
+      "gameUnsupported": "Only RPG Maker MV, MZ, XP, VX and VX Ace games can currently be connected to MTool.",
+      "gameUnavailable": "The game executable is missing or its path is unsafe. Refresh the game folder.",
+      "launchFailed": "Could not open MTool: {error}",
+      "statusCheckFailed": "The current MTool folder could not be checked. Reopen settings to retry before launching it.",
+      "status": {
+        "checking": "Checking tool folder…",
+        "ready": "Ready to open",
+        "missing": "Not found",
+        "disabled": "Disconnected",
+        "invalid": "Check tool folder"
+      },
+      "source": {
+        "default": "Default location",
+        "configured": "Selected location",
+        "disabled": "Local connection disabled"
+      },
+      "reason": {
+        "disabled": "MTool integration is disconnected. Choose its folder to reconnect without changing MTool files.",
+        "notFound": "MTool was not found at this location. Choose the package folder or its Tool subfolder.",
+        "unsupportedPlatform": "Opening the local MTool package is currently supported only on Windows.",
+        "invalidRoot": "This location is not a valid MTool folder. Choose the package folder or its Tool subfolder.",
+        "linkedPath": "The MTool folder, executable or required package files use a linked path. Choose an ordinary local package folder.",
+        "invalidPackage": "The expected MTool package files could not be confirmed. Choose the complete package folder, not a shortcut or unrelated executable.",
+        "invalidExecutable": "The MTool executable is missing, linked or not a regular Windows executable. Check the package folder.",
+        "unsupportedGame": "This game’s detected engine is not supported by the local MTool integration.",
+        "invalidGameExecutable": "The game executable is missing, linked or outside the registered game folder. Refresh the game folder before opening MTool."
+      }
+    },
     "update": {
       "readyTitle": "IndieDeck update ready",
       "readyBody": "The update will be installed after you close IndieDeck."
