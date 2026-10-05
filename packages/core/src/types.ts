@@ -329,6 +329,8 @@ export interface PlanStep {
 }
 
 export interface TranslatorPlan {
+  /** Font-only maintenance never installs a translator or loader payload. */
+  purpose?: 'translator' | 'font';
   gamePath: string;
   translatorId: string;
   translatorName: string;
@@ -354,6 +356,29 @@ export interface ResolveOptions {
   version?: string;
   allowPrerelease?: boolean;
   includeNonViable?: boolean;
+  /** False opts out of recommended TMP fonts; undefined keeps the existing automatic plan. */
+  includeFont?: boolean;
+}
+
+/** Current on-disk config is supplied by the caller, never guessed from launcher defaults. */
+export interface FontResolveOptions extends ResolveOptions {
+  currentFallbackFontTextMeshPro?: string;
+}
+
+/** A registry-backed recommendation is not proof that a font renders in a particular game. */
+export interface FontRecommendation {
+  status: 'recommended' | 'installed' | 'unavailable' | 'not-needed';
+  bundle?: FontBundle;
+  reason: string;
+  reasonKey: string;
+  reasonParams?: Record<string, string | number | undefined>;
+  sourceUrl: string;
+  alreadyPresent: boolean;
+  configured: boolean;
+  /** Technical plan eligibility only. Ownership/evidence gates must be checked before mutation. */
+  installable: boolean;
+  blockReason?: string;
+  blockReasonKey?: string;
 }
 
 /* ------------------------------------------------------------------ receipts */

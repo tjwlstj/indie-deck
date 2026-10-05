@@ -118,6 +118,13 @@ function resolveDest(gameRoot: string, dest: string | undefined, toolsDir: strin
  * cached and content-hashed; third-party executables require `allowRun`.
  */
 export async function applyPlan(plan: TranslatorPlan, options: ApplyOptions = {}): Promise<ApplyResult> {
+  if (plan.purpose === 'font' && (!plan.fontBundle || plan.loader || plan.steps.some((step) =>
+    step.action === 'extract' || step.action === 'run' || step.action === 'backup' ||
+    (step.action === 'copy' && step.dest !== plan.fontBundle!.file)) ||
+    Object.keys(plan.config).some((section) => section !== 'Behaviour') ||
+    Object.keys(plan.config['Behaviour'] ?? {}).some((key) => key !== 'FallbackFontTextMeshPro'))) {
+    throw new Error('A font-only plan may write only its selected bundle and TMP fallback configuration.');
+  }
   const log = options.logger ?? silentLogger;
   const gameRoot = plan.gamePath;
   const toolsDir = options.toolsDir ?? defaultToolsDir();
@@ -397,7 +404,27 @@ export async function applyPlan(plan: TranslatorPlan, options: ApplyOptions = {}
         }
 
         case 'config': {
-          if (!step.dest || Object.keys(plan.config).length === 0) {
+          let changes = plan.config;
+          if (plan.fontBundle && changes['Behaviour']?.['FallbackFontTextMeshPro'] === plan.fontBundle.file) {
+            const fontExists = await fsp.stat(path.join(gameRoot, plan.fontBundle.file)).then((stat) => stat.isFile(), () => false);
+            if (!fontExists && !options.dryRun) {
+              // A missing extractor must not leave config pointing to a font
+              // that was never copied. Initial translator installs still keep
+              // their language/provider changes; font-only plans write nothing.
+              changes = Object.fromEntries(Object.entries(plan.config).map(([section, values]) => [
+                section,
+                section === 'Behaviour'
+                  ? Object.fromEntries(Object.entries(values).filter(([key]) => key !== 'FallbackFontTextMeshPro'))
+                  : values,
+              ]).filter(([, values]) => Object.keys(values as Record<string, string>).length > 0));
+              if (result.pendingUserActions.length === 0) result.pendingUserActions.push(`Install ${plan.fontBundle.file} before setting the TMP fallback font.`);
+              if (plan.purpose === 'font') {
+                record(step, 'pending-user', 'font file is unavailable; fallback configuration was not changed');
+                break;
+              }
+            }
+          }
+          if (!step.dest || Object.keys(changes).length === 0) {
             record(step, 'skipped', 'nothing to write');
             break;
           }
@@ -407,9 +434,9 @@ export async function applyPlan(plan: TranslatorPlan, options: ApplyOptions = {}
           }
           const configPath = path.join(gameRoot, step.dest);
           const existing = (await pathExists(configPath)) ? await fsp.readFile(configPath, 'utf8') : '';
-          const entry = await tx.write(step.dest, applyIni(existing, plan.config));
+          const entry = await tx.write(step.dest, applyIni(existing, changes));
           collect(step, [entry]);
-          record(step, 'done', Object.keys(plan.config).join(', '));
+          record(step, 'done', Object.keys(changes).join(', '));
           break;
         }
 
@@ -511,8 +538,8 @@ export async function applyPlan(plan: TranslatorPlan, options: ApplyOptions = {}
     if (translatorEntries.length > 0) {
       result.receipts.push(
         await writeReceipt(gameRoot, {
-          kind: 'translator',
-          componentId: plan.translatorId,
+          kind: plan.purpose === 'font' ? 'font' : 'translator',
+          componentId: plan.purpose === 'font' ? plan.fontBundle!.id : plan.translatorId,
           variantId: plan.variantId,
           version: plan.version,
           entries: translatorEntries,

@@ -3,6 +3,8 @@ import type {
   Channel,
   CompatRule,
   FontBundle,
+  FontRecommendation,
+  FontResolveOptions,
   GameProfile,
   LoaderDef,
   LoaderVersion,
@@ -464,12 +466,13 @@ function buildSteps(
           { asset: reg.fonts.source.asset },
           'Download the TMP font bundle archive ({asset})',
         ),
-        { source: reg.fonts.source },
+        { source: reg.fonts.source, details: { fontBundleId: font.id } },
       ),
     );
     steps.push(
       step('copy', message('core.step.copy-font', { file: font.file }, 'Copy {file} into the game folder'), {
         dest: font.file,
+        details: { fontBundleId: font.id },
       }),
     );
   }
@@ -668,8 +671,8 @@ export function resolvePlans(reg: Registry, profile: GameProfile, options: Resol
 
         if (candidate.isLatest) score += 5;
 
-        const font = wantsFont ? pickFontBundle(reg, profile.unity?.version) : undefined;
-        if (wantsFont && !font) {
+        const font = wantsFont && options.includeFont !== false ? pickFontBundle(reg, profile.unity?.version) : undefined;
+        if (wantsFont && !font && options.includeFont !== false) {
           findings.push(
             finding(
               'font-bundle-unresolved',
@@ -723,6 +726,158 @@ export function resolvePlans(reg: Registry, profile: GameProfile, options: Resol
   }
 
   return plans.sort((a, b) => Number(b.viable) - Number(a.viable) || b.score - a.score || compareVersions(b.version, a.version));
+}
+
+/** Show the pinned release page, not a surprise 128 MB binary download. */
+function fontSourceUrl(source: AssetSource): string {
+  if (source.url) return source.url;
+  if (!source.repo) return '';
+  return `https://github.com/${source.repo}/releases${source.tag ? `/tag/${encodeURIComponent(source.tag)}` : ''}`;
+}
+
+function installedFontTranslatorPlan(
+  reg: Registry,
+  profile: GameProfile,
+  options: FontResolveOptions,
+): TranslatorPlan | undefined {
+  const installed = profile.installedTranslators.filter((entry) => entry.translatorId === 'xunity-autotranslator');
+  if (installed.length !== 1 || !installed[0]?.variantId || profile.unity?.backend === 'unknown') return undefined;
+  const current = installed[0];
+  // Eligibility is checked against the installed variant/version, never against
+  // a more compatible variant that would require replacing its payload.
+  const { version: _requestedVersion, ...baseOptions } = options;
+  // PE version resources commonly spell a release as 5.6.1.0 while the
+  // registry tags it 5.6.1. Canonicalise equivalent dotted versions rather
+  // than turning a healthy installed payload into an empty candidate list.
+  const registryVersion = current.version
+    ? reg.translators.find((translator) => translator.id === current.translatorId)?.versions
+      .find((version) => compareVersions(version.version, current.version!) === 0)?.version
+    : undefined;
+  if (current.version && !registryVersion) return undefined;
+  const plan = resolvePlans(reg, profile, {
+    ...baseOptions,
+    translatorId: current.translatorId,
+    variantId: current.variantId,
+    ...(registryVersion ? { version: registryVersion } : {}),
+    includeFont: false,
+    includeNonViable: false,
+  }).find((candidate) => candidate.viable && candidate.steps.some((item) => item.action === 'config'));
+  if (!plan || (plan.loader && !plan.loader.alreadyInstalled)) return undefined;
+  return plan;
+}
+
+/**
+ * Recommends only an atlas whose declared Unity range and glyphs match the
+ * detected game and chosen target language. Unknown TMP/Unity evidence does
+ * not become an installation permission, and inferred mappings stay inferred.
+ */
+export function recommendGameFont(
+  reg: Registry,
+  profile: GameProfile,
+  options: FontResolveOptions = {},
+): FontRecommendation {
+  const sourceUrl = fontSourceUrl(reg.fonts.source);
+  const response = (status: FontRecommendation['status'], msg: Message): FontRecommendation => ({
+    status,
+    reason: msg.text,
+    reasonKey: msg.key,
+    ...(msg.params ? { reasonParams: msg.params } : {}),
+    sourceUrl,
+    alreadyPresent: false,
+    configured: false,
+    installable: false,
+  });
+  if (profile.engineId !== 'unity' || !profile.unity) {
+    return response('not-needed', message('core.font.not-unity', {}, 'TMP fallback bundles apply to Unity games only.'));
+  }
+  const language = (options.targetLanguage ?? 'en').trim().toLowerCase().split('-')[0]!;
+  if (!reg.fonts.bundles.some((bundle) => bundle.glyphs.includes(language))) {
+    return response('not-needed', message('core.font.no-target-need', {}, 'No CJK fallback bundle is recommended for this target language.'));
+  }
+  if (profile.unity.usesTextMeshPro === false) {
+    return response('not-needed', message('core.font.not-tmp', {}, 'TextMeshPro was not detected; this TMP bundle is not needed.'));
+  }
+  if (profile.unity.usesTextMeshPro !== true) {
+    return response('unavailable', message('core.font.tmp-unknown', {}, 'TextMeshPro detection is incomplete. Run a deep scan before choosing a TMP font.'));
+  }
+  if (!profile.unity.version) {
+    return response('unavailable', message('core.font.unity-unknown', {}, 'The Unity version is unknown, so a matching TMP bundle cannot be chosen safely.'));
+  }
+  const font = pickFontBundle(reg, profile.unity.version);
+  if (!font || !font.glyphs.includes(language)) {
+    return response('unavailable', message('core.font.no-matching-bundle', { unity: profile.unity.version }, 'No registered TMP bundle matches Unity {unity} and this language.'));
+  }
+  const alreadyPresent = profile.installedFontBundles.includes(font.id) || profile.installedFontBundles.includes(font.file);
+  const configured = (options.currentFallbackFontTextMeshPro ?? '').trim().toLowerCase() === font.file.toLowerCase();
+  const status = alreadyPresent && configured ? 'installed' : 'recommended';
+  const msg = status === 'installed'
+    ? message('core.font.installed', { file: font.file }, '{file} is present and selected as the TMP fallback font. Runtime rendering still needs to be checked in the game.')
+    : message('core.font.recommended', { file: font.file, unity: profile.unity.version }, '{file} matches the registered Unity {unity} range. It supplies Korean, Japanese and Chinese fallback glyphs; test rendering in the game after installation.');
+  const recommendation: FontRecommendation = {
+    ...response(status, msg),
+    bundle: { ...font, unityRange: { ...font.unityRange }, glyphs: [...font.glyphs] },
+    alreadyPresent,
+    configured,
+    installable: status !== 'installed' && Boolean(installedFontTranslatorPlan(reg, profile, options)),
+  };
+  if (status !== 'installed' && !recommendation.installable) {
+    const block = message('core.font.translator-required', {}, 'A single compatible installed XUnity.AutoTranslator variant and its loader are required before adding a font separately.');
+    recommendation.blockReason = block.text;
+    recommendation.blockReasonKey = block.key;
+  }
+  return recommendation;
+}
+
+/** A narrow font maintenance plan: no loader, translator payload or language/provider changes. */
+export function resolveFontPlan(
+  reg: Registry,
+  profile: GameProfile,
+  options: FontResolveOptions = {},
+): TranslatorPlan | undefined {
+  const recommendation = recommendGameFont(reg, profile, options);
+  if (!recommendation.installable || !recommendation.bundle) return undefined;
+  const font = recommendation.bundle;
+  const installed = profile.installedTranslators.find((entry) => entry.translatorId === 'xunity-autotranslator')!;
+  const translatorPlan = installedFontTranslatorPlan(reg, profile, options)!;
+  const configStep = translatorPlan.steps.find((item) => item.action === 'config')!;
+  const configPath = installed.configPath ?? configStep.dest;
+  if (!configPath) return undefined;
+  const steps: PlanStep[] = [];
+  if (!recommendation.alreadyPresent) {
+    steps.push(step('download', message('core.step.download-fonts', { asset: reg.fonts.source.asset }, 'Download the TMP font bundle archive ({asset})'), {
+      source: reg.fonts.source,
+      details: { fontBundleId: font.id },
+    }));
+    steps.push(step('copy', message('core.step.copy-font', { file: font.file }, 'Copy {file} into the game folder'), {
+      dest: font.file,
+      details: { fontBundleId: font.id },
+    }));
+  }
+  steps.push(step('config', message('core.step.configure-font', { path: configPath, file: font.file }, 'Set only the TMP fallback font in {path} to {file}'), {
+    dest: configPath,
+    details: { fontBundleId: font.id },
+  }));
+  return {
+    purpose: 'font',
+    gamePath: profile.path,
+    translatorId: translatorPlan.translatorId,
+    translatorName: translatorPlan.translatorName,
+    variantId: translatorPlan.variantId,
+    variantName: translatorPlan.variantName,
+    // Font versions identify the pinned archive rather than a translator DLL.
+    version: reg.fonts.source.asset ?? reg.fonts.source.tag ?? reg.meta.updated['fonts'] ?? font.id,
+    tag: reg.fonts.source.tag ?? '',
+    fontBundle: { id: font.id, file: font.file, confidence: font.confidence, ...(font.note ? { note: font.note } : {}) },
+    score: 100,
+    viable: true,
+    findings: [finding('font-range-recommendation', 'info', font.confidence, {
+      text: recommendation.reason,
+      key: recommendation.reasonKey,
+      ...(recommendation.reasonParams ? { params: recommendation.reasonParams } : {}),
+    }, [recommendation.sourceUrl])],
+    steps,
+    config: { Behaviour: { FallbackFontTextMeshPro: font.file } },
+  };
 }
 
 

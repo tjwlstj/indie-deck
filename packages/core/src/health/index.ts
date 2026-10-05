@@ -25,6 +25,7 @@ import { FsProbe } from '../util/fsx.ts';
 import { peVersionString } from '../util/pe.ts';
 import { compareVersions } from '../util/version.ts';
 import { resolvePlans } from '../resolve/index.ts';
+import { isSafeReceiptComponentId } from '../install/apply.ts';
 
 export const RECEIPT_DIR = '.indiedeck/receipts';
 
@@ -56,6 +57,148 @@ function isInsideRoot(relative: string): boolean {
 }
 
 const RECEIPT_KINDS = new Set(['loader', 'translator', 'mod', 'font']);
+const SHA256 = /^[a-fA-F0-9]{64}$/;
+const BACKUP_PREFIX = '.indiedeck/backups/';
+
+function strictRelative(value: unknown): string | undefined {
+  if (typeof value !== 'string' || value.length === 0) return undefined;
+  const normalised = value.replace(/\\/g, '/');
+  if (normalised.startsWith('/') || /^[a-zA-Z]:/.test(normalised)) return undefined;
+  const parts = normalised.split('/');
+  if (parts.some((part) => part === '' || part === '.' || part === '..' ||
+    /[\u0000-\u001f<>:"|?*]/u.test(part) || /[ .]$/u.test(part))) return undefined;
+  return normalised;
+}
+
+function pathKey(value: string): string {
+  const normalised = value.replace(/\\/g, '/');
+  return process.platform === 'win32' ? normalised.toLowerCase() : normalised;
+}
+
+/** All existing path components must be ordinary directories/files, not links. */
+function hasNoLinkedAncestor(gameRoot: string, relative: string): boolean {
+  try {
+    let current = path.resolve(gameRoot);
+    const root = fs.lstatSync(current);
+    if (!root.isDirectory() || root.isSymbolicLink()) return false;
+    const parts = relative.split('/');
+    for (let index = 0; index < parts.length; index += 1) {
+      current = path.join(current, parts[index]!);
+      const stat = fs.lstatSync(current);
+      if (stat.isSymbolicLink() || (index < parts.length - 1 && !stat.isDirectory())) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Evidence reads must not follow a forged receipt/config/backup link. Checking
+ * the opened handle as well as its ancestors also rejects replacement during
+ * a read. This is a read-only snapshot, not a mutation-time locking guarantee.
+ */
+function readRegularEvidence(gameRoot: string, relative: string): Buffer | undefined {
+  const rel = strictRelative(relative);
+  if (!rel || !hasNoLinkedAncestor(gameRoot, rel)) return undefined;
+  const target = path.join(gameRoot, rel);
+  let fd: number | undefined;
+  try {
+    const before = fs.lstatSync(target);
+    if (!before.isFile() || before.isSymbolicLink()) return undefined;
+    const noFollow = typeof fs.constants.O_NOFOLLOW === 'number' ? fs.constants.O_NOFOLLOW : 0;
+    fd = fs.openSync(target, fs.constants.O_RDONLY | noFollow);
+    const opened = fs.fstatSync(fd);
+    if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino) return undefined;
+    const content = fs.readFileSync(fd);
+    const after = fs.fstatSync(fd);
+    const namedAfter = fs.lstatSync(target);
+    if (opened.dev !== after.dev || opened.ino !== after.ino || opened.size !== after.size ||
+      opened.mtimeMs !== after.mtimeMs || namedAfter.dev !== after.dev || namedAfter.ino !== after.ino ||
+      namedAfter.isSymbolicLink() || !hasNoLinkedAncestor(gameRoot, rel)) return undefined;
+    return content;
+  } catch {
+    return undefined;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
+function isCanonicalReceiptMetadata(
+  raw: Record<string, unknown>,
+  record: ReceiptRecord,
+  gameRoot: string,
+  kind: 'translator' | 'font',
+): boolean {
+  return raw['schemaVersion'] === 2 && raw['kind'] === kind && record.kind === kind &&
+    typeof raw['id'] === 'string' && raw['id'].length > 0 && raw['id'] === record.id &&
+    isSafeReceiptComponentId(raw['componentId']) && raw['componentId'] === record.componentId &&
+    record.storageId === `${kind}-${raw['componentId']}.json` &&
+    typeof raw['version'] === 'string' && raw['version'].length > 0 && raw['version'] === record.version &&
+    typeof raw['gamePath'] === 'string' && pathKey(path.resolve(raw['gamePath'])) === pathKey(path.resolve(gameRoot)) &&
+    typeof raw['installedAt'] === 'string' && Number.isFinite(Date.parse(raw['installedAt'])) &&
+    (raw['variantId'] === undefined || typeof raw['variantId'] === 'string') && Array.isArray(raw['entries']);
+}
+
+interface FontOwnershipOverlay {
+  path: string;
+  sha256: string;
+  predecessorSha256: string;
+  installedAt: number;
+}
+
+/**
+ * A standalone font changes only the existing translator config. Its separate
+ * receipt must not rewrite the translator's original ownership hash/backup.
+ * Recognise exactly one intact overlay whose backup is the prior bytes; any
+ * ambiguity, unsafe metadata, or changed font file keeps normal drift visible.
+ */
+function readFontOwnershipOverlay(gameRoot: string, evidence: ReceiptEvidence): FontOwnershipOverlay | undefined {
+  const fonts = evidence.records.filter((record) => record.kind === 'font');
+  if (fonts.length !== 1 || evidence.issues.length > 0) return undefined;
+  const record = fonts[0]!;
+  const content = readRegularEvidence(gameRoot, `${RECEIPT_DIR}/${record.storageId}`);
+  if (!content) return undefined;
+  let raw: Record<string, unknown>;
+  try {
+    const parsed: unknown = JSON.parse(content.toString('utf8'));
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined;
+    raw = parsed as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
+  if (!isCanonicalReceiptMetadata(raw, record, gameRoot, 'font')) return undefined;
+
+  const seen = new Set<string>();
+  let overlay: FontOwnershipOverlay | undefined;
+  for (const value of raw['entries'] as unknown[]) {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+    const entry = value as Record<string, unknown>;
+    const rel = strictRelative(entry['path']);
+    const sha256 = entry['sha256'];
+    if (!rel || pathKey(rel) === '.indiedeck' || pathKey(rel).startsWith('.indiedeck/') ||
+      typeof sha256 !== 'string' || !SHA256.test(sha256) || seen.has(pathKey(rel))) return undefined;
+    seen.add(pathKey(rel));
+    const current = readRegularEvidence(gameRoot, rel);
+    if (!current || crypto.createHash('sha256').update(current).digest('hex') !== sha256.toLowerCase()) return undefined;
+    if (entry['operation'] === 'create') {
+      if (entry['backup'] !== undefined) return undefined;
+      continue;
+    }
+    if (entry['operation'] !== 'modify' || overlay) return undefined;
+    const backup = strictRelative(entry['backup']);
+    if (!backup || !pathKey(backup).startsWith(BACKUP_PREFIX)) return undefined;
+    const predecessor = readRegularEvidence(gameRoot, backup);
+    if (!predecessor) return undefined;
+    overlay = {
+      path: pathKey(rel),
+      sha256: sha256.toLowerCase(),
+      predecessorSha256: crypto.createHash('sha256').update(predecessor).digest('hex'),
+      installedAt: Date.parse(raw['installedAt'] as string),
+    };
+  }
+  return overlay;
+}
 
 /**
  * Reads every receipt file strictly. A receipt that cannot be trusted is kept
@@ -211,6 +354,7 @@ export function collectTranslatorEvidence(
   // One strict receipt pass shared by every translator; attribution happens
   // per component below via the canonical `kind-componentId.json` name.
   const receiptEvidence = readReceiptEvidence(profile.path);
+  const fontOverlay = readFontOwnershipOverlay(profile.path, receiptEvidence);
 
   const out: TranslatorInstallEvidence[] = [];
   for (const def of reg.translators) {
@@ -239,14 +383,22 @@ export function collectTranslatorEvidence(
     const ownedPaths: string[] = [];
     const modifiedOwnedPaths: string[] = [];
     const unknownPaths: string[] = [];
+    const configPaths = new Set(def.variants.flatMap((variant) => variant.configCandidates ?? []).map(pathKey));
     for (const record of mine) {
-      let entries: { path?: unknown; sha256?: unknown }[] = [];
+      let entries: { path?: unknown; sha256?: unknown; operation?: unknown }[] = [];
+      let parsed: Record<string, unknown>;
       try {
-        const parsed = JSON.parse(fs.readFileSync(path.join(profile.path, RECEIPT_DIR, record.storageId), 'utf8')) as Record<string, unknown>;
+        const content = readRegularEvidence(profile.path, `${RECEIPT_DIR}/${record.storageId}`);
+        if (!content) throw new Error('Unsafe or changed receipt.');
+        parsed = JSON.parse(content.toString('utf8')) as Record<string, unknown>;
         entries = parsed['entries'] as typeof entries;
       } catch {
+        myIssues.push({ name: record.storageId, code: 'unsafe-storage-id' });
         continue;
       }
+      const overlayFitsReceipt = fontOverlay && mine.length === 1 &&
+        isCanonicalReceiptMetadata(parsed, record, profile.path, 'translator') &&
+        Date.parse(parsed['installedAt'] as string) <= fontOverlay.installedAt;
       for (const entry of entries ?? []) {
         const rel = typeof entry.path === 'string' ? entry.path : undefined;
         if (!rel) continue;
@@ -256,8 +408,15 @@ export function collectTranslatorEvidence(
           continue;
         }
         try {
-          const current = crypto.createHash('sha256').update(fs.readFileSync(path.join(profile.path, rel))).digest('hex');
-          if (current !== entry.sha256) modifiedOwnedPaths.push(rel);
+          const content = readRegularEvidence(profile.path, rel);
+          if (!content) throw new Error('Missing, linked, or changed owned file.');
+          const current = crypto.createHash('sha256').update(content).digest('hex');
+          const ownedHash = entry.sha256.toLowerCase();
+          const overlayIsExact = overlayFitsReceipt && configPaths.has(pathKey(rel)) &&
+            pathKey(rel) === fontOverlay.path && SHA256.test(entry.sha256) &&
+            (entry.operation === 'create' || entry.operation === 'modify') &&
+            fontOverlay.predecessorSha256 === ownedHash && fontOverlay.sha256 === current;
+          if (current !== ownedHash && !overlayIsExact) modifiedOwnedPaths.push(rel);
         } catch {
           modifiedOwnedPaths.push(rel); // gone or unreadable counts as changed
         }
@@ -339,7 +498,7 @@ export function collectTranslatorEvidence(
       primaryStatus,
       healthIssues,
       ownership,
-      uninstallable: mine.length > 0 && modifiedOwnedPaths.length === 0,
+      uninstallable: mine.length > 0 && myIssues.length === 0 && modifiedOwnedPaths.length === 0,
       variantHits: variantHits.map(({ variantId, paths, configPath }) => ({ variantId, paths, configPath })),
       payloadPaths: [...new Set(variantHits.flatMap((h) => h.paths))],
       assemblyVersions: assemblies.filter((a): a is { path: string; version: string } => !!a.version),

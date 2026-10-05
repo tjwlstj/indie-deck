@@ -214,7 +214,9 @@ async function startMaintenance(kind, gameId, planId) {
   setStatus(
     kind === 'uninstall'
       ? t('ui.status.removing', undefined, 'Removing…')
-      : t('ui.status.installingShort', undefined, 'Installing…'),
+      : kind === 'install-font'
+        ? t('ui.operation.installingFont', undefined, 'Installing recommended font')
+        : t('ui.status.installingShort', undefined, 'Installing…'),
   );
   // Render before awaiting IPC so the loading state is visible in this frame.
   showOperationState();
@@ -232,7 +234,7 @@ async function startMaintenance(kind, gameId, planId) {
 
 function installPlan(gameId, plan) {
   if (!gameId || state.selected !== gameId) return;
-  void startMaintenance('install', gameId, plan.id);
+  void startMaintenance(plan.purpose === 'font' ? 'install-font' : 'install', gameId, plan.id);
 }
 
 function uninstallGame(gameId) {
@@ -257,7 +259,9 @@ function outcomeStatus(outcome) {
     }
     return outcome.kind === 'uninstall'
       ? t('ui.operation.removeComplete', undefined, 'Removal complete')
-      : t('ui.operation.installComplete', undefined, 'Installation complete');
+      : outcome.kind === 'install-font'
+        ? t('ui.operation.fontComplete', undefined, 'Recommended font setup complete')
+        : t('ui.operation.installComplete', undefined, 'Installation complete');
   }
   if (outcome.mutationStatus === 'rolled-back' && outcome.rollbackStatus === 'not-run') {
     return t('ui.operation.stoppedBeforeChanges', undefined, 'The task stopped before any game files were changed.');

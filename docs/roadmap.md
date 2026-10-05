@@ -115,9 +115,12 @@ The detailed contract and remaining acceptance criteria live in
 - [x] Selection/revision guards and redacted config in the same post-state
 - [x] Preserve changed modified/snapshot files and unresolved removal receipts
 - [x] Offline Electron flow checks in Korean and English
+- [x] Optional Unity TMP font recommendation and standalone fallback installation,
+      with original translator receipt preservation and ordered removal
 - [ ] Atomic maintenance plan with original-baseline receipt inheritance
 - [ ] Durable transaction journal and app/OS crash recovery
 - [ ] Safe update, repair, replacement and duplicate consolidation with previews
+- [ ] Per-game font rendering verification and measured translator success history
 - [ ] Strict damaged-index reconstruction and incremental evidence hash cache
 - [ ] Real-game translator runtime and interrupted-install acceptance tests
 

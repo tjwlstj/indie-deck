@@ -90,3 +90,11 @@ test('maintenance keeps opaque targets, rejects concurrent writes and revalidate
   assert.doesNotMatch(main.slice(removalStart, removalEnd), /readReceipts\(|readReceiptEvidence\(/);
   assert.match(main.slice(removalStart, removalEnd), /uninstallReceipt\(receipts\[index\]!/);
 });
+
+test('standalone font requests cannot execute a normal translator plan or change its payload', () => {
+  assert.match(main, /\(request\.kind === 'install-font'\) !== \(plan\.purpose === 'font'\)/);
+  assert.match(main, /resolveFontPlan\(registry, profile, installedFontOptions\(options, fontConfig\)\)/);
+  assert.match(main, /planFingerprint\(fresh\) !== planFingerprint\(plan\)/);
+  assert.match(main, /fontWriteBlockKey\(profile, fresh, receiptsEvidence, installations, fontConfig\)/);
+  assert.match(main, /receipts\.sort\(\(a, b\) => Number\(b\.kind === 'font'\) - Number\(a\.kind === 'font'\)\)/);
+});

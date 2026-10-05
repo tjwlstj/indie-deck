@@ -9,6 +9,11 @@
 import { el, setStatus, severityMark, severityTone } from '../dom.js';
 import { retranslate, t } from '../i18n.js';
 import { api, mutationBlocked, state } from '../store.js';
+import { fontChoiceKey, selectedFontPlan } from '../font-options.js';
+
+// Opaque plan ids change on every fresh detail read. Keep this presentation
+// choice by game/build identity instead, so progress renders do not reset it.
+const fontChoices = new Map();
 
 function operationText(operation) {
   if (operation.descriptionKey) return t(operation.descriptionKey, operation.descriptionParams, operation.description ?? operation.phase);
@@ -34,7 +39,9 @@ function terminalText(operation) {
     }
     return operation.kind === 'uninstall'
       ? t('ui.operation.removeComplete', undefined, 'Removal complete')
-      : t('ui.operation.installComplete', undefined, 'Installation complete');
+      : operation.kind === 'install-font'
+        ? t('ui.operation.fontComplete', undefined, 'Recommended font setup complete')
+        : t('ui.operation.installComplete', undefined, 'Installation complete');
   }
   if (outcome.mutationStatus === 'rolled-back' && outcome.rollbackStatus === 'not-run') {
     return t('ui.operation.stoppedBeforeChanges', undefined, 'The task stopped before any game files were changed.');
@@ -74,7 +81,9 @@ export function operationCard(operation) {
       null,
       operation.kind === 'uninstall'
         ? t('ui.operation.removing', undefined, 'Removing translator')
-        : t('ui.operation.installing', undefined, 'Installing translator'),
+        : operation.kind === 'install-font'
+          ? t('ui.operation.installingFont', undefined, 'Installing recommended font')
+          : t('ui.operation.installing', undefined, 'Installing translator'),
     ),
     el('span', 'operation-phase', terminalText(operation)),
   );
@@ -311,6 +320,113 @@ export function renderAudit(panel, ctx) {
 
 /* ---------------------------------------------------------------- plans */
 
+function fontRangeText(range) {
+  if (!range) return '';
+  const min = range.min ?? '…';
+  const max = range.max ?? '…';
+  return t('ui.font.unityRange', { min, max }, 'Unity {min}–{max}');
+}
+
+/** An evidence-labelled recommendation, not a promise of runtime rendering. */
+export function renderFontRecommendation(panel, ctx, _refresh, onInstall) {
+  const recommendation = ctx.fontRecommendation;
+  if (!recommendation || ctx.profile.engineId !== 'unity' ||
+      ![...ctx.plans, ...ctx.profile.installedTranslators].some((entry) => entry.translatorId === 'xunity-autotranslator')) return;
+  panel.append(el('h3', null, t('ui.font.title', undefined, 'Recommended TMP font')));
+  const card = el('section', `font-recommendation ${recommendation.status}`);
+  const { bundle } = recommendation;
+
+  if (bundle) {
+    const head = el('div', 'font-head');
+    head.append(el('strong', 'font-file', bundle.file));
+    const inferred = bundle.confidence !== 'verified';
+    head.append(
+      el(
+        'span',
+        `pill ${inferred ? 'warn' : 'ok'}`,
+        inferred
+          ? t('ui.font.inferred', undefined, 'Community / inferred range')
+          : t('ui.font.registeredRange', undefined, 'Registered compatibility range'),
+      ),
+    );
+    card.append(head);
+    const range = fontRangeText(bundle.unityRange);
+    if (range) card.append(el('div', 'plan-sub', range));
+  }
+
+  card.append(
+    el(
+      'p',
+      'font-description',
+      recommendation.reasonKey
+        ? t(recommendation.reasonKey, recommendation.reasonParams, recommendation.reason)
+        : recommendation.reason,
+    ),
+  );
+
+  if (bundle) {
+    card.append(
+      el('p', 'font-help', t('ui.font.fallbackOnly', undefined, 'Uses TMP fallback only: the game keeps its original font and uses this bundle for missing glyphs.')),
+      el('p', 'font-help', t('ui.font.runtimeCaveat', undefined, 'Chosen from detected Unity version and registered ranges. Font rendering in this game has not been tested.')),
+    );
+    if (recommendation.alreadyPresent) {
+      card.append(
+        el(
+          'div',
+          `font-state ${recommendation.configured ? 'configured' : ''}`,
+          recommendation.configured
+            ? t('ui.font.configured', undefined, 'Font file present · TMP fallback linked')
+            : t('ui.font.presentNotConfigured', undefined, 'Font file present · TMP fallback is not linked'),
+        ),
+      );
+    }
+  }
+
+  const actions = el('div', 'font-actions');
+  if (recommendation.sourceUrl) {
+    const source = el('a', null, t('ui.font.source', undefined, 'Font bundle source'));
+    source.href = '#';
+    source.addEventListener('click', (event) => {
+      event.preventDefault();
+      void api.open.url(recommendation.sourceUrl).catch((err) => setStatus(err.message, 'err'));
+    });
+    actions.append(source);
+  }
+  if (ctx.fontPlan) {
+    const fontPlan = ctx.fontPlan;
+    const install = el(
+      'button',
+      'primary install-font',
+      recommendation.alreadyPresent
+        ? t('ui.font.linkFallback', undefined, 'Link recommended TMP fallback')
+        : t('ui.font.install', undefined, 'Add recommended font'),
+    );
+    const blockReason = fontPlan.installBlockReason ?? recommendation.blockReason;
+    install.disabled = mutationBlocked() || !recommendation.installable || Boolean(blockReason);
+    install.addEventListener('click', () => {
+      if (mutationBlocked() || !recommendation.installable || blockReason) return;
+      onInstall(ctx.profile.id, fontPlan);
+    });
+    actions.append(install);
+    if (blockReason) card.append(el('p', 'font-block-reason', blockReason));
+    card.append(el('p', 'font-help', t('ui.font.standalone', undefined, 'Adds only the recommended font and fallback setting; the installed translator is not reinstalled.')));
+  } else if (recommendation.status === 'recommended' && !ctx.profile.installedTranslators.length) {
+    card.append(el('p', 'font-help', t('ui.font.withTranslator', undefined, 'Choose “Install recommended TMP font too” in a translator option below.')));
+  } else if (recommendation.blockReason) {
+    card.append(
+      el(
+        'p',
+        'font-block-reason',
+        recommendation.blockReasonKey
+          ? t(recommendation.blockReasonKey, undefined, recommendation.blockReason)
+          : recommendation.blockReason,
+      ),
+    );
+  }
+  if (actions.childNodes.length > 0) card.append(actions);
+  panel.append(card);
+}
+
 function finding(node, item) {
   const row = el('div', `finding ${item.severity}`);
   row.append(el('span', 'icon', severityMark(item.severity)));
@@ -332,27 +448,41 @@ function finding(node, item) {
   node.append(row);
 }
 
-function planCard(plan, onInstall) {
+function planCard(plan, gameId, onInstall) {
   const card = el('div', `plan${plan.viable ? '' : ' blocked'}`);
   const head = el('div', 'plan-head');
   head.append(el('span', 'plan-title', `${plan.translatorName} ${plan.version}`));
   head.append(el('span', 'plan-sub', plan.variantName));
 
-  if (plan.viable) {
-    const install = el('button', 'primary install', t('ui.plan.install', undefined, 'Install'));
-    install.disabled = mutationBlocked() || Boolean(plan.installBlockReason);
-    if (plan.installBlockReason) {
-      const reasonId = `install-block-${String(plan.id).replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+  const choiceKey = fontChoiceKey(gameId, plan);
+  let includeFont = fontChoices.get(choiceKey) ?? true;
+  let selected = selectedFontPlan(plan, includeFont);
+  let install;
+  const reasonId = `install-block-${String(plan.id).replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+  const reason = el('span', 'plan-sub install-block-reason');
+  reason.id = reasonId;
+  const updateSelection = () => {
+    selected = selectedFontPlan(plan, includeFont);
+    if (install) {
+      install.disabled = mutationBlocked() || Boolean(selected.installBlockReason);
       install.setAttribute('aria-describedby', reasonId);
-      const reason = el('span', 'plan-sub install-block-reason', plan.installBlockReason);
-      reason.id = reasonId;
-      head.append(reason);
     }
-    install.addEventListener('click', () => onInstall(plan));
+    reason.textContent = selected.installBlockReason ?? '';
+    reason.hidden = !selected.installBlockReason;
+  };
+
+  if (plan.viable) {
+    install = el('button', 'primary install', t('ui.plan.install', undefined, 'Install'));
+    install.addEventListener('click', () => {
+      if (mutationBlocked() || selected.installBlockReason) return;
+      onInstall(selected);
+    });
     head.append(install);
   } else {
     head.append(el('span', 'pill err install', t('ui.plan.blocked', undefined, 'blocked')));
   }
+  head.append(reason);
+  updateSelection();
   card.append(head);
 
   const details = [];
@@ -364,8 +494,35 @@ function planCard(plan, onInstall) {
   } else {
     details.push(t('ui.plan.noLoaderNeeded', undefined, 'no loader needed'));
   }
-  if (plan.fontBundle) details.push(t('ui.plan.font', { file: plan.fontBundle.file }, 'font {file}'));
   card.append(el('div', 'plan-sub', details.join('  ·  ')));
+
+  if (plan.fontBundle) {
+    const label = el('label', 'font-choice');
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'include-font';
+    checkbox.checked = includeFont;
+    checkbox.disabled = mutationBlocked() || !plan.viable || !plan.withoutFontPlanId;
+    checkbox.addEventListener('change', () => {
+      if (mutationBlocked()) {
+        checkbox.checked = includeFont;
+        return;
+      }
+      includeFont = checkbox.checked;
+      fontChoices.set(choiceKey, includeFont);
+      updateSelection();
+    });
+    label.append(checkbox, el('span', null, t('ui.font.include', undefined, 'Install recommended TMP font too')));
+    const help = el(
+      'span',
+      'font-choice-help',
+      t('ui.font.choiceHelp', { file: plan.fontBundle.file }, '{file} · TMP fallback; original game font stays unchanged'),
+    );
+    const helpId = `font-choice-${String(plan.id).replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+    help.id = helpId;
+    checkbox.setAttribute('aria-describedby', helpId);
+    card.append(label, help);
+  }
 
   for (const item of plan.findings) finding(card, item);
   return card;
@@ -378,7 +535,7 @@ export function renderPlans(panel, ctx, refresh, onInstall, onUninstall) {
   } else {
     for (const plan of ctx.plans) {
       const gameId = ctx.profile.id;
-      panel.append(planCard(plan, (selectedPlan) => onInstall(gameId, selectedPlan)));
+      panel.append(planCard(plan, gameId, (selectedPlan) => onInstall(gameId, selectedPlan)));
     }
   }
 

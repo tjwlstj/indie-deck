@@ -87,7 +87,15 @@ export {
   type DetectedTranslatorVersion,
 } from './config/index.ts';
 
-export { resolvePlans, summarisePlans, pickFontBundle, RULE_PREDICATES, type RulePredicate } from './resolve/index.ts';
+export {
+  resolvePlans,
+  summarisePlans,
+  pickFontBundle,
+  recommendGameFont,
+  resolveFontPlan,
+  RULE_PREDICATES,
+  type RulePredicate,
+} from './resolve/index.ts';
 
 export {
   auditGame,

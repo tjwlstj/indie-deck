@@ -73,6 +73,16 @@ TMP font bundles that do not match the game's Unity line, two mod loaders
 installed at once, translator plugin files with no loader to load them, and
 translator versions that predate a fix the chosen endpoint needs.
 
+**Optional Unity TMP fonts.** For Korean, Japanese or Chinese targets, the
+launcher shows a bundle recommendation based on detected TextMeshPro and Unity
+version, with registered versus inferred compatibility clearly separated. A
+translator plan can include or exclude the recommended font. An existing,
+compatible XUnity installation can add just the font, or link an existing atlas,
+without reinstalling the translator. Only `Behaviour.FallbackFontTextMeshPro`
+is patched in that separate operation; other settings and comments are retained.
+Recommendations are not proof of rendering in a particular game. Non-TMP and
+unknown-version games do not get a forced TMP installation action.
+
 ## Install
 
 ### Windows app
@@ -127,8 +137,10 @@ shows a reason and blocks reinstalling an already managed translator when that
 would overwrite its original install record.
 
 The offline `npm run desktop:flow` check exercises installation, settings
-navigation, renderer reload, small-window sticky actions and removal in Korean
-and English using disposable game folders and mocked downloads.
+navigation, renderer reload, optional and standalone fonts, config/receipt
+refresh, small-window sticky actions and ordered removal in Korean and English
+using disposable game folders and mocked downloads. The font fixture is a real
+7z archive containing synthetic bytes, not a working Unity atlas.
 
 Maintainers can find the versioning, tag, artifact, signing and updater procedure
 in [docs/releasing.md](docs/releasing.md).
@@ -162,6 +174,13 @@ Every command takes `--json` for scripting, and nothing is written to a game
 folder without a receipt. `install --dry-run` prints the exact plan first.
 
 ## How the compatibility engine works
+
+A game's presence in the library comes from scanning registered folders, not a
+hardcoded title list. Engine signatures, supported translators, provider
+catalogues and compatibility weights are curated registry data. Recommendations
+are deterministic profile-and-rule ranking, not an AI/LLM model or a learned
+game-success database. Detection confidence is a heuristic signature score,
+not the probability that a translator will work at runtime.
 
 A scan produces a **game profile** (engine, backend, engine version, arch,
 already-installed loaders/translators/font bundles). The resolver expands that

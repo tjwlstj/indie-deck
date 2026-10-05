@@ -82,6 +82,17 @@
       "translator-dormant": "{translator}은(는) 더 이상 활발히 유지보수되지 않습니다.",
       "font-bundle-unresolved": "CJK 폴백 폰트가 필요하지만 이 Unity 버전에 맞는 TMP 번들이 없습니다 — TextMeshPro 3.2+ 의 시스템 폰트 옵션을 쓰세요."
     },
+    "font": {
+      "not-unity": "TMP 폴백 폰트 번들은 Unity 게임용입니다.",
+      "no-target-need": "현재 번역 대상 언어에는 CJK 폴백 폰트를 추천하지 않습니다.",
+      "not-tmp": "TextMeshPro가 감지되지 않아 이 TMP 폰트를 추천하지 않습니다.",
+      "tmp-unknown": "TextMeshPro 사용 여부를 확인하지 못했습니다. TMP 폰트를 고르기 전에 정밀 검색을 실행하세요.",
+      "unity-unknown": "Unity 버전을 알 수 없어 호환되는 TMP 폰트를 안전하게 고를 수 없습니다.",
+      "no-matching-bundle": "Unity {unity}과(와) 현재 번역 언어에 맞는 등록된 TMP 폰트 번들이 없습니다.",
+      "installed": "{file}이(가) 있고 TMP 폴백으로 연결돼 있습니다. 게임에서 실제 글자 출력은 따로 확인해야 합니다.",
+      "recommended": "{file}은(는) 등록된 Unity {unity} 범위에 맞습니다. 한국어·일본어·중국어의 없는 글자를 채워줍니다. 설치 후 게임에서 출력을 확인하세요.",
+      "translator-required": "폰트를 단독으로 추가하려면 호환되는 XUnity.AutoTranslator 한 종류와 해당 로더가 설치돼 있어야 합니다."
+    },
     "step": {
       "download-loader": "{loader} {version} 다운로드 ({arch})",
       "extract-loader": "{loader}을(를) 게임 폴더에 압축 해제",
@@ -96,6 +107,7 @@
       "translator-manual": "{translator}은(는) 직접 설치해야 합니다 ({url})",
       "download-fonts": "TMP 폰트 번들 아카이브 다운로드 ({asset})",
       "copy-font": "{file}을(를) 게임 폴더로 복사",
+      "configure-font": "{path}의 TMP 폴백 폰트만 {file}(으)로 설정",
       "write-config": "{path} 작성 (없으면 첫 실행 때 생성됨)"
     },
     "config": {
@@ -240,6 +252,31 @@
       "font": "폰트 {file}",
       "noLoaderNeeded": "로더 불필요"
     },
+    "font": {
+      "title": "추천 TMP 폰트",
+      "registeredRange": "등록된 호환 범위 기준",
+      "inferred": "커뮤니티·추론 범위 기준",
+      "unityRange": "Unity {min}–{max}",
+      "fallbackOnly": "TMP 폴백으로만 연결합니다. 게임의 원래 폰트는 유지하고, 그릴 수 없는 글자에만 이 폰트를 사용합니다.",
+      "runtimeCaveat": "감지된 Unity 버전과 등록된 범위로 골랐습니다. 이 게임에서 실제 글자 출력은 아직 검증하지 않았습니다.",
+      "configured": "폰트 파일 있음 · TMP 폴백 연결됨",
+      "presentNotConfigured": "폰트 파일 있음 · TMP 폴백 미연결",
+      "source": "폰트 번들 출처",
+      "install": "추천 폰트 추가",
+      "linkFallback": "추천 TMP 폴백 연결",
+      "standalone": "추천 폰트와 폴백 설정만 추가합니다. 설치된 번역기는 다시 설치하지 않습니다.",
+      "withTranslator": "아래 번역기 선택지에서 ‘추천 TMP 폰트 함께 설치’를 선택할 수 있습니다.",
+      "include": "추천 TMP 폰트 함께 설치",
+      "choiceHelp": "{file} · TMP 폴백 방식, 게임의 원래 폰트 유지",
+      "block": {
+        "receipt": "설치 기록이 손상됐거나 지원하지 않는 형식입니다. 폰트와 설정을 바꾸기 전에 기록을 확인하세요.",
+        "payload": "기존 번역기에 중복·호환 불일치·파일 변경이 있습니다. 폰트를 추가하기 전에 번역기 상태를 확인하세요.",
+        "config": "설치된 번역기의 기존 설정 경로와 TMP 폴백 키를 확실히 확인하지 못했습니다. 게임을 한 번 실행한 뒤 번역 설정을 먼저 확인하세요.",
+        "linkedPath": "폰트·설정·설치 기록 경로가 연결 폴더이거나 일반 파일이 아닙니다. 변경 전에 경로를 확인하세요.",
+        "existingFont": "같은 이름의 폰트 파일이 이미 있습니다. 함께 설치 옵션을 끄고, 폰트 카드에서 기존 파일을 연결하세요.",
+        "managedFont": "이미 IndieDeck이 관리하는 폰트 설치 기록이 있습니다. 안전한 폰트 재설치·업데이트는 아직 지원하지 않으므로 기존 설치를 먼저 확인하세요."
+      }
+    },
     "config": {
       "title": "번역 설정",
       "versionFrom": "출처 {source} · {confidence}",
@@ -271,6 +308,7 @@
     "operation": {
       "openTarget": "이 작업의 게임 열기",
       "installing": "번역기 설치",
+      "installingFont": "추천 폰트 설치",
       "removing": "번역기 제거",
       "installingShort": "설치 중…",
       "removingShort": "제거 중…",
@@ -289,6 +327,7 @@
       "planChanged": "게임 또는 설치 계획이 바뀌었습니다. 게임을 다시 열고 최신 계획을 선택하세요.",
       "needsAction": "자동 단계가 끝났습니다 — 사용자가 마저 할 작업이 있습니다.",
       "installComplete": "설치 완료",
+      "fontComplete": "추천 폰트 설정 완료",
       "removeComplete": "제거 완료",
       "refreshFailed": "파일 작업은 끝났지만 최신 상태를 불러오지 못했습니다.",
       "failedRolledBack": "작업이 실패했습니다. 변경 사항은 되돌렸습니다.",

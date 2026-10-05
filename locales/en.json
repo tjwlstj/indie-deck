@@ -82,6 +82,17 @@
       "translator-dormant": "{translator} is no longer actively maintained.",
       "font-bundle-unresolved": "A CJK fallback font is needed but no TMP bundle matches this Unity version - use the TextMeshPro 3.2+ system-font option instead."
     },
+    "font": {
+      "not-unity": "TMP fallback bundles apply to Unity games only.",
+      "no-target-need": "No CJK fallback bundle is recommended for this target language.",
+      "not-tmp": "TextMeshPro was not detected; this TMP bundle is not needed.",
+      "tmp-unknown": "TextMeshPro detection is incomplete. Run a deep scan before choosing a TMP font.",
+      "unity-unknown": "The Unity version is unknown, so a matching TMP bundle cannot be chosen safely.",
+      "no-matching-bundle": "No registered TMP bundle matches Unity {unity} and this language.",
+      "installed": "{file} is present and selected as the TMP fallback font. Runtime rendering still needs to be checked in the game.",
+      "recommended": "{file} matches the registered Unity {unity} range. It supplies Korean, Japanese and Chinese fallback glyphs; test rendering in the game after installation.",
+      "translator-required": "A single compatible installed XUnity.AutoTranslator variant and its loader are required before adding a font separately."
+    },
     "step": {
       "download-loader": "Download {loader} {version} ({arch})",
       "extract-loader": "Extract {loader} into the game folder",
@@ -96,6 +107,7 @@
       "translator-manual": "{translator} must be installed by hand ({url})",
       "download-fonts": "Download the TMP font bundle archive ({asset})",
       "copy-font": "Copy {file} into the game folder",
+      "configure-font": "Set only the TMP fallback font in {path} to {file}",
       "write-config": "Write {path} (created on first launch if missing)"
     },
     "config": {
@@ -240,6 +252,31 @@
       "font": "font {file}",
       "noLoaderNeeded": "no loader needed"
     },
+    "font": {
+      "title": "Recommended TMP font",
+      "registeredRange": "Registered compatibility range",
+      "inferred": "Community / inferred range",
+      "unityRange": "Unity {min}–{max}",
+      "fallbackOnly": "Uses TMP fallback only: the game keeps its original font and uses this bundle for missing glyphs.",
+      "runtimeCaveat": "Chosen from detected Unity version and registered ranges. Font rendering in this game has not been tested.",
+      "configured": "Font file present · TMP fallback linked",
+      "presentNotConfigured": "Font file present · TMP fallback is not linked",
+      "source": "Font bundle source",
+      "install": "Add recommended font",
+      "linkFallback": "Link recommended TMP fallback",
+      "standalone": "Adds only the recommended font and fallback setting; the installed translator is not reinstalled.",
+      "withTranslator": "Choose “Install recommended TMP font too” in a translator option below.",
+      "include": "Install recommended TMP font too",
+      "choiceHelp": "{file} · TMP fallback; original game font stays unchanged",
+      "block": {
+        "receipt": "An install record is damaged or unsupported. Review it before changing the font or settings.",
+        "payload": "The installed translator is duplicated, mismatched or changed. Review it before adding a font.",
+        "config": "The installed translator’s existing config path and TMP fallback key could not be confirmed. Run the game once and check its translation settings first.",
+        "linkedPath": "A font, config or install-record path is a linked folder or not a regular file. Review the path before changing files.",
+        "existingFont": "A font file with this name already exists. Turn off the bundled font option, then use the font card to link the existing file.",
+        "managedFont": "This font already has an IndieDeck install record. Safe font reinstallation and updates are not supported yet; review the existing installation first."
+      }
+    },
     "config": {
       "title": "Translation settings",
       "versionFrom": "from {source} · {confidence}",
@@ -271,6 +308,7 @@
     "operation": {
       "openTarget": "Open the game for this task",
       "installing": "Installing translator",
+      "installingFont": "Installing recommended font",
       "removing": "Removing translator",
       "installingShort": "Installing…",
       "removingShort": "Removing…",
@@ -289,6 +327,7 @@
       "planChanged": "The game or install plan changed. Reopen the game and choose a fresh plan.",
       "needsAction": "Automatic steps finished — more action is required.",
       "installComplete": "Installation complete",
+      "fontComplete": "Recommended font setup complete",
       "removeComplete": "Removal complete",
       "refreshFailed": "The file operation finished, but the latest state could not be loaded.",
       "failedRolledBack": "The task failed. Changes were rolled back.",

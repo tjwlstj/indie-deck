@@ -82,13 +82,27 @@ version, so a bundle that works in one game shows boxes in the next.
 | 6000.x (Unity 6) | `arialuni_sdf_u6000` | [verified] |
 
 Copy the bundle into the game root and set `FallbackFontTextMeshPro` (not
-`OverrideFontTextMeshPro`, which replaces every font in the game). IndieDeck does
-both automatically, and `indiedeck check` flags folders where the bundles present
+`OverrideFontTextMeshPro`, which replaces every font in the game). The launcher
+offers an optional font checkbox alongside translator installation and a
+separate **Add recommended font** action for one compatible installed XUnity
+variant. The separate action reads the game's current target language, leaves
+the translator/loader payload untouched and patches only that fallback key.
+An already present bundle can be linked without overwriting it; a same-name file
+blocks the combined copy plan until the font option is turned off. A damaged or
+ambiguous installation is not a permission to force a font install.
+
+These are registry-range recommendations, not game-rendering certifications;
+upstream also cautions that its prebuilt bundles are not thoroughly tested. See
+the [official font guidance](https://github.com/bbepis/XUnity.AutoTranslator#font-overriding).
+Unknown Unity/TMP evidence and non-TMP games have no forced bundle action.
+`indiedeck check` flags folders where the bundles present
 do not match the game's Unity line — a very common state, because people copy the
 whole set in and assume one of them will take.
 
 On TextMeshPro 3.2.0+ you can name an installed system font instead
 (`Malgun Gothic`, `Meiryo`) and skip atlas version-matching entirely. [verified]
+IndieDeck does not currently establish the installed TMP package version, so it
+does not automatically assume that this system-font route is available.
 
 ### Old Mono and TLS
 

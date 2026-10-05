@@ -18,6 +18,20 @@ const success: OperationResult = {
   refreshStatus: 'complete', postState: { gameId, gameRevision: 2 },
 };
 
+test('font maintenance uses the same queue, correlation and recoverable outcome', async () => {
+  const h = harness();
+  h.manager.start({ gameId, kind: 'install-font', requestId: 'font-request', planId: 'opaque-font-plan' }, async (report) => {
+    report({ phase: 'configure', stepIndex: 2, stepCount: 3 });
+    return success;
+  });
+  assert.equal(h.manager.current().active?.kind, 'install-font');
+  assert.throws(() => h.manager.start({ gameId, kind: 'install', requestId: 'overlap' }, async () => success), /already running/);
+  await h.queue[0]!();
+  assert.equal(h.outcomes[0]?.kind, 'install-font');
+  assert.equal(h.outcomes[0]?.planId, 'opaque-font-plan');
+  assert.equal(h.outcomes[0]?.refreshStatus, 'complete');
+});
+
 test('start reserves one slot and exposes queued progress before the file writer runs', async () => {
   const h = harness();
   let writes = 0;

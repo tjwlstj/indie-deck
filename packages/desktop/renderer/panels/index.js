@@ -7,13 +7,14 @@
  * appears at all.
  */
 
-import { renderAudit, renderFacts, renderHeader, renderMods, renderPlans } from './detail.js';
+import { renderAudit, renderFacts, renderFontRecommendation, renderHeader, renderMods, renderPlans } from './detail.js';
 import { renderConfigSection } from './config.js';
 
 export const SECTIONS = [
   { id: 'header', render: renderHeader },
   { id: 'facts', render: renderFacts },
   { id: 'audit', render: renderAudit, when: (ctx) => ctx.audit.issues.length > 0 },
+  { id: 'font', render: renderFontRecommendation, when: (ctx) => Boolean(ctx.fontRecommendation) },
   { id: 'plans', render: renderPlans },
   {
     id: 'config',

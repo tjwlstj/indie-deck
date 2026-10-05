@@ -454,6 +454,64 @@ button.ghost {
   order: 3;
 }
 
+.font-recommendation {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  background: var(--bg-raised);
+}
+
+.font-recommendation.installed { border-left-color: var(--ok); }
+.font-recommendation.unavailable { border-left-color: var(--warn); }
+.font-recommendation.not-needed { border-left-color: var(--line); }
+
+.font-head,
+.font-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.font-file { word-break: break-word; }
+
+.font-description {
+  color: var(--text-dim);
+  margin: 6px 0;
+  font-size: 12px;
+}
+
+.font-help,
+.font-choice-help {
+  color: var(--text-faint);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.font-help { margin: 6px 0; }
+
+.font-actions { margin-top: 9px; }
+.font-actions .install-font { margin-left: auto; }
+.font-actions a { color: var(--accent); font-size: 11.5px; text-decoration: none; }
+.font-actions a:hover { text-decoration: underline; }
+.font-state { color: var(--warn); font-size: 11.5px; margin: 7px 0; }
+.font-state.configured { color: var(--ok); }
+.font-block-reason { color: var(--warn); font-size: 11.5px; margin: 6px 0; }
+
+.font-choice {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 9px;
+  color: var(--text-dim);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.font-choice input { margin: 0; accent-color: var(--accent); }
+.font-choice-help { display: block; margin: 3px 0 0 21px; }
+
 .finding {
   display: flex;
   gap: 7px;

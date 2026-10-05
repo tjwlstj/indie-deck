@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { loadRegistry, refreshLibrary, saveConfig } from '../packages/core/dist/index.js';
 
 // End-to-end desktop verification against disposable games and mocked release
@@ -16,6 +16,7 @@ const temp = await fs.mkdtemp(path.join(tempParent, 'indiedeck-desktop-flow-'));
 const dataDir = path.join(temp, 'data');
 const gamesRoot = path.join(temp, 'games');
 const archive = path.join(temp, 'translator.zip');
+const fontArchive = path.join(temp, 'fonts.7z');
 const registry = loadRegistry();
 const version = registry.translators.find((t) => t.id === 'xunity-autotranslator').versions[0].version;
 
@@ -71,6 +72,7 @@ try {
       'Game.exe': fakeExe(), 'UnityPlayer.dll': 'stub',
       'Game_Data/globalgamemanagers': '2019.4.0f1',
       'Game_Data/Managed/Assembly-CSharp.dll': 'stub',
+      'Game_Data/Managed/Unity.TextMeshPro.dll': 'stub',
       'BepInEx/core/BepInEx.dll': Buffer.from('ProductVersion5.4.23.5\0', 'utf16le'),
     };
     for (const [file, content] of Object.entries(files)) {
@@ -82,8 +84,16 @@ try {
     ['BepInEx/plugins/XUnity.AutoTranslator/XUnity.AutoTranslator.dll', Buffer.from(`ProductVersion${version}\0`, 'utf16le')],
     ['BepInEx/plugins/XUnity.AutoTranslator/smoke.bin', crypto.randomBytes(4 * 1024 * 1024)],
   ]));
+  const fontDir = path.join(temp, 'font-source');
+  await fs.mkdir(fontDir);
+  for (const bundle of registry.fonts.bundles) await fs.writeFile(path.join(fontDir, bundle.file), `offline atlas fixture ${bundle.id}`);
+  // A real libarchive-written 7z fixture exercises the local extractor; these
+  // bytes are NOT a Unity atlas or a rendering/real-upstream compatibility test.
+  const tarCommand = process.platform === 'win32' ? path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe') : 'bsdtar';
+  const packed = spawnSync(tarCommand, ['--format=7zip', '-cf', fontArchive, '-C', fontDir, '.'], { windowsHide: true, encoding: 'utf8' });
+  if (packed.status !== 0) throw new Error(`Cannot create the offline 7z font fixture: ${packed.stderr || packed.error}`);
   await saveConfig({ roots: [gamesRoot], locale, defaults: {
-    targetLanguage: 'en', sourceLanguage: 'ja', endpoint: 'GoogleTranslate',
+    targetLanguage: 'ko', sourceLanguage: 'ja', endpoint: 'GoogleTranslate',
   }, scanDepth: 2 }, dataDir);
   const index = await refreshLibrary(registry, { dataDir });
   if (index.games.length !== 2) throw new Error('The disposable game fixtures did not detect.');
@@ -100,7 +110,9 @@ try {
     cwd: path.resolve('.'), windowsHide: true, stdio: 'inherit',
     env: { ...process.env, INDIEDECK_HOME: dataDir, INDIEDECK_SMOKE: '1', INDIEDECK_SMOKE_FLOW: '1',
       INDIEDECK_SMOKE_ARCHIVE: archive, INDIEDECK_SMOKE_VERSION: version,
+      INDIEDECK_SMOKE_FONT_ARCHIVE: fontArchive, INDIEDECK_SMOKE_FONT_ASSET: registry.fonts.source.asset,
       INDIEDECK_FLOW_SCREENSHOT: screenshot, INDIEDECK_FLOW_PROGRESS_SCREENSHOT: progressScreenshot,
+      INDIEDECK_FONT_SCREENSHOT: path.resolve('out', `desktop-fonts-${locale}.png`),
       INDIEDECK_DISABLE_UPDATES: '1',
       INDIEDECK_REGISTRY: path.resolve('registry') },
   });

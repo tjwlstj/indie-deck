@@ -52,7 +52,8 @@ down, which is why the default depth is 2.
 3. Every rule in `compat.json` whose `when` matches is applied: `block` removes
    the candidate, `warn` scores it down and surfaces a finding, `prefer` shifts
    the score, `info` annotates.
-4. If a rule asks for a font bundle, one is picked for the game's Unity line.
+4. If a rule asks for a font bundle, one is picked for the game's Unity line,
+   unless `includeFont: false` is selected.
 5. Concrete install steps and a config patch are generated.
 
 Two deliberate properties:
@@ -62,6 +63,18 @@ Two deliberate properties:
   something is not evidence against it.
 - **Unverified rules cannot block.** They are scored down far more gently than
   verified warnings, because their job is to inform, not to override the user.
+
+This is a curated rule engine, not learned recommendation: the game list is
+disk-scanned, while the signatures, provider catalogue and score adjustments are
+declared registry data. Detection confidence is not runtime success probability.
+
+`recommendGameFont` reports a declared Unity/TMP/glyph match with its original
+confidence. `resolveFontPlan` is a narrower maintenance path: one compatible
+installed XUnity variant plus its loader, known Unity version and positive TMP
+evidence are required. It never installs a loader or translator payload, and
+only patches `Behaviour.FallbackFontTextMeshPro`. A present atlas is reused.
+Unknown evidence prevents this specific font action even though normal
+translator resolution may still return advisory candidates.
 
 ## install
 
@@ -123,6 +136,22 @@ out-of-scope backups, and protects the detected executable and its containing
 directories. Legacy records need manual review before desktop removal. This
 does not guarantee atomic exclusion against an external process replacing a
 target after validation.
+
+Standalone fonts have a separate v2 `font` receipt. The translator's original
+hash and baseline backup are not advanced. Health recognises one intact font
+overlay only when its config post-hash matches the current file and its safe
+internal backup hashes to the translator's prior config bytes. Changed
+predecessors, damaged fonts, linked paths or ambiguous receipts remain drift.
+Desktop removal undoes the font overlay before the translator receipt, restoring
+the predecessor before the original removal checks. Removing a translator
+receipt alone through the core API remains hash-protected and may preserve the
+overlaid config rather than remove it.
+
+The desktop caches separate authoritative with/without-font plans, exposes only
+opaque ids, validates the selected operation purpose, and rebuilds the plan from
+fresh disk evidence before writing. Font/config/metadata junctions and existing
+same-name atlas overwrites are rejected. This remains a process-local preflight,
+not atomic exclusion against a concurrent external writer.
 
 ## audit
 

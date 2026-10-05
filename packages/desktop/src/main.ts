@@ -2,7 +2,7 @@ import { BrowserWindow, app, dialog, ipcMain, shell } from 'electron';
 import electronUpdater from 'electron-updater';
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
-import { writeFile } from 'node:fs/promises';
+import { readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -37,6 +37,8 @@ import {
   refreshLibraryGame,
   removeRoot,
   resolvePlans,
+  resolveFontPlan,
+  recommendGameFont,
   saveConfig,
   setModEnabled,
   summarisePlans,
@@ -46,6 +48,7 @@ import {
   type LauncherConfig,
   type Registry,
   type ResolveOptions,
+  type FontResolveOptions,
   type ConfigChange,
   type ConfigSchema,
   type TranslatorPlan,
@@ -55,6 +58,7 @@ import {
 } from '@indiedeck/core';
 import { OperationManager, type OperationRequest, type OperationResult, type ProgressUpdate } from './operations.ts';
 import { readSafeRemovalReceipts } from './receipt-guard.ts';
+import { fontWriteBlockKey } from './font-guard.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const { autoUpdater } = electronUpdater;
@@ -116,7 +120,7 @@ function markGameChanged(gameId: string): number {
  */
 const gamePathsById = new Map<string, string>();
 const plansById = new Map<string, TranslatorPlan>();
-const planOptionsById = new Map<string, ResolveOptions>();
+const planOptionsById = new Map<string, FontResolveOptions>();
 
 function idFor(gamePath: string): string {
   return crypto.createHash('sha1').update(path.resolve(gamePath).toLowerCase()).digest('hex').slice(0, 16);
@@ -155,7 +159,7 @@ function withId<T extends { path: string }>(profile: T): T & { id: string } {
 }
 
 /** Recomputes plans for a game and keeps the authoritative copies main-side. */
-function cachePlans(gameId: string, plans: TranslatorPlan[], options: ResolveOptions): (TranslatorPlan & { id: string })[] {
+function cachePlans(gameId: string, plans: TranslatorPlan[], options: FontResolveOptions): (TranslatorPlan & { id: string })[] {
   // Retain a small history: an older detail request finishing later must not
   // invalidate the ids already returned by the newer selected-game request.
   // Every install still rebuilds and compares its plan immediately before use.
@@ -363,6 +367,9 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
   const start = await evaluate<{ gameId: string; operationId?: string; immediate: boolean }>(`(async () => {
     const { state } = await import('./store.js');
     const gameId = state.selected;
+    const font = document.querySelector('#detail .plan .include-font');
+    if (!font?.checked || font.disabled) throw new Error('The font opt-out control was not available.');
+    font.checked = false; font.dispatchEvent(new Event('change'));
     const button = document.querySelector('#detail .plan .install');
     if (!button) throw new Error('No viable translator plan in the smoke fixture.');
     button.click();
@@ -407,6 +414,46 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
     return state.detail?.profile.id === ${JSON.stringify(start.gameId)}
       && !!document.querySelector('#detail .detail-sticky .operation-card.ok');
   })()`, 'completed operation detail');
+  const fontBefore = await evaluate<{ bundles: string[]; hasPlan: boolean; recommendation: unknown }>(`(async () => {
+    const { state } = await import('./store.js');
+    return { bundles: state.detail?.profile.installedFontBundles, hasPlan: !!state.detail.fontPlan,
+      recommendation: state.detail?.fontRecommendation };
+  })()`);
+  if (fontBefore.bundles.length !== 0 || !fontBefore.hasPlan) throw new Error(`Font opt-out did not allow later font maintenance: ${JSON.stringify(fontBefore)}`);
+  const gamePath = requireGamePath(start.gameId);
+  const dllPath = path.join(gamePath, 'BepInEx/plugins/XUnity.AutoTranslator/XUnity.AutoTranslator.dll');
+  const beforeHash = crypto.createHash('sha256').update(await readFile(dllPath)).digest('hex');
+  const beforeMtime = (await stat(dllPath)).mtimeMs;
+  await evaluate(`document.querySelector('#detail .install-font').click()`);
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return state.operation?.kind === 'install-font' && !!state.operation.outcome;
+  })()`, 'standalone font outcome');
+  const fontAdded = await evaluate<{ status: string; refreshStatus: string; recommendation: string; bundles: string[]; receipts: string[] }>(`(async () => {
+    const { state } = await import('./store.js');
+    return { status: state.operation.outcome.status, refreshStatus: state.operation.outcome.refreshStatus,
+      recommendation: state.detail.fontRecommendation.status, bundles: state.detail.profile.installedFontBundles,
+      receipts: state.detail.receipts.map((receipt) => receipt.kind) };
+  })()`);
+  if (fontAdded.status !== 'success' || fontAdded.refreshStatus !== 'complete' || fontAdded.recommendation !== 'installed' ||
+      !fontAdded.bundles.includes('arialuni_sdf_u2019') || !fontAdded.receipts.includes('font')) {
+    throw new Error(`Font maintenance did not refresh its file/config/receipt state: ${JSON.stringify(fontAdded)}`);
+  }
+  if (beforeHash !== crypto.createHash('sha256').update(await readFile(dllPath)).digest('hex') || beforeMtime !== (await stat(dllPath)).mtimeMs) {
+    throw new Error('Font-only maintenance rewrote the translator payload.');
+  }
+  const fontConfigText = await readFile(path.join(gamePath, 'BepInEx/config/AutoTranslatorConfig.ini'), 'utf8');
+  if (!fontConfigText.includes('Language=ko') || !fontConfigText.includes('Endpoint=GoogleTranslate') || !fontConfigText.includes('FallbackFontTextMeshPro=arialuni_sdf_u2019')) {
+    throw new Error('Font-only maintenance changed or omitted the language/provider/fallback settings.');
+  }
+  const evidence = collectTranslatorEvidence(registry, requireDetectedGame(start.gameId), { targetLanguage: 'ko' });
+  if (evidence.some((entry) => entry.healthIssues.includes('managed-drift'))) throw new Error('A legitimate font overlay was classified as translator drift.');
+  const fontShot = process.env['INDIEDECK_FONT_SCREENSHOT'];
+  if (fontShot) {
+    await evaluate(`document.querySelector('#detail .font-recommendation').scrollIntoView({ block: 'center' })`);
+    await evaluate(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
+    await writeFile(fontShot, (await window.webContents.capturePage()).toPNG());
+  }
   window.setSize(1000, 680);
   await evaluate(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
   const visible = await evaluate<boolean>(`(() => {
@@ -431,7 +478,35 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
   if (removed.status !== 'success' || removed.translated !== 0 || removed.revision <= installed.revision) {
     throw new Error(`Removal did not refresh translator badges/statistics: ${JSON.stringify(removed)}`);
   }
-  console.log('[smoke] install → settings → renderer reload → postState → sticky actions → uninstall passed');
+  if (requireDetectedGame(start.gameId).installedFontBundles.length) throw new Error('Uninstall left the managed standalone font behind.');
+  // A different game keeps the default opt-in and exercises the integrated
+  // translator + font plan rather than reusing the standalone path above.
+  await evaluate(`document.querySelectorAll('#gameList .game')[1].click()`);
+  await waitFor(`!!document.querySelector('#detail .plan .include-font')?.checked`, 'second game font opt-in');
+  await evaluate(`document.querySelector('#detail .plan .install').click()`);
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return state.operation?.kind === 'install' && !!state.operation.outcome;
+  })()`, 'integrated font install');
+  const integrated = await evaluate<boolean>(`(async () => {
+    const { state } = await import('./store.js');
+    return state.operation.outcome.status === 'success' && state.detail.fontRecommendation.status === 'installed'
+      && state.detail.profile.installedFontBundles.includes('arialuni_sdf_u2019')
+      && state.detail.receipts.every((receipt) => receipt.kind !== 'font');
+  })()`);
+  if (!integrated) throw new Error('The default integrated translator/font plan did not finish safely.');
+  await evaluate(`document.querySelector('#detail .uninstall').click()`);
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return state.operation?.kind === 'uninstall' && !!state.operation.outcome;
+  })()`, 'integrated font removal');
+  const secondRemoved = await evaluate<boolean>(`(async () => {
+    const { state } = await import('./store.js');
+    return state.operation.outcome.status === 'success' && state.stats.withTranslator === 0
+      && state.detail.profile.installedFontBundles.length === 0;
+  })()`);
+  if (!secondRemoved) throw new Error('Integrated font removal left managed files or stale statistics.');
+  console.log('[smoke] font opt-out → translator install → reload → standalone font + config/receipt refresh → ordered removal → integrated font install/removal passed');
 }
 
 /* ------------------------------------------------------------ updates */
@@ -517,6 +592,7 @@ function safeResolveOptions(options?: ResolveOptions): ResolveOptions {
     sourceLanguage: String(options?.sourceLanguage ?? 'ja').slice(0, 40),
     endpoint: String(options?.endpoint ?? 'GoogleTranslate').slice(0, 100),
     includeNonViable: true,
+    ...(typeof options?.includeFont === 'boolean' ? { includeFont: options.includeFont } : {}),
   };
 }
 
@@ -538,19 +614,55 @@ async function translatorConfigPayload(profile: GameProfile, requested?: string)
 
 async function gameDetailPayload(gameId: string, options: ResolveOptions, detected?: GameProfile) {
   const profile = localiseProfile(registry, detected ?? requireDetectedGame(gameId));
-  const configTranslator = profile.installedTranslators.find((entry) => registry.configSchemas.has(entry.translatorId));
+  const configTranslator = profile.installedTranslators.find((entry) => entry.translatorId === 'xunity-autotranslator')
+    ?? profile.installedTranslators.find((entry) => registry.configSchemas.has(entry.translatorId));
   const receiptsEvidence = readReceiptEvidence(profile.path);
   const installEvidence = collectTranslatorEvidence(registry, profile, options);
+  const translatorConfig = configTranslator ? await translatorConfigPayload(profile, configTranslator.translatorId) : null;
+  const fontOptions = installedFontOptions(options, translatorConfig?.config);
+  const fontRecommendation = recommendGameFont(registry, profile, fontOptions);
+  const standalone = resolveFontPlan(registry, profile, fontOptions);
+  let fontPlan;
+  if (standalone) {
+    const key = await fontWriteBlockKey(profile, standalone, receiptsEvidence, installEvidence, translatorConfig?.config);
+    if (key) {
+      fontRecommendation.installable = false;
+      fontRecommendation.blockReasonKey = `ui.font.block.${key}`;
+      fontRecommendation.blockReason = t(fontRecommendation.blockReasonKey);
+    } else fontPlan = cachePlans(gameId, [standalone], fontOptions)[0];
+  }
+  const withoutFontOptions = { ...options, includeFont: false };
+  const withoutFonts = cachePlans(gameId, summarisePlans(resolvePlans(registry, profile, withoutFontOptions)), withoutFontOptions);
+  const plans = await Promise.all(cachePlans(gameId, summarisePlans(resolvePlans(registry, profile, options)), options)
+    .map(async (plan) => {
+      const key = await fontWriteBlockKey(profile, plan, receiptsEvidence, installEvidence);
+      const without = plan.fontBundle ? withoutFonts.find((candidate) => candidate.translatorId === plan.translatorId && candidate.variantId === plan.variantId && candidate.version === plan.version) : undefined;
+      return {
+        ...plan,
+        installBlockReason: installBlockReason(plan, receiptsEvidence, installEvidence) ?? (key ? t(`ui.font.block.${key}`) : undefined),
+        ...(without ? { withoutFontPlanId: without.id, withoutFontInstallBlockReason: installBlockReason(without, receiptsEvidence, installEvidence) } : {}),
+      };
+    }));
   return {
     profile: withId(profile),
     gameRevision: gameRevisions.get(gameId) ?? 0,
-    plans: cachePlans(gameId, summarisePlans(resolvePlans(registry, profile, options)), options)
-      .map((plan) => ({ ...plan, installBlockReason: installBlockReason(plan, receiptsEvidence, installEvidence) })),
+    plans,
+    fontRecommendation,
+    fontPlan,
     audit: auditGame(registry, profile, options),
     receipts: await readReceipts(profile.path),
     mods: await listMods(registry, profile),
     hosts: modHosts(registry, profile).map((h) => ({ loaderId: h.loader.id, name: h.loader.name, dir: h.dir })),
-    translatorConfig: configTranslator ? await translatorConfigPayload(profile, configTranslator.translatorId) : null,
+    translatorConfig,
+  };
+}
+
+function installedFontOptions(options: ResolveOptions, config?: Awaited<ReturnType<typeof translatorConfigPayload>>['config']): FontResolveOptions {
+  if (config?.translatorId !== 'xunity-autotranslator' || !config.location.exists) return options;
+  return {
+    ...options,
+    targetLanguage: config.values.find((value) => value.id === 'xunity.targetLanguage')?.value ?? options.targetLanguage,
+    currentFallbackFontTextMeshPro: config.values.find((value) => value.id === 'xunity.fallbackFontTextMeshPro')?.value ?? '',
   };
 }
 
@@ -588,6 +700,7 @@ async function refreshGameState(gameId: string, report: (update: ProgressUpdate)
 function planFingerprint(plan: TranslatorPlan): string {
   return JSON.stringify({
     translatorId: plan.translatorId, variantId: plan.variantId, version: plan.version,
+    purpose: plan.purpose,
     loader: plan.loader, fontBundle: plan.fontBundle, viable: plan.viable, config: plan.config,
     steps: plan.steps.map(({ action, source, dest, details }) => ({ action, source, dest, details })),
   });
@@ -627,7 +740,7 @@ function installBlockReason(
 }
 
 async function runMaintenance(
-  request: OperationRequest, plan: TranslatorPlan | undefined, options: ResolveOptions,
+  request: OperationRequest, plan: TranslatorPlan | undefined, options: FontResolveOptions,
   report: (update: ProgressUpdate) => void,
 ): Promise<OperationResult> {
   let result: OperationResult = {
@@ -639,13 +752,18 @@ async function runMaintenance(
     report({ phase: 'preflight' });
     const profile = requireDetectedGame(request.gameId);
     validateManagedReceipts(profile.path);
-    if (request.kind === 'install') {
+    if (request.kind === 'install' || request.kind === 'install-font') {
       if (!plan?.viable) throw new Error('That plan cannot be installed.');
-      const fresh = summarisePlans(resolvePlans(registry, profile, options))
-        .find((candidate) => planFingerprint(candidate) === planFingerprint(plan));
-      if (!fresh?.viable) throw new Error(t('ui.operation.planChanged', undefined,
+      const fontConfig = request.kind === 'install-font' ? (await translatorConfigPayload(profile, 'xunity-autotranslator')).config : undefined;
+      const fresh = request.kind === 'install-font'
+        ? resolveFontPlan(registry, profile, installedFontOptions(options, fontConfig))
+        : summarisePlans(resolvePlans(registry, profile, options)).find((candidate) => planFingerprint(candidate) === planFingerprint(plan));
+      if (!fresh?.viable || planFingerprint(fresh) !== planFingerprint(plan)) throw new Error(t('ui.operation.planChanged', undefined,
         'The game or install plan changed. Reopen the game and choose a fresh plan.'));
-      const blocked = installBlockReason(fresh, readReceiptEvidence(profile.path), collectTranslatorEvidence(registry, profile, options));
+      const receiptsEvidence = readReceiptEvidence(profile.path);
+      const installations = collectTranslatorEvidence(registry, profile, options);
+      const key = await fontWriteBlockKey(profile, fresh, receiptsEvidence, installations, fontConfig);
+      const blocked = (request.kind === 'install' ? installBlockReason(fresh, receiptsEvidence, installations) : undefined) ?? (key ? t(`ui.font.block.${key}`) : undefined);
       if (blocked) throw new Error(blocked);
       const applied = await applyPlan(fresh, {
         onEvent: (event) => report(event),
@@ -661,6 +779,8 @@ async function runMaintenance(
       };
     } else {
       const receipts = await readSafeRemovalReceipts(profile.path, profile.executable ? [profile.executable] : []);
+      // Undo the font config overlay before the translator's original receipt.
+      receipts.sort((a, b) => Number(b.kind === 'font') - Number(a.kind === 'font'));
       const removed = [];
       result.mutationStatus = 'partial';
       for (let index = 0; index < receipts.length; index += 1) {
@@ -807,9 +927,10 @@ function register(): void {
     requireGamePath(input.gameId);
     const request: OperationRequest = {
       requestId: input.requestId, gameId: input.gameId, kind: input.kind,
-      ...(input.kind === 'install' ? { planId: input.planId } : {}),
+      ...(input.kind === 'install' || input.kind === 'install-font' ? { planId: input.planId } : {}),
     };
-    const plan = request.kind === 'install' ? requirePlan(request.gameId, request.planId) : undefined;
+    const plan = request.kind === 'install' || request.kind === 'install-font' ? requirePlan(request.gameId, request.planId) : undefined;
+    if (plan && (request.kind === 'install-font') !== (plan.purpose === 'font')) throw new Error('The operation kind does not match the selected plan.');
     const options = planOptionsById.get(request.planId ?? '') ?? {};
     if (plan && !plan.viable) throw new Error('That plan cannot be installed.');
     return operations.start(request, (report) => runMaintenance(request, plan, options, report));

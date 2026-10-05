@@ -18,9 +18,11 @@ const required = [
   '\\packages\\desktop\\dist\\main.js',
   '\\packages\\desktop\\dist\\operations.js',
   '\\packages\\desktop\\dist\\receipt-guard.js',
+  '\\packages\\desktop\\dist\\font-guard.js',
   '\\packages\\desktop\\preload.cjs',
   '\\packages\\desktop\\renderer\\index.html',
   '\\packages\\desktop\\renderer\\state-model.js',
+  '\\packages\\desktop\\renderer\\font-options.js',
   '\\node_modules\\@indiedeck\\core\\dist\\index.js',
   '\\node_modules\\electron-updater\\out\\main.js',
   '\\registry\\engines.json',
@@ -44,6 +46,26 @@ if (missing.length > 0) {
 }
 
 console.log(`[package] ${required.length} required runtime entries found in ${archive}`);
+
+const currentRuntime = [
+  ['packages/desktop/dist/main.js', 'packages/desktop/dist/main.js'],
+  ['packages/desktop/dist/font-guard.js', 'packages/desktop/dist/font-guard.js'],
+  ['packages/desktop/renderer/panels/detail.js', 'packages/desktop/renderer/panels/detail.js'],
+  ['packages/desktop/renderer/font-options.js', 'packages/desktop/renderer/font-options.js'],
+  ['node_modules/@indiedeck/core/dist/resolve/index.js', 'packages/core/dist/resolve/index.js'],
+  ['node_modules/@indiedeck/core/dist/install/apply.js', 'packages/core/dist/install/apply.js'],
+  ['node_modules/@indiedeck/core/dist/health/index.js', 'packages/core/dist/health/index.js'],
+  ['locales/en.json', 'locales/en.json'],
+  ['locales/ko.json', 'locales/ko.json'],
+];
+for (const [packagedPath, sourcePath] of currentRuntime) {
+  const hash = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
+  if (hash(extractFile(archive, path.normalize(packagedPath))) !== hash(fs.readFileSync(sourcePath))) {
+    console.error(`[package] stale runtime content: ${packagedPath}`);
+    process.exit(1);
+  }
+}
+console.log(`[package] ${currentRuntime.length} critical runtime files match the current build by SHA-256`);
 
 const version = JSON.parse(
   fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'),

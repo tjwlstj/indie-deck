@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { fontChoiceKey, selectedFontPlan } from '../../desktop/renderer/font-options.js';
 import {
   acceptDetailResponse,
   applyOperationHandshake,
@@ -26,6 +27,38 @@ function rendererState(selected: string | null = null) {
     detail: null,
   };
 }
+
+test('font choice identity survives newly issued opaque plan ids and keeps games/builds distinct', () => {
+  const plan = { id: 'first', translatorId: 'xunity', variantId: 'bepinex', version: '5.5.2' };
+  const choices = new Map([[fontChoiceKey('game-a', plan), false]]);
+  assert.equal(choices.get(fontChoiceKey('game-a', { ...plan, id: 'fresh' })), false);
+  assert.notEqual(fontChoiceKey('game-a', plan), fontChoiceKey('game-b', plan));
+  assert.notEqual(fontChoiceKey('game-a', plan), fontChoiceKey('game-a', { ...plan, version: '5.6.0' }));
+  assert.notEqual(fontChoiceKey('game-a', plan), fontChoiceKey('game-a', { ...plan, variantId: 'melon' }));
+});
+
+test('font opt-out selects only the separately issued no-font plan and its own block reason', () => {
+  const plan = {
+    id: 'with-font', purpose: 'translator', withoutFontPlanId: 'without-font',
+    fontBundle: { id: 'tmp-2019', file: 'font.bundle' },
+    installBlockReason: 'Existing font must be preserved',
+  };
+  assert.equal(selectedFontPlan(plan, true), plan);
+  const noFont = selectedFontPlan(plan, false);
+  assert.equal(noFont.id, 'without-font');
+  assert.equal(noFont.purpose, 'translator');
+  assert.equal(noFont.fontBundle, undefined);
+  assert.equal(noFont.installBlockReason, undefined);
+  assert.equal(plan.id, 'with-font');
+  assert.equal(plan.installBlockReason, 'Existing font must be preserved');
+
+  assert.equal(
+    selectedFontPlan({ ...plan, withoutFontInstallBlockReason: 'Translator receipt already exists' }, false).installBlockReason,
+    'Translator receipt already exists',
+  );
+  const single = { id: 'only-plan', purpose: 'translator' };
+  assert.equal(selectedFontPlan(single, false), single);
+});
 
 test('operation progress is correlated by request/operation id and monotonic sequence', () => {
   let operation = createProvisionalOperation({ requestId: 'request-a', gameId: 'game-a', kind: 'install', planId: 'plan-a' });
