@@ -140,9 +140,19 @@
           </div>
         </section>
 
-        <section class="settings-section">
+        <section id="librarySettings" class="settings-section">
           <h2 data-i18n="ui.settings.library">Library</h2>
           <ul id="rootList" class="roots-list settings-roots"></ul>
+          <div class="settings-row">
+            <label for="scanDepth"><span data-i18n="ui.scan.depth">Subfolder depth</span></label>
+            <select id="scanDepth"></select>
+          </div>
+          <p class="settings-hint" data-i18n="ui.scan.depthHint">Depth is counted from each registered folder. Six levels is recommended for a whole drive; a detected game stops further traversal into its data folders.</p>
+          <p id="scanLegacyHint" class="scan-warning" hidden data-i18n="ui.scan.legacyDepth">Your saved depth is 2. For a whole drive, save depth 6 and run a full rescan to include deeper folders.</p>
+          <div class="settings-save">
+            <button id="saveScanSettings" class="primary" data-i18n="ui.scan.save">Save scan settings</button>
+            <span id="scanSettingsSaved" class="save-state" role="status"></span>
+          </div>
           <div class="settings-row actions-inline">
             <button id="addRoot" class="ghost" data-i18n="ui.app.addFolder">Add folder</button>
             <button id="rescanRoots" class="ghost" data-i18n="ui.settings.rescan">Full rescan</button>
@@ -159,6 +169,19 @@
         </section>
       </div>
     </main>
+
+    <!-- Main-owned scan state remains reachable in either view, including reloads. -->
+    <aside id="scanTask" class="scan-task" role="status" aria-live="polite" hidden>
+      <div class="scan-task-head">
+        <strong id="scanTaskLabel"></strong>
+        <span id="scanTaskMetrics" class="scan-task-metrics"></span>
+        <button id="cancelScan" class="ghost" data-i18n="ui.scan.cancel">Cancel scan</button>
+        <button id="dismissScanTask" class="ghost" hidden data-i18n="ui.scan.dismiss">Dismiss</button>
+      </div>
+      <progress id="scanTaskProgress" data-i18n-attr="aria-label:ui.scan.running" aria-label="Scanning folders"></progress>
+      <p id="scanTaskCurrent" class="scan-task-current"></p>
+      <p id="scanTaskNotes" class="scan-task-notes"></p>
+    </aside>
 
     <footer class="statusbar">
       <span id="status" data-i18n="ui.app.loading">Loading library…</span>

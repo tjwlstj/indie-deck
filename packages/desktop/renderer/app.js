@@ -14,10 +14,12 @@ import { operationCard } from './panels/detail.js';
 import { refreshMToolStatus } from './panels/mtool.js';
 import { archiveProgressLabel, bindArchiveEvents, recoverArchiveProgress, refreshArchiveRecords } from './panels/archives.js';
 import { isArchiveActive } from './archive-model.js';
+import { canCancelScan, isScanActive, reduceScanStatus, scanPresentation, validScanDepth } from './scan-model.js';
 import { bindLauncherUpdateEvents, refreshLauncherUpdateStatus, renderLauncherUpdates } from './panels/updates.js';
 import {
   populateDefaultsForm,
   populateLocaleSelect,
+  populateScanSettings,
   renderAbout,
   renderRoots,
   setSettingsMutationDisabled,
@@ -46,6 +48,8 @@ import {
 let bootReady = false;
 let libraryBusy = false;
 let savingDefaults = false;
+let savingScanSettings = false;
+let scanRequestToken = 0;
 let detailLoadingGameId = null;
 const handledOutcomes = new Map();
 
@@ -154,9 +158,64 @@ function renderOperationChrome() {
 
   $('scan').disabled = libraryBusy || mutationBlocked();
   setSettingsMutationDisabled();
+  renderScanChrome();
+}
+
+function scanLabel(task = state.scanStatus) {
+  if (task?.status === 'failed' && task.saved === true) {
+    return t('ui.scan.failedSaved', undefined, 'Library saved — display refresh failed');
+  }
+  const status = task?.status ?? 'running';
+  return t(`ui.scan.${status}`, undefined, {
+    running: 'Scanning folders…', cancelling: 'Stopping scan…', complete: 'Scan complete',
+    cancelled: 'Scan cancelled — previous library kept', failed: 'Scan stopped — previous library kept',
+  }[status] ?? 'Scanning folders…');
+}
+
+/** Global progress and cancellation remain accessible even while boot awaits a queued read. */
+function renderScanChrome() {
+  const task = state.scanStatus;
+  const display = scanPresentation(task, state.scanRequestPending);
+  const panel = $('scanTask');
+  panel.hidden = !display.visible || (!display.active && task?.sequence === state.scanDismissedSequence);
+  if (panel.hidden) return;
+  panel.className = `scan-task ${display.status}`;
+  $('scanTaskLabel').textContent = display.status === 'running' && !isScanActive(task)
+    ? t('ui.scan.running', undefined, 'Scanning folders…') : scanLabel(task);
+  $('scanTaskMetrics').textContent = t('ui.scan.metrics', display,
+    'Folders {visited} · candidates {candidates} · games {found} · depth {depth}');
+  $('scanTaskProgress').hidden = !display.indeterminate;
+  // No value attribute: neither the number of folders nor the final game count is known yet.
+  $('scanTaskProgress').removeAttribute('value');
+  const current = display.active ? String(task?.current ?? '') : '';
+  $('scanTaskCurrent').hidden = !current;
+  $('scanTaskCurrent').textContent = current;
+  $('scanTaskCurrent').title = current;
+  const notes = [];
+  if (display.depthLimited > 0) notes.push(t('ui.scan.depthLimited', { count: display.depthLimited },
+    '{count} folder boundary/boundaries reached the selected depth. Increase depth and rescan if games are missing.'));
+  if (display.unreadable > 0) notes.push(t('ui.scan.unreadable', { count: display.unreadable },
+    '{count} folder(s) could not be read. The previous library is kept if the scan stops incomplete.'));
+  if (display.probeLimited > 0) notes.push(t('ui.scan.probeLimited', { count: display.probeLimited },
+    '{count} candidate(s) reached the engine-probe budget. Previous rows were retained; select a narrower game folder if missing.'));
+  if (display.previousLibraryPreserved) notes.push(t('ui.scan.previousKept', undefined,
+    'The previous library has been kept. No game files were changed.'));
+  if (display.savedRefreshFailed) notes.push(t('ui.scan.savedRefreshFailed', undefined,
+    'The library was saved, but its display information could not be refreshed. Reload the launcher to read the saved list.'));
+  if (task?.error) notes.push(task.error);
+  $('scanTaskNotes').textContent = notes.join(' ');
+  $('scanTaskNotes').hidden = notes.length === 0;
+  $('cancelScan').hidden = !display.active;
+  $('cancelScan').disabled = !canCancelScan(task, task?.id, state.scanCancelPendingId === task?.id);
+  $('dismissScanTask').hidden = display.active;
 }
 
 function render(scope = 'all') {
+  if (scope === 'scan') {
+    // Traversal progress must not rebuild focused settings or game forms.
+    renderScanChrome();
+    return;
+  }
   if (scope === 'updates') {
     // Network check/download progress is independent of game file mutations.
     // Do not rebuild focused game/config/archive forms for each byte event.
@@ -402,6 +461,64 @@ async function retryOperationRefresh() {
 
 /* --------------------------------------------------------- library load */
 
+function mergeScannedLibrary(payload) {
+  const applied = applyLibraryPayload(payload);
+  if (applied && state.selected && !state.games.some((game) => game.id === state.selected)) {
+    state.selected = null;
+    state.detail = null;
+    detailLoadingGameId = null;
+    state.selectionRequestToken += 1;
+    resetConfigPanel();
+  }
+  return applied;
+}
+
+function acceptScanStatus(incoming) {
+  const previous = state.scanStatus;
+  const next = reduceScanStatus(previous, incoming);
+  if (next === previous) return;
+  const wasActive = isScanActive(previous) || state.scanRequestPending;
+  state.scanStatus = next;
+  state.scanRequestPending = false;
+  if (!isScanActive(next) || next.id !== state.scanCancelPendingId) state.scanCancelPendingId = null;
+  if (next.status === 'complete' && next.result) mergeScannedLibrary(next.result);
+  setStatus(scanLabel(next), next.status === 'complete' ? 'ok' : next.status === 'failed' ? 'err' : undefined);
+  emit(wasActive !== isScanActive(next) || !isScanActive(next) ? 'all' : 'scan');
+}
+
+async function recoverScanStatus() {
+  const snapshot = await api.library.scanCurrent();
+  if (snapshot) acceptScanStatus(snapshot);
+}
+
+async function cancelScan() {
+  const capturedId = state.scanStatus?.id;
+  // This deliberately does not consult mutationBlocked(): the running scan is the blocker.
+  if (!canCancelScan(state.scanStatus, capturedId, state.scanCancelPendingId === capturedId)) return;
+  state.scanCancelPendingId = capturedId;
+  renderScanChrome();
+  try {
+    await api.library.cancelScan(capturedId);
+    await recoverScanStatus();
+  } catch (err) {
+    setStatus(err.message, 'err');
+  } finally {
+    if (state.scanCancelPendingId === capturedId) state.scanCancelPendingId = null;
+    renderScanChrome();
+  }
+}
+
+function bindScanEvents() {
+  api.on.scanStatus(acceptScanStatus);
+  // Bind before any queued reads: after reload, cancellation must not wait for scan completion.
+  $('cancelScan').addEventListener('click', () => void cancelScan());
+  $('dismissScanTask').addEventListener('click', () => {
+    if (isScanActive(state.scanStatus) || state.scanRequestPending) return;
+    state.scanDismissedSequence = state.scanStatus?.sequence ?? -1;
+    renderScanChrome();
+  });
+}
+
 function setTransientTask(text) {
   if (state.operation) return;
   const node = $('taskStatus');
@@ -411,26 +528,20 @@ function setTransientTask(text) {
 
 async function refreshLibraryView(rescan) {
   if (rescan && mutationBlocked()) return;
+  const token = rescan ? ++scanRequestToken : null;
+  if (rescan) state.scanRequestPending = true;
   libraryBusy = true;
   renderOperationChrome();
-  let offProgress = () => {};
   try {
     if (rescan) {
       setStatus(t('ui.status.scanningShort', undefined, 'Scanning…'));
       setTransientTask(t('ui.status.scanningShort', undefined, 'Scanning…'));
-      offProgress = api.on.scanProgress((current) => setStatus(t('ui.status.scanning', { path: current }, 'Scanning {path}')));
     }
     const payload = rescan ? await api.library.scan({}) : await api.library.load();
-    const applied = applyLibraryPayload(payload);
+    if (rescan) await recoverScanStatus();
+    const applied = payload ? mergeScannedLibrary(payload) : false;
     if (applied) {
-      if (state.selected && !state.games.some((game) => game.id === state.selected)) {
-        state.selected = null;
-        state.detail = null;
-        detailLoadingGameId = null;
-        state.selectionRequestToken += 1;
-        resetConfigPanel();
-      }
-      setStatus(
+      if (!rescan && !isScanActive(state.scanStatus)) setStatus(
         payload.index.games.length === 0
           ? t('ui.status.emptyLibrary', undefined, 'No games yet — add a folder and scan.')
           : t('ui.app.ready', undefined, 'Ready'),
@@ -438,9 +549,10 @@ async function refreshLibraryView(rescan) {
       );
     }
   } catch (err) {
-    setStatus(err.message, 'err');
+    if (rescan) await recoverScanStatus().catch(() => {});
+    if (!rescan || !['cancelled', 'failed'].includes(state.scanStatus?.status)) setStatus(err.message, 'err');
   } finally {
-    offProgress();
+    if (rescan && token === scanRequestToken) state.scanRequestPending = false;
     libraryBusy = false;
     setTransientTask(null);
     document.body.dataset.libraryState = 'ready';
@@ -456,6 +568,7 @@ async function changeLocale(locale) {
   await loadLocale();
   applyStaticTranslations();
   populateLocaleSelect();
+  populateScanSettings();
   await refreshLibraryView(false);
   if (state.selected) await refreshDetail();
 }
@@ -465,6 +578,7 @@ function openSettings() {
   renderAbout();
   renderRoots();
   populateLocaleSelect();
+  populateScanSettings();
   populateDefaultsForm(state.registry.translators.find((x) => x.id === 'xunity-autotranslator')?.endpoints ?? []);
   renderView();
   renderOperationChrome();
@@ -504,6 +618,25 @@ async function saveDefaults() {
   }
 }
 
+async function saveScanSettings() {
+  if (savingScanSettings || mutationBlocked()) return;
+  const depth = Number($('scanDepth').value);
+  if (!validScanDepth(depth)) return;
+  savingScanSettings = true;
+  $('saveScanSettings').disabled = true;
+  $('scanSettingsSaved').textContent = t('ui.settings.saving', undefined, 'Saving…');
+  try {
+    state.config = await api.config.set({ ...state.config, scanDepth: depth });
+    populateScanSettings();
+    $('scanSettingsSaved').textContent = t('ui.scan.saved', undefined, 'Saved — run a full rescan to apply this depth.');
+  } catch (err) {
+    $('scanSettingsSaved').textContent = err.message;
+  } finally {
+    savingScanSettings = false;
+    setSettingsMutationDisabled();
+  }
+}
+
 async function pickRootAndScan() {
   if (mutationBlocked()) return;
   try {
@@ -525,6 +658,8 @@ async function boot() {
   bindMaintenanceEvents();
   bindArchiveEvents();
   bindLauncherUpdateEvents();
+  bindScanEvents();
+  const scanRecovery = recoverScanStatus().catch((err) => setStatus(err.message, 'err'));
   const updateRecovery = refreshLauncherUpdateStatus();
   const recovery = recoverMaintenance().catch((err) => setStatus(err.message, 'err'));
   // current() does not wait for main's mutation queue, so a reload during an
@@ -570,12 +705,14 @@ async function boot() {
   $('sourceLanguage').addEventListener('change', () => ($('defaultsSaved').textContent = ''));
   $('endpoint').addEventListener('change', () => ($('defaultsSaved').textContent = ''));
   $('saveDefaults').addEventListener('click', () => void saveDefaults());
+  $('scanDepth').addEventListener('change', () => ($('scanSettingsSaved').textContent = ''));
+  $('saveScanSettings').addEventListener('click', () => void saveScanSettings());
 
   window.addEventListener('indiedeck:add-root', () => void pickRootAndScan());
   window.addEventListener('indiedeck:open-settings', (event) => {
     openSettings();
     const section = event.detail?.section;
-    if (['mtoolSettings', 'archiveSettings', 'launcherUpdates'].includes(section)) $(section)?.scrollIntoView({ block: 'nearest' });
+    if (['mtoolSettings', 'archiveSettings', 'launcherUpdates', 'librarySettings'].includes(section)) $(section)?.scrollIntoView({ block: 'nearest' });
   });
   $('importArchive').addEventListener('click', () => {
     openSettings();
@@ -611,6 +748,7 @@ async function boot() {
   await recovery;
   await archiveRecovery;
   await updateRecovery;
+  await scanRecovery;
   bootReady = true;
   await refreshLibraryView(false);
   // Records need the loaded library's opaque game ids. A normal restart also

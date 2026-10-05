@@ -117,6 +117,10 @@ try {
   ];
   await fs.writeFile(gameArchive, zip(importFiles));
   await fs.writeFile(gameArchiveV2, zip([...importFiles, ['Delta/version.txt', Buffer.from('second offline version')]]));
+  // Empty containers exercise cooperative scanning without adding fake game
+  // rows. Only the disposable bootstrap can temporarily slow these listings.
+  const scanContainers = path.join(gamesRoot, 'Scan Containers');
+  for (let n = 0; n < 320; n++) await fs.mkdir(path.join(scanContainers, `Container-${n}`), { recursive: true });
   const fontDir = path.join(temp, 'font-source');
   await fs.mkdir(fontDir);
   for (const bundle of registry.fonts.bundles) await fs.writeFile(path.join(fontDir, bundle.file), `offline atlas fixture ${bundle.id}`);
@@ -147,6 +151,8 @@ try {
       INDIEDECK_SMOKE_MTOOL_EXE: mtoolExecutable,
       INDIEDECK_SMOKE_GAME_ARCHIVE: gameArchive,
       INDIEDECK_SMOKE_GAME_ARCHIVE_V2: gameArchiveV2,
+      INDIEDECK_SCAN_SMOKE_ROOT: scanContainers,
+      INDIEDECK_SCAN_SCREENSHOT: path.resolve('out', `desktop-scan-${locale}.png`),
       INDIEDECK_FLOW_SCREENSHOT: screenshot, INDIEDECK_FLOW_PROGRESS_SCREENSHOT: progressScreenshot,
       INDIEDECK_FONT_SCREENSHOT: path.resolve('out', `desktop-fonts-${locale}.png`),
       INDIEDECK_MTOOL_SCREENSHOT: path.resolve('out', `desktop-mtool-${locale}.png`),
@@ -170,6 +176,7 @@ try {
     '[smoke] rendered 3 game rows', '[smoke] exact-file confirmation',
     '[smoke] font opt-out', '[smoke] RPG Maker', '[smoke] OS-picked ZIP inspection',
     '[smoke] launcher update mock flow',
+    '[smoke] bounded scan settings',
   ];
   if (requiredSmokeMarkers.some((marker) => !smokeOutput.includes(marker))) {
     throw new Error('Desktop exited without completing every required smoke flow.');

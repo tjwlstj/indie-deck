@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import fsSync from 'node:fs';
 import path from 'node:path';
 import childProcess from 'node:child_process';
 import { EventEmitter } from 'node:events';
@@ -67,6 +68,23 @@ childProcess.spawn = (executable, args, options) => {
     return child;
   }
   return originalSpawn(executable, args, options);
+};
+syncBuiltinESMExports();
+// Test-only delay for empty, disposable scan containers. No production timing
+// hook exists; games, user data and system directories never pass this guard.
+const scanRoot = path.resolve(process.env.INDIEDECK_SCAN_SMOKE_ROOT);
+if (!scanRoot.startsWith(path.dirname(path.resolve(process.env.INDIEDECK_HOME)) + path.sep)) {
+  throw new Error('Scan fixture escaped the disposable smoke tree.');
+}
+globalThis.__indiedeckScanSmokeSlow = false;
+const originalReaddir = fsSync.readdirSync;
+const delayCell = new Int32Array(new SharedArrayBuffer(4));
+fsSync.readdirSync = (...args) => {
+  const target = typeof args[0] === 'string' ? path.resolve(args[0]) : '';
+  if (globalThis.__indiedeckScanSmokeSlow && (target === scanRoot || target.startsWith(scanRoot + path.sep))) {
+    Atomics.wait(delayCell, 0, 0, 8);
+  }
+  return originalReaddir(...args);
 };
 syncBuiltinESMExports();
 // Only the game-archive picker is mocked. Every selected source stays within

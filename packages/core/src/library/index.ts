@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import type { GameProfile, Registry } from '../types.ts';
-import { scanLibrary, detectGame, type ScanOptions } from '../detect/index.ts';
+import { scanLibraryAsync, detectGame, normalizeScanDepth, throwIfScanCancelled, type ScanOptions } from '../detect/index.ts';
 import { defaultDataDir } from '../install/download.ts';
 import { t } from '../i18n/index.ts';
 import { isNativeLoader } from '../registry/index.ts';
@@ -36,7 +36,7 @@ const DEFAULT_CONFIG: LauncherConfig = {
   roots: [],
   locale: 'system',
   defaults: { targetLanguage: 'en', sourceLanguage: 'ja', endpoint: 'GoogleTranslate' },
-  scanDepth: 2,
+  scanDepth: normalizeScanDepth(undefined),
 };
 
 export function configPath(dataDir = defaultDataDir()): string {
@@ -63,6 +63,9 @@ export async function loadConfig(dataDir = defaultDataDir()): Promise<LauncherCo
       ...parsed,
       defaults: { ...DEFAULT_CONFIG.defaults, ...(parsed.defaults ?? {}) },
       roots: parsed.roots ?? [],
+      // Preserve valid existing depths (including 2); only new/malformed
+      // configurations use the broader default. No silent user-setting migration.
+      scanDepth: normalizeScanDepth(parsed.scanDepth),
       // A malformed persisted value cannot become a privileged tool target.
       // Omit it rather than coercing objects/numbers into filesystem paths.
       externalTools: mtoolRoot === undefined ? undefined : { mtoolRoot },
@@ -74,7 +77,7 @@ export async function loadConfig(dataDir = defaultDataDir()): Promise<LauncherCo
 
 export async function saveConfig(config: LauncherConfig, dataDir = defaultDataDir()): Promise<void> {
   await ensureDir(dataDir);
-  await fsp.writeFile(configPath(dataDir), JSON.stringify(config, null, 2), 'utf8');
+  await fsp.writeFile(configPath(dataDir), JSON.stringify({ ...config, scanDepth: normalizeScanDepth(config.scanDepth) }, null, 2), 'utf8');
 }
 
 export async function addRoot(root: string, dataDir = defaultDataDir()): Promise<LauncherConfig> {
@@ -155,6 +158,8 @@ export interface RefreshOptions extends ScanOptions {
   roots?: string[];
   /** Keep entries whose folder still exists but was not re-scanned. */
   merge?: boolean;
+  /** Freeze desktop cancellation after reads/merge, immediately before commit. */
+  onBeforeSave?: () => void;
 }
 
 export interface RefreshLibraryGameOptions {
@@ -180,24 +185,45 @@ export async function refreshLibrary(reg: Registry, options: RefreshOptions = {}
     throw new Error(t('core.error.no-roots', {}, 'No library roots configured. Add one with `indiedeck root add <path>`.'));
   }
 
-  const scanOptions: ScanOptions = { depth: options.depth ?? config.scanDepth };
+  const unreadablePaths: string[] = [];
+  const scanOptions: ScanOptions = {
+    depth: options.depth ?? config.scanDepth,
+    onUnreadable: (directory) => { unreadablePaths.push(directory); options.onUnreadable?.(directory); },
+  };
   if (options.onProgress) scanOptions.onProgress = options.onProgress;
+  if (options.onStatus) scanOptions.onStatus = options.onStatus;
+  if (options.signal) scanOptions.signal = options.signal;
+  if (options.maxDirectories !== undefined) scanOptions.maxDirectories = options.maxDirectories;
   if (options.deep !== undefined) scanOptions.deep = options.deep;
   if (options.measureSize !== undefined) scanOptions.measureSize = options.measureSize;
 
-  const found = scanLibrary(reg, roots, scanOptions);
+  const found = await scanLibraryAsync(reg, roots, scanOptions);
+  throwIfScanCancelled(options.signal);
   let games = found;
 
-  if (options.merge) {
+  if (options.merge || unreadablePaths.length > 0) {
     const previous = await loadLibrary(dataDir);
     const byPath = new Map(found.map((g) => [g.path.toLowerCase(), g]));
+    const within = (root: string, candidate: string): boolean => {
+      const relative = path.relative(path.resolve(root).toLowerCase(), path.resolve(candidate).toLowerCase());
+      return relative === '' || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+    };
     for (const old of previous.games) {
+      throwIfScanCancelled(options.signal);
       if (byPath.has(old.path.toLowerCase())) continue;
-      if (await pathExists(old.path)) byPath.set(old.path.toLowerCase(), old);
+      // Access failure is not evidence of deletion. Also retain an old game
+      // when an unreadable payload subtree could have hidden its engine rules.
+      // Missing registered roots are also retained (drive/share disconnect is
+      // not deletion). Missing children of an available root still disappear.
+      const affected = unreadablePaths.some((directory) => within(directory, old.path) || within(old.path, directory));
+      if (affected || (options.merge && await pathExists(old.path))) byPath.set(old.path.toLowerCase(), old);
     }
     games = [...byPath.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
 
+  throwIfScanCancelled(options.signal);
+  options.onBeforeSave?.();
+  throwIfScanCancelled(options.signal);
   return saveLibrary({ games, scannedAt: new Date().toISOString(), roots }, dataDir);
 }
 

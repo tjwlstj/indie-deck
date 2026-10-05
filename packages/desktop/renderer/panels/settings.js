@@ -14,10 +14,11 @@ import { resetConfigPanel } from './config.js';
 import { renderMToolSettings } from './mtool.js';
 import { renderArchiveSettings } from './archives.js';
 import { renderLauncherUpdates } from './updates.js';
+import { validScanDepth } from '../scan-model.js';
 
 export function setSettingsMutationDisabled() {
   const disabled = mutationBlocked();
-  for (const id of ['uiLocale', 'targetLanguage', 'sourceLanguage', 'endpoint', 'saveDefaults', 'addRoot', 'rescanRoots', 'importArchive']) {
+  for (const id of ['uiLocale', 'targetLanguage', 'sourceLanguage', 'endpoint', 'saveDefaults', 'scanDepth', 'saveScanSettings', 'addRoot', 'rescanRoots', 'importArchive']) {
     const node = $(id);
     if (node) node.disabled = disabled;
   }
@@ -25,6 +26,22 @@ export function setSettingsMutationDisabled() {
   renderMToolSettings();
   renderArchiveSettings();
   renderLauncherUpdates();
+}
+
+export function populateScanSettings() {
+  const select = $('scanDepth');
+  select.replaceChildren();
+  for (let depth = 0; depth <= 12; depth += 1) {
+    const label = depth === 0
+      ? t('ui.scan.rootOnly', undefined, '0 — registered game folder only')
+      : depth === 6 ? t('ui.scan.recommendedDepth', undefined, '6 — recommended') : String(depth);
+    const option = el('option', null, label);
+    option.value = String(depth);
+    select.append(option);
+  }
+  const depth = state.config?.scanDepth;
+  select.value = String(validScanDepth(depth) ? depth : 6);
+  $('scanLegacyHint').hidden = depth !== 2;
 }
 
 export function renderRoots() {

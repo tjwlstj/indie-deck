@@ -55,6 +55,8 @@ contextBridge.exposeInMainWorld('indiedeck', {
   library: {
     load: () => call('library:load'),
     scan: (options) => call('library:scan', options ?? {}),
+    scanCurrent: () => call('library:scanCurrent'),
+    cancelScan: (id) => call('library:cancelScan', id),
   },
 
   game: {
@@ -105,6 +107,7 @@ contextBridge.exposeInMainWorld('indiedeck', {
   },
 
   on: {
+    scanStatus: (fn) => subscribe('scan:status', fn),
     scanProgress: (fn) => subscribe('scan:progress', fn),
     maintenanceProgress: (fn) => subscribe('maintenance:progress', fn),
     maintenanceOutcome: (fn) => subscribe('maintenance:outcome', fn),

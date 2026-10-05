@@ -1,7 +1,7 @@
 import path from 'node:path';
 import type { DetectionRule, EngineDef, EngineMatch } from '../types.ts';
 import { tRegistry } from '../i18n/index.ts';
-import { FsProbe, matchesGlob } from '../util/fsx.ts';
+import { FsProbe, matchesGlob, ProbeDirectoryLimitError } from '../util/fsx.ts';
 
 /** Expands `$capture` references inside a rule path. Returns undefined when unresolved. */
 function resolveRef(value: string, captures: Record<string, string>): string | undefined {
@@ -37,13 +37,13 @@ function matchDirGlob(probe: FsProbe, pattern: string): string | undefined {
 
 function matchFileGlobRecursive(probe: FsProbe, pattern: string, maxDepth: number): string | undefined {
   const queue: { rel: string; depth: number }[] = [{ rel: '', depth: 0 }];
-  while (queue.length > 0) {
-    const { rel, depth } = queue.shift()!;
+  for (let index = 0; index < queue.length; index += 1) {
+    const { rel, depth } = queue[index]!;
     for (const name of probe.namesIn(rel)) {
       const child = rel ? `${rel}/${name}` : name;
       if (probe.hasDir(child)) {
         if (depth < maxDepth) queue.push({ rel: child, depth: depth + 1 });
-      } else if (matchesGlob(name, pattern)) {
+      } else if (matchesGlob(name, pattern) && probe.hasFile(child)) {
         return child;
       }
     }
@@ -143,11 +143,30 @@ export function scoreEngine(probe: FsProbe, engine: EngineDef, exeNames: string[
   };
 }
 
+export interface RankOptions {
+  /** Bulk-only cap per engine, covering recursive and multi-segment glob rules. */
+  probeDirectoryLimit?: number;
+  onProbeLimit?: (engineId: string) => void;
+}
+
 /** Ranks every engine definition; highest score first, `priority` breaks ties. */
-export function rankEngines(probe: FsProbe, engines: EngineDef[], exeNames: string[]): EngineMatch[] {
+export function rankEngines(probe: FsProbe, engines: EngineDef[], exeNames: string[], options: RankOptions = {}): EngineMatch[] {
   const priority = new Map(engines.map((e) => [e.id, e.priority]));
+  const limit = options.probeDirectoryLimit === undefined ? undefined :
+    (Number.isFinite(options.probeDirectoryLimit) && options.probeDirectoryLimit > 0
+      ? Math.min(128, Math.max(1, Math.floor(options.probeDirectoryLimit))) : 128);
   return engines
-    .map((e) => scoreEngine(probe, e, exeNames))
+    .map((e) => {
+      if (limit === undefined) return scoreEngine(probe, e, exeNames);
+      try { return probe.withDirectoryLimit(limit, () => scoreEngine(probe, e, exeNames)); }
+      catch (error) {
+        if (!(error instanceof ProbeDirectoryLimitError)) throw error;
+        // Partial scores must not win classification or stop outer traversal.
+        // Cached evidence survives for the next engine with a fresh budget.
+        options.onProbeLimit?.(e.id); return undefined;
+      }
+    })
+    .filter((match): match is EngineMatch => match !== undefined)
     .filter((m) => m.score > 0)
     .sort((a, b) => b.score - a.score || (priority.get(b.engineId) ?? 0) - (priority.get(a.engineId) ?? 0));
 }

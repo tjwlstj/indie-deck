@@ -232,6 +232,22 @@ are deterministic profile-and-rule ranking, not an AI/LLM model or a learned
 game-success database. Detection confidence is a heuristic signature score,
 not the probability that a translator will work at runtime.
 
+The verified v0.1.4 source separates executable candidates from known-engine
+classification, fixes drive-root path boundaries and allows real game distribution
+folders named `Windows`. Its settings depth, bounded/cancellable scan and save
+contracts are described in [docs/game-discovery.md](docs/game-discovery.md), with
+the primary-source Playnite/Lutris/Heroic comparison kept separate from IndieDeck's
+design decisions. Local verification covers the automated suite and Korean/English
+Electron scan/reload/cancel flows; distribution assets are tracked on the matching
+[v0.1.4 release](https://github.com/tjwlstj/indie-deck/releases/tag/v0.1.4).
+The outer walk's 20,000-directory
+limit and engine scoring's 128-new-listing budget per engine are separate bounds,
+not a total OS-read count. Missing registered roots preserve their prior rows,
+and a post-save display failure is not reported as an unchanged library.
+Existing saved depth values are retained;
+unknown-engine executable-only imports and store-manifest integrations are outside
+this change.
+
 A scan produces a **game profile** (engine, backend, engine version, arch,
 already-installed loaders/translators/font bundles). The resolver expands that
 into candidate plans and runs the rules in [`registry/compat.json`](registry/compat.json)

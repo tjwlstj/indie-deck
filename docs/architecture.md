@@ -39,11 +39,14 @@ translator is usually a JSON edit, not a code change.
 Deep probes read IL2CPP metadata (tens of megabytes) to find TextMeshPro and the
 new Input System. They are off during bulk scans and on for single-game commands.
 
-`scanLibrary` detects explicitly registered ordinary game roots themselves,
-deduplicates overlapping roots, then walks library roots to a configurable
-depth and does **not** descend into a
-folder that already matched — installers commonly nest the real game one level
-down, which is why the default depth is 2.
+The scanner lists registered roots and child directories cheaply, then
+classifies candidates with a regular, non-helper executable. Only a launchable
+known-engine profile stops descent; engine-marker-only containers do not hide
+deeper builds. New configurations default to six child levels (maximum twelve),
+while existing saved depths are preserved. `scanLibrary` and the cooperatively
+asynchronous `scanLibraryAsync` share one bounded walker and deduplicate
+overlapping roots. See [game discovery](game-discovery.md) for filtering,
+progress, cancellation and traversal versus engine-probe budgets.
 
 ## resolve
 

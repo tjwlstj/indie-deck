@@ -159,6 +159,37 @@
     }
   },
   "ui": {
+    "scan": {
+      "depth": "Subfolder depth",
+      "depthHint": "Depth is counted from each registered folder. Six levels is recommended for a whole drive; a detected game stops further traversal into its data folders.",
+      "legacyDepth": "Your saved depth is 2. For a whole drive, save depth 6 and run a full rescan to include deeper folders.",
+      "rootOnly": "0 — registered game folder only",
+      "recommendedDepth": "6 — recommended",
+      "save": "Save scan settings",
+      "saved": "Saved — run a full rescan to apply this depth.",
+      "running": "Scanning folders…",
+      "cancelling": "Stopping scan…",
+      "complete": "Scan complete",
+      "cancelled": "Scan cancelled — previous library kept",
+      "failed": "Scan stopped — previous library kept",
+      "failedSaved": "Library saved — display refresh failed",
+      "savedRefreshFailed": "The library was saved, but its display information could not be refreshed. Reload the launcher to read the saved list.",
+      "cancel": "Cancel scan",
+      "dismiss": "Dismiss",
+      "metrics": "Folders {visited} · candidates {candidates} · games {found} · depth {depth}",
+      "depthLimited": "{count} folder boundary/boundaries reached the selected depth. Increase depth and rescan if games are missing.",
+      "unreadable": "{count} folder(s) or registered roots could not be read. Their previous game entries were retained.",
+      "probeLimited": "{count} candidate(s) reached the engine-probe budget. Affected previous entries were retained; add a narrower game folder if games are missing.",
+      "previousKept": "The previous library has been kept. No game files were changed.",
+      "error": {
+        "busy": "A scan or another file operation is already running.",
+        "cancelled": "The scan was cancelled. The previous library has been kept.",
+        "incomplete": "The scan reached a safety limit or could not read a registered folder. The previous library has been kept; add a more specific game folder and retry.",
+        "limit": "The scan reached its folder or time safety limit. The previous library has been kept. Add a more specific game folder and retry.",
+        "failed": "The scan could not finish. The previous library has been kept.",
+        "depth": "Choose an integer scan depth from 0 to 12."
+      }
+    },
     "app": {
       "search": "Search games…",
       "to": "to",

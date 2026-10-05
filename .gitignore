@@ -11,6 +11,7 @@ build/*
 !build/installer.nsh
 out/
 release/
+release-*/
 *.tsbuildinfo
 npm-debug.log*
 .npm/

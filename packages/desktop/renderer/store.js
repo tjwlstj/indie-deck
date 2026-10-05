@@ -11,6 +11,7 @@ import { applyCatalog } from './i18n.js';
 import { isOperationActive, mergeLibraryPayload } from './state-model.js';
 import { isArchiveActive } from './archive-model.js';
 import { launcherUpdateInstallPending } from './update-model.js';
+import { isScanActive } from './scan-model.js';
 
 export const api = window.indiedeck;
 
@@ -35,6 +36,11 @@ export const state = {
   updateStatusRequestToken: 0,
   updateReadError: false,
   updateAction: null,
+  /** Main-owned scan snapshot, retained so reloads can show progress/cancel. */
+  scanStatus: null,
+  scanRequestPending: false,
+  scanCancelPendingId: null,
+  scanDismissedSequence: -1,
   registry: null,
   engineFilter: 'all',
   statusFilter: 'all',
@@ -114,6 +120,7 @@ export function applyLibraryPayload(payload) {
 
 export function mutationBlocked() {
   return isOperationActive(state.operation) || state.mtoolBusy || state.archiveBusy || isArchiveActive(state.archiveProgress) ||
+    state.scanRequestPending || isScanActive(state.scanStatus) ||
     launcherUpdateInstallPending(state.updateStatus, state.updateAction);
 }
 

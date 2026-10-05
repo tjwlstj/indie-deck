@@ -21,19 +21,14 @@ const HELPER_EXE = [
   /^SetupReiPatcherAndAutoTranslator\.exe$/i,
 ];
 
+// These names cannot be game-library containers. Ordinary names such as
+// Windows, Users and Program Files are deliberately not global exclusions:
+// archives use Windows for a playable build and Steam often lives in the latter.
 const SKIP_DIRS = new Set([
   '$recycle.bin',
   'system volume information',
-  'windows',
-  'program files',
-  'program files (x86)',
-  'programdata',
-  'users',
   'node_modules',
-  'temp',
   '.git',
-  'msocache',
-  'recovery',
 ]);
 
 export interface DetectOptions {
@@ -41,6 +36,9 @@ export interface DetectOptions {
   deep?: boolean;
   /** Include a recursive folder size. Off during bulk scans. */
   measureSize?: boolean;
+  /** Optional per-engine listing cap for bulk scans; direct detection is unchanged. */
+  probeDirectoryLimit?: number;
+  onProbeLimit?: (engineId: string) => void;
 }
 
 export function listExecutables(probe: FsProbe): string[] {
@@ -216,10 +214,12 @@ export function detectGame(reg: Registry, gamePath: string, options: DetectOptio
   }
   if (!stats.isDirectory()) return undefined;
 
-  const probe = new FsProbe(abs);
+  const probe = new FsProbe(abs, { rejectLinks: options.probeDirectoryLimit !== undefined });
   const folderName = path.basename(abs);
   const exes = listExecutables(probe);
-  const ranked = rankEngines(probe, reg.engines, exes);
+  const ranked = rankEngines(probe, reg.engines, exes, {
+    probeDirectoryLimit: options.probeDirectoryLimit, onProbeLimit: options.onProbeLimit,
+  });
 
   const best = ranked.find((m) => {
     const def = reg.engines.find((e) => e.id === m.engineId);
@@ -269,28 +269,114 @@ export function detectGame(reg: Registry, gamePath: string, options: DetectOptio
   return profile;
 }
 
+export const DEFAULT_SCAN_DEPTH = 6;
+export const MAX_SCAN_DEPTH = 12;
+const DEFAULT_MAX_DIRECTORIES = 20_000;
+
+/** Invalid persisted/IPC values never turn a bounded scan into an unbounded one. */
+export function normalizeScanDepth(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? Math.min(MAX_SCAN_DEPTH, Math.floor(value)) : DEFAULT_SCAN_DEPTH;
+}
+
+export interface ScanProgress {
+  /** Unique inspected directories, including the registered roots themselves. */
+  visited: number;
+  /** Directories with a regular, non-helper root executable. */
+  candidates: number;
+  found: number;
+  skipped: number;
+  unreadable: number;
+  /** Candidates with inconclusive bounded engine rules (not an access error). */
+  probeLimited?: number;
+  /** Child directories not visited because the configured depth was reached. */
+  depthLimited: number;
+  current: string;
+  depth: number;
+}
+
 export interface ScanOptions extends DetectOptions {
-  /** How many directory levels below each root to search. 1 = roots' children only. */
+  /** Levels below each root; 0 still inspects an explicitly selected game. */
   depth?: number;
   onProgress?: (current: string, found: number) => void;
+  onStatus?: (progress: ScanProgress) => void;
+  signal?: AbortSignal;
+  /** Unique directories to inspect; defaults to 20,000, capped at 100,000. */
+  maxDirectories?: number;
+  /** Preserve rows affected by unavailable roots, access errors or limited probes. */
+  onUnreadable?: (directory: string) => void;
+}
+
+export class ScanCancelledError extends Error {
+  constructor() { super('Library scan cancelled.'); this.name = 'ScanCancelledError'; }
+}
+
+export class ScanLimitError extends Error {
+  readonly maxDirectories: number;
+  constructor(maxDirectories: number) {
+    super(`Library scan reached its ${maxDirectories} directory limit. Narrow the roots or lower the search depth.`);
+    this.name = 'ScanLimitError'; this.maxDirectories = maxDirectories;
+  }
+}
+
+/** Kept separate so persistence can check again after its asynchronous reads. */
+export function throwIfScanCancelled(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new ScanCancelledError();
+}
+
+function directoryKey(directory: string): string { return path.resolve(directory).toLowerCase(); }
+
+function missingDirectory(error: unknown): boolean {
+  return ['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException)?.code ?? '');
+}
+
+/** Only actual OS locations are excluded, not identically named game folders. */
+function systemDirectories(): Set<string> {
+  return new Set(['SystemRoot', 'WINDIR', 'ProgramData'].map((name) => process.env[name])
+    .filter((value): value is string => typeof value === 'string' && value.length > 0 &&
+      !value.includes('\0') && path.isAbsolute(value)).map(directoryKey));
 }
 
 /**
- * Scans library roots for games. A folder that itself matches an engine is not
- * descended into - installers commonly nest the real game one level down
- * (`Game/ReleaseVer1.1.2_Win/`), which is why the default depth is 2.
+ * Shared bounded walker. A cheap root listing selects EXE candidates before any
+ * engine-specific recursive rules or version/loader probes run. Marker-only
+ * folders cannot swallow a playable build farther below them. The public
+ * detectGame API intentionally still accepts non-launchable engine evidence.
  */
-export function scanLibrary(reg: Registry, roots: string[], options: ScanOptions = {}): GameProfile[] {
-  const depth = typeof options.depth === 'number' && Number.isFinite(options.depth) && options.depth >= 0
-    ? Math.floor(options.depth) : 2;
+function* walkLibrary(reg: Registry, roots: string[], options: ScanOptions): Generator<ScanProgress, GameProfile[]> {
+  const depth = normalizeScanDepth(options.depth);
+  const maxDirectories = typeof options.maxDirectories === 'number' && Number.isFinite(options.maxDirectories) && options.maxDirectories > 0
+    ? Math.max(1, Math.min(100_000, Math.floor(options.maxDirectories))) : DEFAULT_MAX_DIRECTORIES;
+  const progress: ScanProgress = { visited: 0, candidates: 0, found: 0, skipped: 0, unreadable: 0, probeLimited: 0, depthLimited: 0, current: '', depth };
   const results: GameProfile[] = [];
-  const seen = new Set<string>();
-  const detected = new Set<string>();
+  const directories = new Map<string, { entries: fs.Dirent[]; terminal: boolean }>();
+  const inspected = new Set<string>();
   const walked = new Map<string, number>();
+  const unreadable = new Set<string>();
+  const system = systemDirectories();
 
-  // OS-picked roots may themselves be games (including managed archive
-  // versions). Do not follow a junction into a different root, and never probe
-  // a broad drive/share root as a game. Parent-root child scanning stays intact.
+  const reportUnreadable = (directory: string, error: unknown, explicitRoot = false): void => {
+    // A missing registered drive/share can be temporarily disconnected. Only
+    // missing children of an available root are affirmative deletion evidence.
+    if (missingDirectory(error) && !explicitRoot) { progress.skipped += 1; return; }
+    const key = directoryKey(directory);
+    if (unreadable.has(key)) return;
+    unreadable.add(key); progress.unreadable += 1;
+    options.onUnreadable?.(directory);
+  };
+  const publish = (): ScanProgress => {
+    const snapshot = { ...progress };
+    options.onProgress?.(snapshot.current, snapshot.found);
+    options.onStatus?.(snapshot);
+    return snapshot;
+  };
+  const excluded = (directory: string, name: string, explicit: boolean): boolean => {
+    const lower = name.toLowerCase();
+    return SKIP_DIRS.has(lower) || system.has(directoryKey(directory)) ||
+      lower.startsWith('.staging') || lower.startsWith('.indiedeck') || (!explicit && name.startsWith('.'));
+  };
+  // Do not follow a directly selected junction or one in its ancestors. Child
+  // entries are checked again with lstat immediately before reading them.
   const ordinaryRoot = (absolute: string): boolean => {
     const parsed = path.parse(absolute);
     let current = parsed.root;
@@ -301,51 +387,99 @@ export function scanLibrary(reg: Registry, roots: string[], options: ScanOptions
         const stat = fs.lstatSync(candidate);
         return stat.isDirectory() && !stat.isSymbolicLink();
       });
-    } catch { return false; }
+    } catch (error) { reportUnreadable(absolute, error, true); return false; }
   };
 
-  const probe = (dir: string): boolean => {
-    const key = dir.toLowerCase();
-    if (!seen.has(key)) {
-      seen.add(key);
-      options.onProgress?.(dir, results.length);
-      const profile = detectGame(reg, dir, options);
-      if (profile) { results.push(profile); detected.add(key); }
-    }
-    return detected.has(key);
-  };
-
-  const walk = (dir: string, level: number): void => {
-    if (level > depth) return;
-    const key = dir.toLowerCase(), remaining = depth - level;
-    // A later directly-registered parent can have a larger search budget than
-    // an earlier overlapping library root; don't lose its deeper children.
-    if ((walked.get(key) ?? -1) >= remaining) return;
-    walked.set(key, remaining);
-    let entries: fs.Dirent[];
-    try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      if (SKIP_DIRS.has(entry.name.toLowerCase())) continue;
-      if (entry.name.startsWith('.')) continue;
-
-      const child = path.join(dir, entry.name);
-      if (probe(child)) continue; // do not descend into a detected game
-      walk(child, level + 1);
-    }
-  };
-
+  throwIfScanCancelled(options.signal);
   for (const root of roots) {
-    const resolved = path.resolve(root), name = path.basename(resolved).toLowerCase();
-    if (!ordinaryRoot(resolved) || name.startsWith('.staging-') || name.startsWith('.indiedeck')) continue;
-    // The child-directory exclusions are not authority to discard an explicit
-    // game root: many archives name their real executable folder "Windows".
-    if (resolved !== path.parse(resolved).root && probe(resolved)) continue;
-    walk(resolved, 1);
+    throwIfScanCancelled(options.signal);
+    const resolved = path.resolve(root);
+    if (excluded(resolved, path.basename(resolved), true) || !ordinaryRoot(resolved)) {
+      progress.skipped += 1; progress.current = resolved; yield publish(); continue;
+    }
+    const stack: { directory: string; level: number }[] = [{ directory: resolved, level: 0 }];
+    while (stack.length > 0) {
+      throwIfScanCancelled(options.signal);
+      const { directory, level } = stack.pop()!;
+      const key = directoryKey(directory), remaining = depth - level;
+      if ((walked.get(key) ?? -1) >= remaining) continue;
+      walked.set(key, remaining);
+      progress.current = directory;
+      let record = directories.get(key);
+      if (!record) {
+        if (!inspected.has(key)) {
+          if (progress.visited >= maxDirectories) throw new ScanLimitError(maxDirectories);
+          inspected.add(key); progress.visited += 1;
+        }
+        let entries: fs.Dirent[];
+        try {
+          const stat = fs.lstatSync(directory);
+          if (!stat.isDirectory() || stat.isSymbolicLink()) { progress.skipped += 1; yield publish(); continue; }
+          entries = fs.readdirSync(directory, { withFileTypes: true });
+        } catch (error) { reportUnreadable(directory, error, level === 0); yield publish(); continue; }
+        record = { entries, terminal: false };
+        directories.set(key, record);
+        // Never interpret a drive/share root as one game, even if stray player
+        // binaries happen to be placed there. Directly registered game roots
+        // retain depth-zero support.
+        const executableNames = entries.filter((entry) => entry.isFile() && !entry.isSymbolicLink() &&
+          /\.exe$/i.test(entry.name) && !HELPER_EXE.some((helper) => helper.test(entry.name))).map((entry) => entry.name);
+        if (directory !== path.parse(directory).root && executableNames.length > 0) {
+          progress.candidates += 1;
+          let limited = false;
+          const profile = detectGame(reg, directory, {
+            deep: options.deep, measureSize: options.measureSize, probeDirectoryLimit: 128,
+            onProbeLimit: (engineId) => {
+              if (!limited) { limited = true; progress.probeLimited = (progress.probeLimited ?? 0) + 1; options.onUnreadable?.(directory); }
+              options.onProbeLimit?.(engineId);
+            },
+          });
+          if (profile?.executable && executableNames.includes(profile.executable)) {
+            results.push(profile); progress.found = results.length; record.terminal = true;
+          }
+        }
+      }
+      if (!record.terminal) {
+        const children: { directory: string; level: number }[] = [];
+        for (const entry of record.entries) {
+          if (entry.isSymbolicLink()) { progress.skipped += 1; continue; }
+          if (!entry.isDirectory()) continue;
+          const child = path.join(directory, entry.name);
+          if (excluded(child, entry.name, false)) { progress.skipped += 1; continue; }
+          if (level >= depth) { progress.depthLimited += 1; continue; }
+          children.push({ directory: child, level: level + 1 });
+        }
+        // Reverse push preserves the old directory-listing traversal order.
+        for (let index = children.length - 1; index >= 0; index -= 1) stack.push(children[index]!);
+      }
+      yield publish();
+    }
   }
+  throwIfScanCancelled(options.signal);
   return results.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Synchronous compatibility API; shares exactly the async traversal rules. */
+export function scanLibrary(reg: Registry, roots: string[], options: ScanOptions = {}): GameProfile[] {
+  const iterator = walkLibrary(reg, roots, options);
+  let next = iterator.next();
+  while (!next.done) next = iterator.next();
+  return next.value;
+}
+
+/** Cooperatively yields so desktop progress, cancellation and other IPC run. */
+export async function scanLibraryAsync(reg: Registry, roots: string[], options: ScanOptions = {}): Promise<GameProfile[]> {
+  const iterator = walkLibrary(reg, roots, options);
+  let start = performance.now(), processed = 0;
+  while (true) {
+    throwIfScanCancelled(options.signal);
+    const next = iterator.next();
+    if (next.done) return next.value;
+    processed += 1;
+    if (processed >= 32 || performance.now() - start >= 16) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      throwIfScanCancelled(options.signal);
+      processed = 0; start = performance.now();
+    }
+  }
 }

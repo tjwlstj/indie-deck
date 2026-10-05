@@ -50,6 +50,10 @@ export {
 export {
   detectGame,
   scanLibrary,
+  scanLibraryAsync,
+  normalizeScanDepth,
+  ScanCancelledError,
+  ScanLimitError,
   listExecutables,
   pickPrimaryExecutable,
   detectInstalledLoaders,
@@ -58,6 +62,7 @@ export {
   localiseProfile,
   type DetectOptions,
   type ScanOptions,
+  type ScanProgress,
 } from './detect/index.ts';
 
 export { evaluateRule, scoreEngine, rankEngines } from './detect/rules.ts';

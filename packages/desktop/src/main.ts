@@ -18,6 +18,9 @@ import {
   localiseProfile,
   listMods,
   loadConfig,
+  normalizeScanDepth,
+  ScanCancelledError,
+  ScanLimitError,
   loadLibrary,
   loadRegistry,
   loadCatalogs,
@@ -65,6 +68,8 @@ import { getMToolStatus, isMToolGame, mtoolLaunchSpec, getMToolGameExecutable, t
 import { previewTranslatorMaintenance, runTranslatorMaintenance, type TranslatorMaintenancePreview } from './translator-maintenance.ts';
 import { inspectGameArchive, importGameArchive, listGameArchives, type GameArchiveInspection } from './game-archives.ts';
 import { createLauncherUpdateController, LAUNCHER_RELEASE_URL } from './launcher-updates.ts';
+import { withinLibraryRoots } from './library-roots.ts';
+import { LibraryScanController } from './library-scan.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const { autoUpdater } = electronUpdater;
@@ -109,6 +114,13 @@ const operations = new OperationManager({
   enqueue: (work) => { void enqueueMutation(work); },
   progress: (event) => send('maintenance:progress', event),
   outcome: (event) => send('maintenance:outcome', event),
+});
+
+const libraryScan = new LibraryScanController((task) => {
+  send('scan:status', task);
+  // Retain the older read-only progress subscription without emitting one IPC
+  // per directory; the controller throttles running snapshots.
+  if (task.status === 'running') send('scan:progress', task.current);
 });
 
 function markGameChanged(gameId: string): number {
@@ -165,11 +177,7 @@ function rememberGames(profiles: GameProfile[]): void {
 }
 
 function withinLibraryRoot(gamePath: string): boolean {
-  const resolved = path.resolve(gamePath).toLowerCase();
-  return libraryRoots.some((root) => {
-    const base = path.resolve(root).toLowerCase();
-    return resolved === base || resolved.startsWith(base + path.sep);
-  });
+  return withinLibraryRoots(gamePath, libraryRoots);
 }
 
 function requireGamePath(gameId: unknown): string {
@@ -797,6 +805,48 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
   })()`, 'imported version selected with library label');
   console.log('[smoke] OS-picked ZIP inspection → two side-by-side labeled game versions → library refresh/selection → original archives and predecessor preserved passed');
 
+  // Real scanner/UI/IPC against disposable empty folders. Delay is owned by
+  // the offline bootstrap, not an application option or renderer authority.
+  await evaluate(`document.getElementById('openSettings').click()`);
+  await evaluate(`(() => {
+    const input = document.getElementById('scanDepth'); input.value = '6'; input.dispatchEvent(new Event('change'));
+    document.getElementById('saveScanSettings').click();
+  })()`);
+  await waitFor(`(async () => (await import('./store.js')).state.config?.scanDepth === 6)()`, 'saved scan depth');
+  await evaluate(`document.getElementById('scanDepth').scrollIntoView({ block: 'center' })`);
+  const scanRevision = await evaluate<number>(`(async () => (await import('./store.js')).state.libraryRevision)()`);
+  (globalThis as typeof globalThis & { __indiedeckScanSmokeSlow?: boolean }).__indiedeckScanSmokeSlow = true;
+  await evaluate(`document.getElementById('rescanRoots').click()`);
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return state.scanStatus?.status === 'running' && state.scanStatus.visited > 20
+      && !document.getElementById('cancelScan').disabled;
+  })()`, 'cooperative scan progress and cancel action');
+  const scanShot = process.env['INDIEDECK_SCAN_SCREENSHOT'];
+  if (scanShot) await writeFile(scanShot, (await window.webContents.capturePage()).toPNG());
+  await new Promise<void>((resolve) => {
+    window.webContents.once('did-finish-load', () => resolve()); window.webContents.reload();
+  });
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return state.scanStatus?.status === 'running' && !document.getElementById('scanTask').hidden
+      && !document.getElementById('cancelScan').disabled;
+  })()`, 'scan snapshot and early-bound cancellation survive reload');
+  await evaluate(`document.getElementById('cancelScan').click()`);
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return document.body.dataset.libraryState === 'ready' && state.scanStatus?.status === 'cancelled'
+      && state.libraryRevision === ${scanRevision} && state.games.length === 5;
+  })()`, 'cancelled scan preserves the exact previous library revision');
+  (globalThis as typeof globalThis & { __indiedeckScanSmokeSlow?: boolean }).__indiedeckScanSmokeSlow = false;
+  await evaluate(`document.getElementById('scan').click()`);
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return state.scanStatus?.status === 'complete' && state.libraryRevision > ${scanRevision}
+      && state.games.length === 5 && state.scanStatus.visited >= 320 && state.scanStatus.depth === 6;
+  })()`, 'complete bounded rescan commits its result after cancellation');
+  console.log('[smoke] bounded scan settings → real progress → renderer reload → cancel/unchanged library revision → complete rescan passed');
+
   // Installed-update IPC/UI contract with a mocked native updater supplied by
   // the disposable bootstrap. This does not prove a public N→N+1 installation.
   const updateCalls = (globalThis as typeof globalThis & {
@@ -1305,6 +1355,7 @@ function importSelectedArchive(candidateId: unknown, label: unknown) {
 function handleMutation<T>(channel: string, fn: (...args: never[]) => Promise<T> | T): void {
   handle(channel, (...args: never[]) => {
     if (operations.isActive()) throw new Error(t('ui.operation.busy', undefined, 'Wait for the current file operation to finish.'));
+    if (channel === 'library:scan' && pendingMutations > 0) throw new Error(t('ui.operation.busy'));
     return enqueueMutation(() => fn(...args));
   });
 }
@@ -1403,6 +1454,7 @@ function register(): void {
     await saveConfig({
       ...current,
       locale,
+      scanDepth: config?.scanDepth === undefined ? current.scanDepth : normalizeScanDepth(config.scanDepth),
       defaults: {
         targetLanguage: String(config?.defaults?.targetLanguage ?? current.defaults.targetLanguage),
         sourceLanguage: String(config?.defaults?.sourceLanguage ?? current.defaults.sourceLanguage),
@@ -1437,14 +1489,35 @@ function register(): void {
     return libraryPayload(index, safeResolveOptions((await loadConfig()).defaults));
   });
 
+  // These cannot wait for the mutation queue: reload and cancellation must
+  // remain responsive while the queued scan is running.
+  handle('library:scanCurrent', () => libraryScan.snapshot());
+  handle('library:cancelScan', (id: unknown) => libraryScan.cancel(id));
+
   handleMutation('library:scan', async (options: { depth?: number; deep?: boolean }) => {
+    const config = await loadConfig();
+    const depth = normalizeScanDepth(options?.depth ?? config.scanDepth);
+    const signal = libraryScan.start(depth);
     const scanOptions: Parameters<typeof refreshLibrary>[1] = {
-      onProgress: (current) => mainWindow?.webContents.send('scan:progress', current),
+      depth, signal,
+      onStatus: (progress) => libraryScan.progress(progress),
+      onBeforeSave: () => libraryScan.commit(),
     };
-    if (typeof options?.depth === 'number') scanOptions.depth = options.depth;
     if (typeof options?.deep === 'boolean') scanOptions.deep = options.deep;
-    const index = await refreshLibrary(registry, scanOptions);
-    return libraryPayload(index, safeResolveOptions((await loadConfig()).defaults));
+    let saved = false;
+    try {
+      const index = await refreshLibrary(registry, scanOptions);
+      saved = true;
+      const result = libraryPayload(index, safeResolveOptions(config.defaults));
+      libraryScan.finish('complete', { result, saved });
+      return result;
+    } catch (error) {
+      const cancelled = error instanceof ScanCancelledError || (error instanceof Error && error.message === 'ui.scan.cancelled');
+      const message = cancelled ? t('ui.scan.cancelled') : error instanceof ScanLimitError
+        ? t('ui.scan.error.limit') : localiseTaskError(error);
+      libraryScan.finish(cancelled ? 'cancelled' : 'failed', { error: message, saved });
+      throw new Error(message);
+    }
   });
 
   handle('game:detail', async (gameId: string, options: ResolveOptions) => {

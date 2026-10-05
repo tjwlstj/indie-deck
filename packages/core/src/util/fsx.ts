@@ -6,17 +6,31 @@ import path from 'node:path';
 export interface DirIndex {
   dir: string;
   names: string[];
-  lower: Map<string, { name: string; isDir: boolean; size: number }>;
+  lower: Map<string, { name: string; isDir: boolean; size: number; isLink: boolean }>;
 }
 
 const EMPTY: DirIndex = { dir: '', names: [], lower: new Map() };
 
+export class ProbeDirectoryLimitError extends Error {
+  constructor() { super('Engine rule directory-listing limit reached.'); this.name = 'ProbeDirectoryLimitError'; }
+}
+
 export class FsProbe {
   readonly root: string;
   private cache = new Map<string, DirIndex>();
+  private readonly rejectLinks: boolean;
+  private readonly limits: { remaining: number }[] = [];
 
-  constructor(root: string) {
+  constructor(root: string, options: { rejectLinks?: boolean } = {}) {
     this.root = root;
+    this.rejectLinks = options.rejectLinks === true;
+  }
+
+  /** Scope a single engine's newly read directories, preserving the shared cache. */
+  withDirectoryLimit<T>(maximum: number, work: () => T): T {
+    const scope = { remaining: Number.isFinite(maximum) && maximum > 0 ? Math.max(1, Math.floor(maximum)) : 128 };
+    this.limits.push(scope);
+    try { return work(); } finally { this.limits.pop(); }
   }
 
   /** Lists a directory relative to the root, memoised. Missing dirs read as empty. */
@@ -30,11 +44,21 @@ export class FsProbe {
     // the shared lowercase key `data`.  A later correctly-cased lookup then hit
     // that poisoned cache entry.  `real()` only asks for parent listings, so it
     // is safe to use here while the requested directory itself is uncached.
-    const abs = rel ? (this.real(rel) ?? path.join(this.root, rel)) : this.root;
+    const real = rel ? this.real(rel) : this.root;
+    const abs = real ?? path.join(this.root, rel);
+    if (this.rejectLinks && !real) {
+      const empty = { ...EMPTY, dir: abs };
+      this.cache.set(key, empty); return empty;
+    }
+    // Check after real() because resolving an uncached ancestor may itself
+    // consume the scope. Limits are outside the I/O catch and cannot silently
+    // become a "missing" marker or poison a later engine's cached listing.
+    if (this.limits.some((scope) => scope.remaining <= 0)) throw new ProbeDirectoryLimitError();
+    for (const scope of this.limits) scope.remaining -= 1;
     let index: DirIndex;
     try {
       const entries = fs.readdirSync(abs, { withFileTypes: true });
-      const lower = new Map<string, { name: string; isDir: boolean; size: number }>();
+      const lower = new Map<string, { name: string; isDir: boolean; size: number; isLink: boolean }>();
       const names: string[] = [];
       for (const e of entries) {
         names.push(e.name);
@@ -46,7 +70,7 @@ export class FsProbe {
             size = 0;
           }
         }
-        lower.set(e.name.toLowerCase(), { name: e.name, isDir: e.isDirectory(), size });
+        lower.set(e.name.toLowerCase(), { name: e.name, isDir: e.isDirectory(), size, isLink: e.isSymbolicLink() });
       }
       index = { dir: abs, names, lower };
     } catch {
@@ -74,7 +98,8 @@ export class FsProbe {
     if (parts.length === 0) return { name: '', isDir: true, size: 0 };
     const parent = parts.slice(0, -1).join('/');
     const leaf = parts[parts.length - 1]!;
-    return this.list(parent).lower.get(leaf.toLowerCase());
+    const entry = this.list(parent).lower.get(leaf.toLowerCase());
+    return this.rejectLinks && entry?.isLink ? undefined : entry;
   }
 
   /** Resolves a relative path to its real on-disk casing, or undefined. */
@@ -83,7 +108,7 @@ export class FsProbe {
     const out: string[] = [];
     for (let i = 0; i < parts.length; i++) {
       const entry = this.list(out.join('/')).lower.get(parts[i]!.toLowerCase());
-      if (!entry) return undefined;
+      if (!entry || (this.rejectLinks && entry.isLink)) return undefined;
       out.push(entry.name);
     }
     return path.join(this.root, ...out);

@@ -5,6 +5,44 @@ Versioning while the project is pre-1.0.
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-10-05
+
+### Fixed
+
+- Drive-root and UNC library containment no longer append a duplicate separator,
+  so a registered `D:\\` can display and address its discovered child games.
+- Engine-marker-only parent directories no longer hide playable builds below
+  them. Bulk discovery first requires a regular, non-helper executable before
+  performing engine classification; direct `detectGame` diagnostics are intact.
+- `Windows`, `Temp`, `Program Files` and `Users` are no longer globally forbidden
+  game-folder names. Actual OS locations, metadata, dependencies and links remain
+  excluded, and overlapping registered roots are deduplicated.
+
+### Added
+
+- Settings for a bounded 0–12-level scan depth, with 6 recommended for broad
+  libraries. New configurations default to 6; existing saved choices, including
+  2, are preserved. Save the depth and request a full rescan to apply it.
+- Main-owned, reload-recoverable scan progress with visited/candidate/game counts,
+  current directory, depth-limit and unreadable-directory notices, and explicit
+  cancellation. Directory counts are not presented as a fabricated percentage.
+- Cooperative asynchronous traversal with a 20,000-directory budget. Cancelled
+  or over-budget scans retain the previous saved index. Access-error branches
+  retain their previous rows rather than being interpreted as game deletions.
+- Bulk engine scoring separately caps each engine's directory-listing probes at
+  128. Inconclusive engines cannot swallow deeper games; unaffected engine
+  signatures remain usable, and affected previous rows are retained with a notice.
+- A source-linked discovery guide comparing Playnite candidate scanning with
+  Lutris/Steam and Heroic/Legendary installation-manifest discovery. Store imports,
+  unknown-engine registration and shortcut/batch execution are not implemented.
+
+### Distribution notes
+
+- The stable installer/update artifacts include this scanner and UI. Installed
+  0.1.3 users can request the new release through Settings → Launcher updates;
+  Portable users replace the executable manually. Native public-feed
+  `0.1.3 → 0.1.4` installation is not claimed by offline updater tests.
+
 ## [0.1.3] - 2026-10-05
 
 ### Added
