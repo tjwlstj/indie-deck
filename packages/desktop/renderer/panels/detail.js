@@ -13,6 +13,7 @@ import { fontChoiceKey, selectedFontPlan } from '../font-options.js';
 import { thumbnailElement, acceptSelectedThumbnail, retryThumbnail } from '../thumbnail.js';
 import { renderManagedVersions } from './archives.js';
 import { renderGameStoreLinks } from './stores.js';
+import { openOptionComparisonDialog } from './maintenance.js';
 
 // Opaque plan ids change on every fresh detail read. Keep this presentation
 // choice by game/build identity instead, so progress renders do not reset it.
@@ -163,6 +164,12 @@ export function operationCard(operation) {
   if (outcome?.error) card.append(el('div', 'operation-error', outcome.error));
   const backup = outcome?.result?.backupDirectory ?? outcome?.result?.quarantine ?? outcome?.result?.backupPath ?? outcome?.result?.backup;
   if (typeof backup === 'string') card.append(el('p', 'operation-backup', t('ui.maintenance.backupLocation', { path: backup }, 'Cleanup backup: {path}')));
+  if (operation.kind === 'reinstall-translator' && outcome?.result?.optionComparison) {
+    const comparison = outcome.result.optionComparison;
+    const review = el('button', 'ghost operation-comparison-open', t('ui.configComparison.reviewPrevious', undefined, 'Review pre-reinstall options'));
+    review.addEventListener('click', () => openOptionComparisonDialog(comparison));
+    card.append(review);
+  }
   if (outcome?.refreshError) card.append(el('div', 'operation-error', outcome.refreshError));
   if ((outcome?.rollbackFailures ?? []).length > 0) {
     const list = el('ul', 'operation-errors');

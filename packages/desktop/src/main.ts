@@ -76,6 +76,7 @@ import { readThumbnailPreferences, saveThumbnailPreference } from './thumbnail-p
 import { STORE_PROVIDERS, canonicalStoreProductUrl, readStoreLinkFile, readStoreConnections, saveStoreConnection, removeStoreConnection, resolveStoreHandoff,
   type StoreLinkCandidate, type StoreProviderId, type StoreHandoffAction, type StoreConnection } from './store-connections.ts';
 import { exportBrowserCompanion } from './browser-companion-export.ts';
+import { buildTranslationConfigComparison, type TranslationConfigComparison } from './translation-config-comparison.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // Entry-point app paths differ between `electron .`, `electron packages/desktop`
@@ -160,6 +161,9 @@ const gamePathsById = new Map<string, string>();
 const plansById = new Map<string, TranslatorPlan>();
 const planOptionsById = new Map<string, FontResolveOptions>();
 const translatorMaintenanceById = new Map<string, { gameId: string; path: string; preview: TranslatorMaintenancePreview }>();
+const optionComparisonsByPreview = new WeakMap<TranslatorMaintenancePreview, TranslationConfigComparison>();
+// Session-only redacted reports survive operation acknowledgement and reloads.
+const lastOptionComparisonsByGame = new Map<string, TranslationConfigComparison>();
 const archiveCandidates = new Map<string, { path: string; inspection: GameArchiveInspection }>();
 const storeLinkCandidates = new Map<string, StoreLinkCandidate>();
 const thumbnailSearchResults = new Map<string, Set<string>>();
@@ -184,6 +188,7 @@ function idFor(gamePath: string): string {
 
 function rememberGames(profiles: GameProfile[]): void {
   const currentIds = new Set(profiles.map((profile) => idFor(profile.path)));
+  for (const id of lastOptionComparisonsByGame.keys()) if (!currentIds.has(id)) lastOptionComparisonsByGame.delete(id);
   for (const id of gamePathsById.keys()) if (!currentIds.has(id)) {
     gamePathsById.delete(id);
     gameRevisions.delete(id);
@@ -238,7 +243,12 @@ function requirePlan(gameId: string, planId: unknown): TranslatorPlan {
   return plan;
 }
 
-function cacheTranslatorMaintenance(gameId: string, profile: GameProfile, preview: TranslatorMaintenancePreview) {
+async function cacheTranslatorMaintenance(gameId: string, profile: GameProfile, preview: TranslatorMaintenancePreview) {
+  const optionComparison = preview.files.length || profile.installedTranslators.some((item) => item.translatorId === 'xunity-autotranslator')
+    ? await buildTranslationConfigComparison(registry, profile, {
+    version: preview.version, variantId: preview.variantId, currentVersions: preview.currentVersions,
+  }) : undefined;
+  if (optionComparison) optionComparisonsByPreview.set(preview, optionComparison);
   while (translatorMaintenanceById.size >= 100) translatorMaintenanceById.delete(translatorMaintenanceById.keys().next().value!);
   const previewId = `${gameId}:${crypto.randomUUID()}`;
   translatorMaintenanceById.set(previewId, { gameId, path: path.resolve(profile.path), preview });
@@ -248,7 +258,7 @@ function cacheTranslatorMaintenance(gameId: string, profile: GameProfile, previe
     blockedReason: preview.blockReasonKey ? t(preview.blockReasonKey) : undefined,
     reinstallBlockedReason: preview.reinstallBlockReasonKey ? t(preview.reinstallBlockReasonKey) : undefined,
     files: preview.files, currentVersions: preview.currentVersions, targetVersion: preview.version,
-    variantId: preview.variantId, preservedPaths: preview.preservedPaths,
+    variantId: preview.variantId, preservedPaths: preview.preservedPaths, optionComparison,
   };
 }
 
@@ -506,6 +516,68 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
     return state.detail?.profile.id === ${JSON.stringify(start.gameId)}
       && !!document.querySelector('#detail .detail-sticky .operation-card.ok');
   })()`, 'completed operation detail');
+  const settingsFile = path.join(requireGamePath(start.gameId), 'BepInEx/config/AutoTranslatorConfig.ini');
+  const settingsBeforePreview = await readFile(settingsFile);
+  await waitFor(`!!document.querySelector('#configPanel select[data-setting-id="xunity.targetLanguage"]')`, 'game translation settings');
+  await evaluate(`(() => {
+    const target = document.querySelector('#configPanel select[data-setting-id="xunity.targetLanguage"]');
+    target.value = 'en'; target.dispatchEvent(new Event('change'));
+    document.querySelector('#cfgFooter button.ghost').click();
+  })()`);
+  await waitFor(`document.getElementById('cfgLog')?.dataset.outcome === 'preview'`, 'config preview feedback');
+  if (!(await readFile(settingsFile)).equals(settingsBeforePreview)) throw new Error('Translation option preview wrote the game config.');
+  await evaluate(`document.querySelector('#cfgFooter button.primary').click()`);
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return document.getElementById('cfgLog')?.dataset.outcome === 'saved'
+      && state.translatorConfigs.get(state.selected)?.config.values.find(value => value.id === 'xunity.targetLanguage')?.value === 'en'
+      && state.detail?.fontRecommendation?.status === 'not-needed';
+  })()`, 'saved settings feedback and font recommendation refresh');
+  await evaluate(`(() => {
+    const engine = document.querySelector('#configPanel select[data-setting-id="xunity.endpoint"]');
+    engine.value = 'GoogleTranslateV2'; engine.dispatchEvent(new Event('change'));
+  })()`);
+  await waitFor(`!!document.querySelector('#configPanel button[data-setting-id="provider:GoogleTranslateV2:UseSimplest"]')`, 'non-secret engine option');
+  await evaluate(`(() => {
+    document.querySelector('#configPanel button[data-setting-id="provider:GoogleTranslateV2:UseSimplest"]').click();
+    document.querySelector('#cfgFooter button.primary').click();
+  })()`);
+  await waitFor(`document.getElementById('cfgLog')?.dataset.outcome === 'saved'
+    && document.querySelector('#configPanel button[data-setting-id="provider:GoogleTranslateV2:UseSimplest"]')?.getAttribute('aria-pressed') === 'true'`, 'saved provider boolean reflects actual config');
+  await evaluate(`(() => {
+    const fallback = document.querySelector('#configPanel select[data-setting-id="xunity.fallbackEndpoint"]');
+    fallback.value = 'DeepLTranslateLegitimate'; fallback.dispatchEvent(new Event('change'));
+  })()`);
+  await waitFor(`!!document.querySelector('#configPanel input[data-setting-id="provider:DeepLTranslateLegitimate:ApiKey"]')`, 'fallback engine credential controls');
+  await evaluate(`document.querySelector('#cfgFooter button:last-child').click()`);
+  await evaluate(`(() => {
+    for (const [id,value] of [['xunity.targetLanguage','ko'],['xunity.endpoint','GoogleTranslate']]) {
+      const field = document.querySelector('#configPanel select[data-setting-id="'+id+'"]');
+      field.value = value; field.dispatchEvent(new Event('change'));
+    }
+    document.querySelector('#cfgFooter button.primary').click();
+  })()`);
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return document.getElementById('cfgLog')?.dataset.outcome === 'saved'
+      && state.translatorConfigs.get(state.selected)?.config.values.find(value => value.id === 'xunity.targetLanguage')?.value === 'ko'
+      && state.detail?.fontRecommendation?.status === 'recommended';
+  })()`, 'restored game options before existing font scenarios');
+  const settingsAfter = await readFile(settingsFile, 'utf8');
+  if (!settingsAfter.includes('UseSimplest=True') || (await loadConfig()).defaults.targetLanguage !== 'ko') throw new Error('Provider options or launcher defaults were unexpectedly changed.');
+  console.log('[smoke] translation form preview/save → persistent feedback → non-secret provider boolean → fallback controls → independent launcher defaults passed');
+  // Restore this disposable fixture before independent font ownership tests.
+  // Actual user edits must never become removable original files via a font.
+  await writeFile(settingsFile, settingsBeforePreview);
+  await evaluate(`(async () => {
+    const { state } = await import('./store.js'); state.translatorConfigs.delete(state.selected);
+    window.dispatchEvent(new CustomEvent('indiedeck:refresh-detail'));
+  })()`);
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return state.detail?.fontRecommendation?.status === 'recommended'
+      && state.translatorConfigs.get(state.selected)?.config?.values?.some(value => value.id === 'xunity.targetLanguage' && value.value === 'ko');
+  })()`, 'restored independent font fixture');
   const fontBefore = await evaluate<{ bundles: string[]; hasPlan: boolean; recommendation: unknown }>(`(async () => {
     const { state } = await import('./store.js');
     return { bundles: state.detail?.profile.installedFontBundles, hasPlan: !!state.detail.fontPlan,
@@ -582,6 +654,15 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
   await evaluate(`document.querySelector('#detail .translator-reinstall').click()`);
   const previewConfirmed = await evaluate<boolean>(`!!document.querySelector('#translatorMaintenanceConfirm[open] .translator-confirm')`);
   if (!previewConfirmed || !(await stat(path.join(gamePath, duplicateRel))).isFile()) throw new Error('Cleanup deleted files before confirmation.');
+  const comparisonReviewed = await evaluate<boolean>(`(async () => {
+    const { state } = await import('./store.js');
+    const report = state.detail.translatorMaintenance.optionComparison;
+    const row = document.querySelector('#translatorMaintenanceConfirm .comparison-row[data-option-id="xunity.targetLanguage"]');
+    return report?.available === true && report.preservesConfig === true && report.migrationSimulated === false
+      && row?.querySelector('.comparison-current')?.textContent === 'ko'
+      && row?.querySelector('.comparison-target')?.textContent === 'en';
+  })()`);
+  if (!comparisonReviewed) throw new Error('Reinstall review did not distinguish current settings from reference defaults.');
   window.setSize(1360, 880);
   const maintenanceShot = process.env['INDIEDECK_MAINTENANCE_SCREENSHOT'];
   if (maintenanceShot) await writeFile(maintenanceShot, (await window.webContents.capturePage()).toPNG());
@@ -605,6 +686,20 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
       throw new Error(`Translator maintenance changed a preserved game/user file: ${preserved[index]}`);
     }
   }
+  await waitFor(`!!document.querySelector('#detail .operation-comparison-open')`, 'retained pre-reinstall option report');
+  await evaluate(`document.querySelector('#detail .operation-comparison-open').click()`);
+  await waitFor(`!!document.querySelector('#translatorOptionsComparisonDialog[open] .comparison-row[data-option-id="xunity.targetLanguage"]')`, 'post-reinstall comparison review');
+  await evaluate(`document.querySelector('#translatorOptionsComparisonDialog button').click()`);
+  await new Promise<void>((resolve) => {
+    window.webContents.once('did-finish-load', () => resolve()); window.webContents.reload();
+  });
+  await waitFor(`document.body.dataset.libraryState === 'ready'`, 'library after comparison report reload');
+  await evaluate(`window.dispatchEvent(new CustomEvent('indiedeck:select-game', { detail: { gameId: '${start.gameId}' } }))`);
+  await waitFor(`!!document.querySelector('#detail .last-option-comparison')`, 'session comparison survives operation acknowledgement and renderer reload');
+  await evaluate(`document.querySelector('#detail .last-option-comparison').click()`);
+  const retainedComparison = await evaluate<boolean>(`document.querySelector('#translatorOptionsComparisonDialog .comparison-row[data-option-id="xunity.targetLanguage"] .comparison-current')?.textContent === 'ko'`);
+  if (!retainedComparison) throw new Error('Reinstall report disappeared after operation acknowledgement/reload.');
+  await evaluate(`document.querySelector('#translatorOptionsComparisonDialog button').click()`);
   console.log('[smoke] exact-file confirmation → duplicate cleanup/reinstall → retained backup and unchanged loader/mod/config/translation/font passed');
 
   await evaluate(`document.querySelector('#detail .uninstall').click()`);
@@ -630,6 +725,20 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
   const manualConfigBytes = await readFile(manualConfig);
   await evaluate(`window.dispatchEvent(new CustomEvent('indiedeck:refresh-detail'))`);
   await waitFor(`!!document.querySelector('#detail .translator-remove:not(:disabled)')`, 'manual translator cleanup');
+  await waitFor(`(async () => (await import('./store.js')).state.detail?.translatorMaintenance?.optionComparison?.currentVersion?.version === '5.4.0')()`, 'old translator option version detection');
+  await evaluate(`document.querySelector('#detail .translator-reinstall').click()`);
+  const oldOptionComparison = await evaluate<boolean>(`(async () => {
+    const { state } = await import('./store.js'); const report = state.detail.translatorMaintenance.optionComparison;
+    const introduced = document.querySelector('#translatorMaintenanceConfirm .comparison-row[data-option-id="xunity.enableUIElements"]');
+    return report.targetRegistered === true && report.currentVersion.version === '5.4.0'
+      && report.rows.some(row => row.id === 'xunity.enableUIElements' && row.introduced === true)
+      && introduced?.dataset.status === 'new-default' && !introduced.closest('details');
+  })()`);
+  if (!oldOptionComparison) throw new Error('Old-to-target option differences were not visible before reinstall.');
+  await evaluate(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
+  if (process.env['INDIEDECK_CONFIG_COMPARISON_SCREENSHOT']) await writeFile(process.env['INDIEDECK_CONFIG_COMPARISON_SCREENSHOT'], (await window.webContents.capturePage()).toPNG());
+  await evaluate(`document.querySelector('#translatorMaintenanceConfirm .maintenance-actions .ghost').click()`);
+  if (!(await readFile(manualConfig)).equals(manualConfigBytes)) throw new Error('Reviewing the option comparison modified the settings.');
   await evaluate(`document.querySelector('#detail .translator-remove').click()`);
   await evaluate(`document.querySelector('#translatorMaintenanceConfirm .translator-confirm').click()`);
   await waitFor(`(async () => {
@@ -640,6 +749,7 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
   if (!(await readFile(manualConfig)).equals(manualConfigBytes) || await stat(dllPath).then(() => true, () => false)) {
     throw new Error('Manual cleanup deleted configuration or retained the active payload.');
   }
+  console.log('[smoke] old/current options → registered schema reference → reinstall preservation → retained comparison and old-version option introduction review passed');
   // A different game keeps the default opt-in and exercises the integrated
   // translator + font plan rather than reusing the standalone path above.
   await evaluate(`document.querySelectorAll('#gameList .game')[1].click()`);
@@ -1229,7 +1339,8 @@ async function gameDetailPayload(gameId: string, options: ResolveOptions, detect
     plans,
     fontRecommendation,
     fontPlan,
-    ...(profile.engineId === 'unity' ? { translatorMaintenance: cacheTranslatorMaintenance(gameId, profile,
+    lastOptionComparison: lastOptionComparisonsByGame.get(gameId),
+    ...(profile.engineId === 'unity' ? { translatorMaintenance: await cacheTranslatorMaintenance(gameId, profile,
       await previewTranslatorMaintenance(registry, profile, options)) } : {}),
     ...(isMToolGame(profile) ? { mtoolIntegration: {
       ...await currentMToolStatus(), supported: true, gameExecutable: profile.executable,
@@ -1388,9 +1499,19 @@ async function runMaintenance(
       if (!translatorMaintenance) throw new Error(t('ui.maintenance.reason.stale'));
       const maintained = await runTranslatorMaintenance(translatorMaintenance,
         request.kind === 'remove-translator' ? 'remove' : 'reinstall', { onEvent: (event) => report(event) });
+      if (request.kind === 'reinstall-translator' && maintained.mutationStatus === 'committed') {
+        const comparison = optionComparisonsByPreview.get(translatorMaintenance);
+        if (comparison) {
+          lastOptionComparisonsByGame.delete(request.gameId);
+          while (lastOptionComparisonsByGame.size >= 20) lastOptionComparisonsByGame.delete(lastOptionComparisonsByGame.keys().next().value!);
+          lastOptionComparisonsByGame.set(request.gameId, comparison);
+        }
+      }
       result = { ...result, status: maintained.pendingUserActions.length ? 'needs-user-action' : 'success',
         mutationStatus: maintained.mutationStatus, rollbackStatus: maintained.rollbackStatus,
-        rollbackFailures: maintained.rollbackFailures, result: maintained };
+        rollbackFailures: maintained.rollbackFailures, result: {
+          ...maintained, ...(request.kind === 'reinstall-translator' ? { optionComparison: optionComparisonsByPreview.get(translatorMaintenance) } : {}),
+        } };
     } else if (request.kind === 'install' || request.kind === 'install-font') {
       if (!plan?.viable) throw new Error('That plan cannot be installed.');
       const fontConfig = request.kind === 'install-font' ? (await translatorConfigPayload(profile, 'xunity-autotranslator')).config : undefined;

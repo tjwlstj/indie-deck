@@ -793,6 +793,11 @@ button.ghost {
   border-top: 1px solid var(--line);
   padding-top: 9px;
   margin-top: 4px;
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  padding-bottom: 9px;
+  background: var(--bg-raised);
 }
 
 .cfg-footer[hidden] {
@@ -1133,7 +1138,7 @@ select {
 .maintenance-files { padding-left: 19px; max-height: 280px; overflow: auto; line-height: 1.8; }
 .maintenance-files code { overflow-wrap: anywhere; }
 .maintenance-confirm {
-  width: min(640px, calc(100vw - 48px));
+  width: min(960px, calc(100vw - 48px));
   max-height: calc(100vh - 60px);
   overflow: auto;
   padding: 22px;
@@ -1144,6 +1149,22 @@ select {
 }
 .maintenance-confirm::backdrop { background: rgb(0 0 0 / 65%); }
 .maintenance-confirm h2 { margin-top: 0; font-size: 18px; }
+.maintenance-option-comparison { margin: 15px 0; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.maintenance-option-comparison h4 { margin: 0 0 8px; font-size: 13px; }
+.comparison-summary { color: var(--text); font-size: 12px; font-weight: 600; }
+.comparison-table-wrap { overflow: auto; margin: 10px 0; }
+.comparison-table { width: 100%; min-width: 510px; border-collapse: collapse; font-size: 11.5px; line-height: 1.6; }
+.comparison-table th, .comparison-table td { padding: 8px 9px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; overflow-wrap: anywhere; max-width: 250px; }
+.comparison-table thead th { color: var(--text-dim); background: var(--bg-raised); }
+.comparison-table tbody th { width: 24%; font-weight: 500; }
+.comparison-table .comparison-status { color: var(--text-faint); }
+.comparison-row[data-status="relocated"] .comparison-status,
+.comparison-row[data-status="unmapped"] .comparison-status,
+.comparison-row[data-status="unsupported"] .comparison-status,
+.comparison-path-warning { color: var(--warn); }
+.comparison-technical { margin: 9px 0; font-size: 11.5px; line-height: 1.7; }
+.comparison-technical summary { cursor: pointer; color: var(--text-dim); }
+.comparison-technical .plan-sub { overflow-wrap: anywhere; }
 .operation-backup,
 .archive-name,
 .archive-hash,

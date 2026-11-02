@@ -7,12 +7,14 @@ while assets are attached, so the updater cannot observe a partial release.
 
 ## 1. Prepare the version
 
-Use Node 22.12 or newer. Update the version in all four manifests:
+Use Node 22.12 or newer. Update the version in all six manifests:
 
 - `package.json`
 - `packages/core/package.json`
 - `packages/cli/package.json`
 - `packages/desktop/package.json`
+- `extensions/browser-companion/manifest.json`
+- `extensions/browser-companion/manifest.firefox.json`
 
 Keep every `@indiedeck/core` workspace dependency at that exact version, update
 `CHANGELOG.md`, then refresh the lockfile with `npm install`. Confirm the release

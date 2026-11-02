@@ -148,6 +148,25 @@ test('a missing config file is reported as "not generated yet", not as an error'
   assert.equal(config.values.find((v) => v.id === 'xunity.targetLanguage')?.value, 'en', 'defaults fill in');
 });
 
+test('config presence distinguishes explicit defaults and empty keys from absent schema values', async () => {
+  const existingRoot = makeGame('cfg-presence-existing', { config: REAL_CONFIG });
+  const existing = await readGameConfig(reg, schemas, detectGame(reg, existingRoot)!, 'xunity-autotranslator');
+  const target = existing.values.find((value) => value.id === 'xunity.targetLanguage')!;
+  assert.equal(target.isDefault, true); assert.equal(target.present, true, 'an explicit default still exists in the file');
+  assert.equal(existing.values.find((value) => value.id === 'xunity.fallbackEndpoint')?.present, true, 'an explicit empty key exists');
+  const deepL = existing.providers.find((provider) => provider.provider.id === 'DeepLTranslateLegitimate')!;
+  assert.equal(deepL.fields.find((field) => field.key === 'Free')?.present, true);
+  const secret = deepL.fields.find((field) => field.key === 'ApiKey')!;
+  assert.equal(secret.present, true); assert.equal(secret.value.includes('super-secret'), false, 'presence exposes no credential bytes');
+  assert.equal(existing.providers.find((provider) => provider.provider.id === 'GoogleTranslate')!.fields[0]!.present, false);
+
+  const missingRoot = makeGame('cfg-presence-missing');
+  const missing = await readGameConfig(reg, schemas, detectGame(reg, missingRoot)!, 'xunity-autotranslator');
+  const assumedTarget = missing.values.find((value) => value.id === 'xunity.targetLanguage')!;
+  assert.equal(assumedTarget.value, 'en'); assert.equal(assumedTarget.isDefault, true); assert.equal(assumedTarget.present, false);
+  assert.ok(missing.providers.every((provider) => provider.fields.every((field) => field.present === false)));
+});
+
 /* ---------------------------------------------------------- §84 redaction */
 
 test('credentials are redacted on read and in the change diff', async () => {
@@ -255,6 +274,83 @@ test('a provider missing its required credential is warned about, not silently a
     'the user is told translation will fail without the key',
   );
   assert.equal(plan.valid, true, 'a missing key is a warning, not a hard block - they may fill it in later');
+});
+
+test('fallback providers are checked for missing credentials and installed-version requirements', async () => {
+  const root = makeGame('cfg-fallback-creds', { config: REAL_CONFIG.replace('ApiKey=super-secret-key-1234', 'ApiKey=') });
+  const config = await readGameConfig(reg, schemas, detectGame(reg, root)!, 'xunity-autotranslator');
+  const plan = planConfigChanges(schema, config, [{ id: 'xunity.fallbackEndpoint', value: 'DeepLTranslateLegitimate' }]);
+  assert.equal(plan.valid, true, 'provider readiness remains advisory');
+  assert.equal(plan.patch.Service?.FallbackEndpoint, 'DeepLTranslateLegitimate');
+  assert.equal(plan.patch.Service?.Endpoint, undefined, 'the primary service is unchanged');
+  assert.ok(plan.issues.some((issue) => issue.id === 'provider:DeepLTranslateLegitimate:ApiKey' && issue.severity === 'warn'));
+  assert.ok(plan.issues.some((issue) => issue.id === 'xunity.fallbackEndpoint' && issue.severity === 'warn'), 'old-version warning belongs to the fallback selector');
+});
+
+test('fallback language fit is checked against the staged language pair', async () => {
+  const root = makeGame('cfg-fallback-languages', { config: REAL_CONFIG });
+  const config = await readGameConfig(reg, schemas, detectGame(reg, root)!, 'xunity-autotranslator');
+  const plan = planConfigChanges(schema, config, [
+    { id: 'xunity.fallbackEndpoint', value: 'ezTransXP' },
+    { id: 'xunity.sourceLanguage', value: 'en' },
+    { id: 'xunity.targetLanguage', value: 'de' },
+  ]);
+  assert.ok(plan.issues.some((issue) => issue.id === 'xunity.sourceLanguage' && issue.messageKey === 'core.config.validation.language-unsupported-source'));
+  assert.ok(plan.issues.some((issue) => issue.id === 'xunity.targetLanguage' && issue.messageKey === 'core.config.validation.language-unsupported-target'));
+});
+
+test('clearing a configured required credential warns while an untouched secret remains unchanged', async () => {
+  const original = REAL_CONFIG.replace('Endpoint=GoogleTranslate ', 'Endpoint=DeepLTranslateLegitimate ');
+  const root = makeGame('cfg-credential-clear', { config: original });
+  const profile = detectGame(reg, root)!;
+  const config = await readGameConfig(reg, schemas, profile, 'xunity-autotranslator');
+  const clearing = planConfigChanges(schema, config, [{ id: 'provider:DeepLTranslateLegitimate:ApiKey', value: '' }]);
+  assert.equal(clearing.patch.DeepLLegitimate?.ApiKey, '');
+  assert.ok(clearing.issues.some((issue) => issue.id === 'provider:DeepLTranslateLegitimate:ApiKey' && issue.messageKey === 'core.config.validation.missing-credential'));
+  const unchanged = planConfigChanges(schema, config, [{ id: 'xunity.targetLanguage', value: 'ko' }]);
+  assert.equal(unchanged.patch.DeepLLegitimate, undefined, 'masked credentials are never copied into the patch');
+  assert.equal(unchanged.issues.some((issue) => issue.messageKey === 'core.config.validation.missing-credential'), false);
+  await writeGameConfig(profile, config, unchanged);
+  const saved = parseIni(fs.readFileSync(path.join(root, 'BepInEx/config/AutoTranslatorConfig.ini'), 'utf8'));
+  assert.equal(saved.DeepLLegitimate?.ApiKey, 'super-secret-key-1234');
+  assert.equal(saved.General?.Language, 'ko');
+});
+
+test('the same primary and fallback provider does not duplicate readiness warnings', async () => {
+  const root = makeGame('cfg-fallback-same', { config: REAL_CONFIG.replace('ApiKey=super-secret-key-1234', 'ApiKey=') });
+  const config = await readGameConfig(reg, schemas, detectGame(reg, root)!, 'xunity-autotranslator');
+  const plan = planConfigChanges(schema, config, [
+    { id: 'xunity.endpoint', value: 'DeepLTranslateLegitimate' },
+    { id: 'xunity.fallbackEndpoint', value: 'DeepLTranslateLegitimate' },
+  ]);
+  assert.equal(plan.issues.filter((issue) => issue.messageKey === 'core.config.validation.missing-credential').length, 1);
+  assert.equal(plan.issues.filter((issue) => issue.id === 'xunity.endpoint' && issue.severity === 'warn').length, 1);
+  assert.equal(plan.issues.some((issue) => issue.id === 'xunity.fallbackEndpoint'), false);
+});
+
+test('an unknown stored fallback has its own advisory instead of being silently skipped', async () => {
+  const root = makeGame('cfg-fallback-unknown', { config: REAL_CONFIG.replace('FallbackEndpoint=', 'FallbackEndpoint=UnregisteredEndpoint') });
+  const config = await readGameConfig(reg, schemas, detectGame(reg, root)!, 'xunity-autotranslator');
+  const plan = planConfigChanges(schema, config, [{ id: 'xunity.targetLanguage', value: 'ko' }]);
+  assert.equal(plan.valid, true, 'unrelated known settings can still be changed');
+  assert.ok(plan.issues.some((issue) => issue.id === 'xunity.fallbackEndpoint' && issue.messageKey === 'core.config.validation.unknown-provider'));
+  assert.equal(plan.patch.Service, undefined, 'the unknown stored endpoint is preserved');
+});
+
+test('automatic detection is accepted only as source and retains provider language-fit warnings', async () => {
+  const root = makeGame('cfg-auto-source', { config: REAL_CONFIG });
+  const config = await readGameConfig(reg, schemas, detectGame(reg, root)!, 'xunity-autotranslator');
+  const source = planConfigChanges(schema, config, [{ id: 'xunity.sourceLanguage', value: 'auto' }]);
+  assert.equal(source.valid, true);
+  assert.equal(source.patch.General?.FromLanguage, 'auto');
+  const target = planConfigChanges(schema, config, [{ id: 'xunity.targetLanguage', value: 'auto' }]);
+  assert.equal(target.valid, false);
+  assert.ok(target.issues.some((issue) => issue.id === 'xunity.targetLanguage' && issue.messageKey === 'core.config.invalid.language'));
+  const constrained = planConfigChanges(schema, config, [
+    { id: 'xunity.fallbackEndpoint', value: 'ezTransXP' },
+    { id: 'xunity.sourceLanguage', value: 'auto' },
+  ]);
+  assert.ok(constrained.issues.some((issue) => issue.id === 'xunity.sourceLanguage' && issue.messageKey === 'core.config.validation.language-unsupported-source'));
 });
 
 /* -------------------------------------------------------- §82 preservation */

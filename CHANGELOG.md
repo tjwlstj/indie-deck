@@ -5,6 +5,44 @@ Versioning while the project is pre-1.0.
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-11-03
+
+### Added
+
+- Current-option and registered-schema reference comparison in Unity translator
+  maintenance and reinstall confirmation. The report distinguishes missing file
+  keys, declared version additions, mapping/file-location moves and unconfirmed
+  evidence while keeping the existing configuration unchanged.
+- Primary and fallback provider version requirements and configured-field status
+  in the comparison, with credential, URL and identifier values omitted. Safe
+  boolean and numeric provider options can show their current values.
+- A way to reopen the pre-reinstall comparison from the completed operation and
+  maintenance cards. Main retains the latest redacted report per game for at
+  most 20 games through renderer reloads; quitting the application clears it.
+
+### Fixed
+
+- Saved non-secret provider fields and boolean options now reflect their actual
+  values; primary and fallback settings appear as separate labelled groups.
+- Translation settings appear earlier in game details, technical mapping
+  information is collapsed, and save/backup feedback remains visible after the
+  form refresh. Saving refreshes related game details without changing global
+  defaults for new installations.
+
+### Scope notes
+
+- Registered schema defaults are partial reference data, not versioned upstream
+  defaults or a plugin migration simulation. Reinstall does not reset or move the
+  user's settings. Config-tag hints and conflicting versions, including a
+  receipt/DLL disagreement, cannot establish a confirmed option-introduction
+  claim.
+- Tests use synthetic game/config fixtures and offline Electron flows. Live
+  translation/API success and durable comparison history remain unverified or
+  unimplemented respectively.
+- The full source suite reported 422 tests: 420 passed, none failed and two were
+  skipped, including 26 new core/comparison/renderer cases. Desktop flows and
+  packaging/release checks are recorded separately.
+
 ## [0.1.7] - 2026-11-02
 
 ### Added

@@ -143,6 +143,92 @@ In the launcher the same thing is a form under **Translation settings**, with
 Preview and Save, and the panel header always shows which version the layout was
 resolved against and how confident that is.
 
+## Comparing options before a reinstall (v0.1.8 source)
+
+The Unity maintenance card and its **Clean up and reinstall** confirmation show
+the current options beside the **registered schema default (reference)** for the
+compatible replacement build. The replacement is the version selected by the
+registry and resolver, not a live claim about the newest release on the Internet.
+Translation settings now appear earlier in the game detail view, while file
+locations and mapping details are collapsed technical information.
+
+The two columns answer different questions:
+
+| Information | Meaning |
+| --- | --- |
+| Current value | The setting read using the installed version's mapping, or an explicitly labelled schema reference when the key is missing. |
+| Registered schema default | The single default stored for that semantic setting in IndieDeck's partial schema. Defaults are not currently versioned upstream release data. |
+| Mapping review | Which registered mappings stay in place, differ, become unavailable or cannot be confirmed. This is a review report, not a generated migration patch. |
+
+For example, a current target language of `ko` and a schema reference of `en`
+mean that the game has a different value from our reference. Payload-only
+reinstall **keeps `ko`**. It does not reset the file to `en`, apply launcher
+installation defaults, move keys or copy the settings into a different variant's
+configuration path. A settings-path difference is shown for manual review.
+
+The report distinguishes these cases:
+
+- A key missing from the current file is different from an option explicitly
+  introduced by the schema's `availability` range. The latter is labelled as a
+  version-specific addition only with confirmed current-version evidence.
+- A DLL or receipt version with verified evidence can support a comparison. A
+  `Migrations.Tag`, an unknown version, multiple observed translator versions or
+  a disagreement between a receipt and DLL version stays visibly unconfirmed.
+  Assumed mapping confidence is retained even when a schema declares a version
+  range.
+- A target setting excluded by registered availability is shown as unavailable
+  in that schema; this is not a complete list of upstream removals or features.
+- Unrecognized keys remain untouched. The report includes their names and an
+  accurate count, with at most 200 names displayed; it never includes their
+  values.
+
+Primary and fallback providers are both represented. Declared provider version
+requirements, such as DeepL's registered minimum version, are checked against
+confirmed current and registered target versions. A requirement check is not an
+API authentication or translation test. Credential, URL, identifier and directory
+fields expose configured/present status only in this report. Strict boolean and
+bounded numeric options can show their current value. Secret values and example
+secret defaults are omitted.
+
+The completed reinstall card can reopen the pre-reinstall report. After a
+committed reinstall, the maintenance card can also reopen the latest report for
+that game, including after operation acknowledgement or a renderer reload. Main
+retains one redacted report per game for at most 20 games during the current app
+session; another committed reinstall replaces that game's report, older entries
+can be evicted, and removing a game clears its entry. This is not a disk-backed
+history or an app-restart recovery feature: quitting the app clears the reports.
+
+## Editing an installed game's options (v0.1.8 source)
+
+The form shows saved non-secret provider values, including boolean controls,
+rather than presenting those fields as empty replacements. Primary and fallback
+provider settings have separate role labels, and the same provider is rendered
+once when it serves both roles. A saved secret stays a redacted placeholder;
+leaving its replacement input empty does not copy the placeholder into the file.
+
+Preview remains read-only. Save keeps visible change and backup feedback through
+the form's subsequent refresh, explains that the game needs restarting, and
+refreshes the selected game's detail information such as its language-dependent
+font recommendation. Game-specific saves do not silently change the launcher
+defaults for new installations.
+
+Validation uses synthetic game/config fixtures. Core checks cover presence
+versus explicit empty/default values and secret preservation. Comparison checks
+cover version evidence, missing and introduced options, partial mapping coverage,
+provider requirements, safe display values, unchanged game bytes and linked-path
+refusal. Renderer helpers and the Korean/English offline Electron flows exercise
+the form and reinstall review. The latter produce local
+`out/desktop-config-comparison-ko.png` and `out/desktop-config-comparison-en.png`
+captures; these are not proof that a real game migrated its config or translated
+successfully. Browser/API authentication, full upstream migration simulation,
+durable comparison history and a general draft/focus redesign are outside this
+change.
+
+The full source test run reported 422 tests: 420 passed, none failed and two were
+skipped. The option work adds 26 cases across core configuration (7), comparison
+(13) and renderer helpers (6). These counts are separate from the offline desktop
+flows and packaging/release checks.
+
 ## Adding a translator
 
 Drop a `registry/configs/<translator>.json` next to the existing one. No code

@@ -163,6 +163,7 @@ try {
       INDIEDECK_FONT_SCREENSHOT: path.resolve('out', `desktop-fonts-${locale}.png`),
       INDIEDECK_MTOOL_SCREENSHOT: path.resolve('out', `desktop-mtool-${locale}.png`),
       INDIEDECK_MAINTENANCE_SCREENSHOT: path.resolve('out', `desktop-maintenance-${locale}.png`),
+      INDIEDECK_CONFIG_COMPARISON_SCREENSHOT: path.resolve('out', `desktop-config-comparison-${locale}.png`),
       INDIEDECK_ARCHIVES_SCREENSHOT: path.resolve('out', `desktop-archives-${locale}.png`),
       INDIEDECK_UPDATES_SCREENSHOT: path.resolve('out', `desktop-updates-${locale}.png`),
       INDIEDECK_DISABLE_UPDATES: '1',
@@ -185,6 +186,7 @@ try {
     '[smoke] bounded scan settings',
     '[smoke] offline Steam artwork search',
     '[smoke] browser companion metadata',
+    '[smoke] old/current options',
   ];
   if (requiredSmokeMarkers.some((marker) => !smokeOutput.includes(marker))) {
     throw new Error('Desktop exited without completing every required smoke flow.');

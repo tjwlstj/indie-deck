@@ -10,6 +10,7 @@
 import { $, el, setStatus } from '../dom.js';
 import { retranslate, t } from '../i18n.js';
 import { api, mutationBlocked, state } from '../store.js';
+import { credentialProviderGroups, providerFieldControl } from '../config-model.js';
 
 const config = {
   data: null,
@@ -20,6 +21,8 @@ const config = {
   gameRevision: -1,
   loadToken: 0,
   applyToken: 0,
+  outcome: null,
+  seenSections: new Set(),
 };
 
 export function resetConfigPanel() {
@@ -30,6 +33,7 @@ export function resetConfigPanel() {
   config.busy = false;
   config.gameId = null;
   config.gameRevision = -1;
+  config.outcome = null;
 }
 
 function currentValue(id, fallback) {
@@ -39,6 +43,11 @@ function currentValue(id, fallback) {
 function stage(id, value, original) {
   if (value === original) config.pending.delete(id);
   else config.pending.set(id, value);
+  config.outcome = null;
+  const required = [...(document.getElementById('configPanel')?.querySelectorAll('.cfg-required') ?? [])]
+    .find((badge) => badge.dataset.settingId === id);
+  if (required) required.hidden = Boolean(value);
+  renderOutcome();
   renderFooterCount();
 }
 
@@ -66,11 +75,13 @@ function select(options, value, onChange) {
 function control(id, type, value, original, options = {}) {
   if (type === 'boolean') {
     const button = el('button', `toggle${String(value).toLowerCase() === 'true' ? ' on' : ''}`);
+    button.setAttribute('aria-pressed', String(String(value).toLowerCase() === 'true'));
     button.disabled = config.busy || mutationBlocked();
     button.addEventListener('click', () => {
       const next = String(currentValue(id, value)).toLowerCase() === 'true' ? 'False' : 'True';
       stage(id, next, original);
       button.classList.toggle('on', next === 'True');
+      button.setAttribute('aria-pressed', String(next === 'True'));
     });
     return button;
   }
@@ -125,6 +136,7 @@ function control(id, type, value, original, options = {}) {
 
 function settingRow(setting) {
   const row = el('div', 'cfg-row');
+  row.dataset.settingId = setting.id;
   const label = el('label', 'cfg-label');
   label.append(el('span', null, setting.label));
   if (setting.deprecated) label.append(el('span', 'pill warn', t('ui.config.deprecated', undefined, 'deprecated')));
@@ -134,7 +146,11 @@ function settingRow(setting) {
     label.append(el('span', 'pill warn', t('ui.config.assumed', undefined, 'assumed')));
   }
   row.append(label);
-  row.append(control(setting.id, setting.type, currentValue(setting.id, setting.value), setting.value, setting.ui));
+  const input = control(setting.id, setting.type, currentValue(setting.id, setting.value), setting.value, setting.ui);
+  input.id = `cfg-setting-${encodeURIComponent(setting.id)}`;
+  input.dataset.settingId = setting.id;
+  label.htmlFor = input.id;
+  row.append(input);
   if (setting.help) row.append(el('div', 'cfg-help', setting.help));
   return row;
 }
@@ -155,6 +171,14 @@ function renderFooterCount() {
   }
 }
 
+function renderOutcome() {
+  const log = $('cfgLog');
+  if (!log) return;
+  log.hidden = !config.outcome;
+  log.textContent = config.outcome?.text ?? '';
+  log.dataset.outcome = config.outcome?.kind ?? '';
+}
+
 function syncMutationControls() {
   const host = $('configPanel');
   if (!host) return;
@@ -164,11 +188,16 @@ function syncMutationControls() {
   }
 }
 
-function section(host, id, label, settings, extra) {
+function section(host, id, label, settings, extra, initiallyOpen = false) {
+  if (!config.seenSections.has(id)) {
+    config.seenSections.add(id);
+    if (initiallyOpen) config.open.add(id);
+  }
   const node = el('section', 'cfg-section');
   const header = el('button', 'cfg-head');
   const isOpen = config.open.has(id);
   header.append(el('span', 'chev', isOpen ? '▾' : '▸'), el('span', null, label));
+  header.setAttribute('aria-expanded', String(isOpen));
   header.addEventListener('click', () => {
     if (config.open.has(id)) config.open.delete(id);
     else config.open.add(id);
@@ -193,6 +222,10 @@ function render() {
   const data = config.data;
   const current = data.config;
 
+  host.append(el('p', 'cfg-scope', t('ui.config.gameScope', undefined, 'These settings apply only to this game. Translation defaults affect new installations.')));
+  const technical = el('details', 'cfg-technical');
+  technical.append(el('summary', null, t('ui.config.technicalDetails', undefined, 'Version, file and schema details')));
+
   const meta = el('div', 'cfg-meta');
   meta.append(
     el('span', null, `${current.translatorName}  ${current.detected.version ?? t('ui.detail.unknownVersion', undefined, 'unknown version')}`),
@@ -202,15 +235,15 @@ function render() {
       t('ui.config.versionFrom', { source: current.detected.source, confidence: current.detected.confidence }, 'from {source} · {confidence}'),
     ),
   );
-  host.append(meta);
-  host.append(
+  technical.append(meta);
+  technical.append(
     el(
       'div',
       'plan-sub',
       current.location.path + (current.location.exists ? '' : `  (${t('ui.config.createdOnLaunch', undefined, 'created on first launch')})`),
     ),
   );
-  host.append(
+  technical.append(
     el(
       'div',
       'plan-sub',
@@ -221,6 +254,7 @@ function render() {
       ),
     ),
   );
+  host.append(technical);
 
   for (const warning of current.warnings) {
     const row = el('div', 'issue');
@@ -243,21 +277,35 @@ function render() {
 
   // Credentials follow whichever engine is selected right now, staged edits
   // included, so switching engine immediately shows the right fields.
-  const selectedId = currentValue('xunity.endpoint', current.values.find((v) => v.id === 'xunity.endpoint')?.value ?? '');
-  const selected = current.providers.find((p) => p.provider.id === selectedId);
-  if (selected) {
-    section(host, 'credentials', t('ui.config.credentials', { provider: selected.provider.label }, '{provider} credentials'), [], (body) => {
+  for (const selected of credentialProviderGroups(current, config.pending)) {
+    const roleKey = selected.roles.length > 1 ? 'primaryAndFallbackCredentials'
+      : selected.roles[0] === 'fallback' ? 'fallbackCredentials' : 'primaryCredentials';
+    const roleLabel = selected.roles.length > 1 ? 'Primary and fallback: {provider}'
+      : selected.roles[0] === 'fallback' ? 'Fallback engine: {provider}' : 'Primary engine: {provider}';
+    section(host, `credentials:${selected.provider.id}`, t(`ui.config.${roleKey}`, { provider: selected.provider.label }, roleLabel), [], (body) => {
       if (selected.fields.length === 0) {
         body.append(el('div', 'cfg-help', t('ui.config.noCredentials', undefined, 'This engine needs no credentials.')));
       }
       for (const field of selected.fields) {
         const id = `provider:${selected.provider.id}:${field.key}`;
         const row = el('div', 'cfg-row');
+        row.dataset.settingId = id;
         const label = el('label', 'cfg-label');
         label.append(el('span', null, field.label));
-        if (field.required && !field.value) label.append(el('span', 'pill err', t('ui.config.required', undefined, 'required')));
+        const presentation = providerFieldControl(field, id, config.pending);
+        const hasEffectiveValue = config.pending.has(id) ? Boolean(config.pending.get(id)) : presentation.configured;
+        if (field.required) {
+          const required = el('span', 'pill err cfg-required', t('ui.config.required', undefined, 'required'));
+          required.dataset.settingId = id;
+          required.hidden = hasEffectiveValue;
+          label.append(required);
+        }
         row.append(label);
-        row.append(control(id, field.type, currentValue(id, ''), '', { placeholder: field.value || undefined }));
+        const input = control(id, field.type, presentation.value, presentation.original, { placeholder: presentation.placeholder });
+        input.id = `cfg-setting-${encodeURIComponent(id)}`;
+        input.dataset.settingId = id;
+        label.htmlFor = input.id;
+        row.append(input);
         if (field.isSecret) {
           row.append(
             el('div', 'cfg-help', t('ui.config.plaintextWarning', undefined, 'Stored in the game config as plain text - that is how the plugin reads it.')),
@@ -279,7 +327,7 @@ function render() {
           ),
         );
       }
-    });
+    }, true);
   }
 
   if (current.unknown.length > 0) {
@@ -308,6 +356,7 @@ function render() {
   discard.disabled = config.busy || mutationBlocked();
   discard.addEventListener('click', () => {
     config.pending.clear();
+    config.outcome = null;
     render();
   });
   footer.append(preview, save, discard);
@@ -315,9 +364,11 @@ function render() {
 
   const log = el('div', 'log');
   log.id = 'cfgLog';
-  log.hidden = true;
+  log.setAttribute('role', 'status');
+  log.setAttribute('aria-live', 'polite');
   host.append(log);
   renderFooterCount();
+  renderOutcome();
 }
 
 /* ---------------------------------------------------------------- apply */
@@ -352,33 +403,40 @@ async function apply(previewOnly) {
     return;
   }
   log.hidden = false;
-  log.textContent = t('ui.config.checking', undefined, 'Checking…');
+  config.outcome = { kind: 'checking', text: t('ui.config.checking', undefined, 'Checking…') };
+  renderOutcome();
 
   try {
     if (previewOnly) {
       const plan = await api.translatorConfig.plan(gameId, translatorId, changes);
       if (applyToken === config.applyToken && state.selected === gameId && config.gameId === gameId && $('cfgLog')) {
-        $('cfgLog').textContent = planText(plan);
+        config.outcome = { kind: 'preview', text: planText(plan) };
+        renderOutcome();
       }
       return;
     }
 
     const { plan, result } = await api.translatorConfig.write(gameId, translatorId, changes);
     if (applyToken !== config.applyToken || state.selected !== gameId || config.gameId !== gameId || !$('cfgLog')) return;
-    log.textContent = planText(plan);
+    config.outcome = { kind: 'error', text: planText(plan) };
+    renderOutcome();
     if (!result) {
       setStatus(t('ui.config.notWritten', undefined, 'Nothing written - fix the errors above.'), 'err');
       return;
     }
-    log.textContent += `\n\n${t('ui.config.written', { count: result.changed, path: result.path }, '{count} setting(s) written to {path}')}`;
-    if (result.backup) log.textContent += `\n${t('ui.config.backedUp', { path: result.backup }, 'original backed up to {path}')}`;
+    config.outcome = { kind: 'saved', text: planText(plan) + `\n\n${t('ui.config.written', { count: result.changed, path: result.path }, '{count} setting(s) written to {path}')}` };
+    if (result.backup) config.outcome.text += `\n${t('ui.config.backedUp', { path: result.backup }, 'original backed up to {path}')}`;
+    config.outcome.text += `\n${t('ui.config.restartNotice', undefined, 'Restart the game to use saved settings.')}`;
+    renderOutcome();
     config.pending.clear();
     state.translatorConfigs.delete(gameId);
     setStatus(t('ui.config.saved', { count: result.changed }, '{count} setting(s) saved'), 'ok');
     await load(true);
+    window.dispatchEvent(new CustomEvent('indiedeck:refresh-detail'));
   } catch (err) {
     if (applyToken === config.applyToken && state.selected === gameId && config.gameId === gameId && $('cfgLog')) {
-      $('cfgLog').textContent = err.message;
+      config.outcome = { kind: 'error', text: err.message };
+      renderOutcome();
       setStatus(err.message, 'err');
     }
   } finally {

@@ -53,6 +53,20 @@ every key IndieDeck does not describe, and the file's line endings; credentials
 are redacted everywhere but the file itself. See
 [docs/config-manager.md](docs/config-manager.md).
 
+**Reinstall option comparison (v0.1.8 source).** Before replacing a Unity
+translator, review current values beside the compatible replacement's registered
+schema defaults. Existing configuration is kept; the reference column is not a
+reset or automatic migration plan, and the schema does not describe every
+upstream option or version-specific default. Missing keys, declared additions,
+mapping moves and uncertain version evidence are distinguished. Primary and
+fallback provider requirements are included without exposing their credentials.
+The completed operation and maintenance card can reopen the pre-reinstall
+report. Main keeps the latest report per game for at most 20 games during the
+current app session, including renderer reloads; quitting the app clears it.
+Disk-backed comparison history is not implemented. The form also shows saved
+non-secret provider values and keeps save feedback visible. See the
+[comparison and editing scope](docs/config-manager.md#comparing-options-before-a-reinstall-v018-source).
+
 ![The translation settings panel](docs/media/config.png)
 
 **Korean and English throughout.** Not just the chrome: the compatibility
@@ -235,6 +249,10 @@ predecessor, choosing a new active version, reload persistence and reverting to
 the older copy. Managed-installation unit fixtures cover registration failure,
 source-independent recovery, atomic activation-save failure, storage identity,
 disk-space rejection and owned-stage cleanup.
+Translation-option flows also exercise read-only preview, game-specific saves,
+provider boolean persistence, current-versus-reference reinstall review and
+unchanged configuration bytes. Actual plugin migration and live translation
+services are separate verification targets.
 Launcher update controller and renderer tests use a mocked updater to cover explicit
 check/download/restart states, busy and shutdown gates, retry and main-owned
 reload recovery. The Korean and English desktop flows also boot an installed-

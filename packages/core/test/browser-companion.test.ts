@@ -135,9 +135,10 @@ test('an export in progress rejects a second click and reports save requests wit
 });
 
 test('browser manifests request only activeTab and contain no background, host or profile privileges', () => {
+  const launcherVersion = JSON.parse(fs.readFileSync(new URL('../../../package.json', import.meta.url), 'utf8')).version;
   for (const name of ['manifest.json', 'manifest.firefox.json']) {
     const manifest = JSON.parse(fs.readFileSync(new URL(name, root), 'utf8'));
-    assert.equal(manifest.manifest_version, 3); assert.equal(manifest.version, '0.1.7');
+    assert.equal(manifest.manifest_version, 3); assert.equal(manifest.version, launcherVersion);
     assert.deepEqual(manifest.permissions, ['activeTab']);
     for (const key of ['host_permissions', 'optional_permissions', 'background', 'content_scripts', 'externally_connectable']) assert.equal(key in manifest, false);
     assert.equal(manifest.action.default_popup, 'popup.html');

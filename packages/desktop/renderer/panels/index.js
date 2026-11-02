@@ -17,15 +17,15 @@ import { hasTranslatorMaintenance } from '../maintenance-model.js';
 export const SECTIONS = [
   { id: 'header', render: renderHeader },
   { id: 'facts', render: renderFacts },
-  { id: 'audit', render: renderAudit, when: (ctx) => ctx.audit.issues.length > 0 },
-  { id: 'translator-maintenance', render: renderTranslatorMaintenance, when: hasTranslatorMaintenance },
-  { id: 'font', render: renderFontRecommendation, when: (ctx) => Boolean(ctx.fontRecommendation) },
-  { id: 'mtool', render: renderMToolIntegration, when: hasMToolIntegration },
-  { id: 'plans', render: renderPlans },
   {
     id: 'config',
     render: renderConfigSection,
     when: (ctx) => ctx.profile.installedTranslators.length > 0,
   },
+  { id: 'audit', render: renderAudit, when: (ctx) => ctx.audit.issues.length > 0 },
+  { id: 'translator-maintenance', render: renderTranslatorMaintenance, when: hasTranslatorMaintenance },
+  { id: 'font', render: renderFontRecommendation, when: (ctx) => Boolean(ctx.fontRecommendation) },
+  { id: 'mtool', render: renderMToolIntegration, when: hasMToolIntegration },
+  { id: 'plans', render: renderPlans },
   { id: 'mods', render: renderMods },
 ];

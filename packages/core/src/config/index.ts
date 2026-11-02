@@ -127,6 +127,9 @@ export interface ConfigValue {
   type: SettingDef['ui']['type'];
   value: string;
   isDefault: boolean;
+  /** Actual INI key presence, distinct from an explicit factory-default value.
+   * Older caller-supplied snapshots may omit this evidence. */
+  present?: boolean;
   section: string;
   key: string;
   /** The mapping was guessed because no declared range covered this version. */
@@ -141,7 +144,7 @@ export interface ConfigValue {
 export interface ProviderState {
   provider: ProviderDef;
   selected: boolean;
-  fields: { key: string; label: string; type: ProviderField['type']; value: string; required: boolean; isSecret: boolean }[];
+  fields: { key: string; label: string; type: ProviderField['type']; value: string; required: boolean; isSecret: boolean; present?: boolean }[];
 }
 
 type ProviderField = ProviderDef['fields'][number];
@@ -254,6 +257,7 @@ export async function readGameConfig(
       type: setting.ui.type,
       value: SECRET_TYPES.has(setting.ui.type) && !options.revealSecrets ? redact(value) : value,
       isDefault: raw === undefined || raw === setting.default,
+      present: raw !== undefined,
       section: mapping.section,
       key: mapping.key,
       assumed: mapping.assumed,
@@ -276,7 +280,8 @@ export async function readGameConfig(
   const providers: ProviderState[] = schema.providers.map((provider) => {
     const fields = provider.fields.map((field) => {
       if (provider.section) describedKeys.add(`${provider.section.toLowerCase()}.${field.key.toLowerCase()}`);
-      const raw = provider.section ? (data[provider.section]?.[field.key] ?? '') : '';
+      const stored = provider.section ? data[provider.section]?.[field.key] : undefined;
+      const raw = stored ?? '';
       return {
         key: field.key,
         label: tRegistry(
@@ -287,6 +292,7 @@ export async function readGameConfig(
         value: field.type === 'secret' && !options.revealSecrets ? redact(raw) : raw,
         required: field.required === true,
         isSecret: field.type === 'secret',
+        present: stored !== undefined,
       };
     });
     const label = tRegistry(`configSchema.${schema.translator}.providers.${provider.id}.label`, provider.label);
@@ -400,7 +406,8 @@ export function planConfigChanges(
   // provider, not the one that happens to be in the file.
   const endpointChange = changes.find((c) => c.id === 'xunity.endpoint');
   const targetEndpoint = endpointChange?.value ?? current.values.find((v) => v.id === 'xunity.endpoint')?.value ?? '';
-  const provider = providerById(schema, targetEndpoint);
+  const fallbackChange = changes.find((c) => c.id === 'xunity.fallbackEndpoint');
+  const fallbackEndpoint = fallbackChange?.value ?? current.values.find((v) => v.id === 'xunity.fallbackEndpoint')?.value ?? '';
 
   for (const change of changes) {
     const providerRef = parseProviderChangeId(change.id);
@@ -502,21 +509,31 @@ export function planConfigChanges(
     });
   }
 
-  // Cross-field checks against the resulting state.
-  if (provider) {
-    issues.push(...validateProviderFit(provider, schema, current, changes));
-  } else if (targetEndpoint) {
-    issues.push(
-      issueFrom(
-        'xunity.endpoint',
-        'warn',
-        message(
-          'core.config.validation.unknown-provider',
-          { endpoint: targetEndpoint },
-          '"{endpoint}" is not a provider IndieDeck knows about; its credential fields cannot be checked.',
+  // Both services can make translation requests. Validate the resulting primary
+  // and fallback state, but do not repeat the same provider's warnings twice.
+  const checkedProviders = new Set<string>();
+  for (const selected of [
+    { id: 'xunity.endpoint', endpoint: targetEndpoint },
+    { id: 'xunity.fallbackEndpoint', endpoint: fallbackEndpoint },
+  ]) {
+    if (!selected.endpoint || checkedProviders.has(selected.endpoint)) continue;
+    checkedProviders.add(selected.endpoint);
+    const provider = providerById(schema, selected.endpoint);
+    if (provider) {
+      issues.push(...validateProviderFit(provider, schema, current, changes, selected.id));
+    } else {
+      issues.push(
+        issueFrom(
+          selected.id,
+          'warn',
+          message(
+            'core.config.validation.unknown-provider',
+            { endpoint: selected.endpoint },
+            '"{endpoint}" is not a provider IndieDeck knows about; its credential fields cannot be checked.',
+          ),
         ),
-      ),
-    );
+      );
+    }
   }
 
   return { changes: planned, issues, patch, valid: !issues.some((i) => i.severity === 'error') };
@@ -564,6 +581,9 @@ function validateSetting(
     return undefined;
   }
   if (ui.type === 'language') {
+    // Upstream permits endpoint-dependent automatic source detection. It is
+    // not a target language, and provider language-fit warnings still apply.
+    if (setting.id === 'xunity.sourceLanguage' && value === 'auto') return undefined;
     if (!/^[a-z]{2,3}(-[A-Za-z]{2,4})?$/.test(value)) {
       return message(
         'core.config.invalid.language',
@@ -593,6 +613,7 @@ function validateProviderFit(
   schema: ConfigSchema,
   current: GameConfig,
   changes: ConfigChange[],
+  endpointId: string,
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const valueOf = (id: string): string =>
@@ -603,7 +624,7 @@ function validateProviderFit(
       const reasonKey = `configSchema.${schema.translator}.providers.${provider.id}.requiresTranslatorVersion.reason`;
       issues.push(
         issueFrom(
-          'xunity.endpoint',
+          endpointId,
           'warn',
           provider.requiresTranslatorVersion.reason
             ? { key: reasonKey, text: tRegistry(reasonKey, provider.requiresTranslatorVersion.reason) }
@@ -625,7 +646,10 @@ function validateProviderFit(
     if (!field.required) continue;
     const changed = changes.find((c) => c.id === `provider:${provider.id}:${field.key}`)?.value;
     const existing = current.providers.find((p) => p.provider.id === provider.id)?.fields.find((f) => f.key === field.key)?.value;
-    if (!changed && !existing) {
+    // An explicit empty edit clears a credential; it must not fall back to the
+    // old (possibly redacted) value when evaluating the resulting config.
+    const resulting = changed !== undefined ? changed : existing;
+    if (!resulting?.trim()) {
       issues.push(
         issueFrom(
           `provider:${provider.id}:${field.key}`,
