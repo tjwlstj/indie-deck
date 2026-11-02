@@ -1192,3 +1192,34 @@ select {
 .update-warning { color: var(--warn); }
 .update-version { margin: 5px 0; overflow-wrap: anywhere; }
 .update-progress { display: block; width: 100%; margin: 12px 0; }
+
+/* ----------------------------------------------- store/browser handoff */
+.store-providers { display: grid; grid-template-columns: repeat(auto-fit, minmax(235px, 1fr)); gap: 10px; margin: 15px 0; }
+.store-provider,
+.store-companion,
+.store-candidate,
+.store-link { min-width: 0; padding: 13px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-raised); }
+.store-companion,
+.store-candidate,
+.store-link { margin: 12px 0; }
+.store-candidate { border-left: 3px solid var(--accent); }
+.store-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 11px 0; }
+.store-actions button { max-width: 100%; white-space: normal; }
+.store-help,
+.store-url,
+.store-error,
+.store-steps { font-size: 11.5px; line-height: 1.65; }
+.store-help { color: var(--text-faint); }
+.store-url,
+.store-link strong,
+.store-candidate strong { overflow-wrap: anywhere; }
+.store-url { color: var(--text-dim); }
+.store-error { color: var(--err); }
+.store-unverified { color: var(--text-faint); white-space: normal; }
+.store-steps { padding-left: 19px; }
+.store-steps li + li { margin-top: 5px; }
+.store-product-label { display: flex; flex-direction: column; gap: 7px; margin: 12px 0; font-size: 12px; }
+.store-product-label select { width: 100%; padding: 7px 9px; }
+.store-game-card { margin-bottom: 18px; }
+.store-game-link + .store-game-link { padding-top: 12px; border-top: 1px solid var(--line); }
+.store-game-link strong { overflow-wrap: anywhere; }

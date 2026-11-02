@@ -36,6 +36,14 @@ export const state = {
   archiveProgress: null,
   archiveBusy: false,
   archiveAction: null,
+  storeConnections: null,
+  storeConnectionsLoaded: false,
+  storeReadError: null,
+  storeReadPending: false,
+  storeRequestToken: 0,
+  storeCandidate: null,
+  storeProductId: '',
+  storeBusy: false,
   updateStatus: null,
   updateStatusLoading: false,
   updateStatusRequestToken: 0,
@@ -124,7 +132,7 @@ export function applyLibraryPayload(payload) {
 }
 
 export function mutationBlocked() {
-  return isOperationActive(state.operation) || state.mtoolBusy || state.archiveBusy || isArchiveActive(state.archiveProgress) ||
+  return isOperationActive(state.operation) || state.mtoolBusy || state.archiveBusy || state.storeBusy || isArchiveActive(state.archiveProgress) ||
     state.scanRequestPending || isScanActive(state.scanStatus) ||
     launcherUpdateInstallPending(state.updateStatus, state.updateAction);
 }

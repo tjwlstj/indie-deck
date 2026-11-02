@@ -14,6 +14,7 @@ import { resetConfigPanel } from './config.js';
 import { renderMToolSettings } from './mtool.js';
 import { renderArchiveSettings } from './archives.js';
 import { renderLauncherUpdates } from './updates.js';
+import { renderStoreSettings } from './stores.js';
 import { validScanDepth } from '../scan-model.js';
 
 export function setSettingsMutationDisabled() {
@@ -26,6 +27,7 @@ export function setSettingsMutationDisabled() {
   renderMToolSettings();
   renderArchiveSettings();
   renderLauncherUpdates();
+  renderStoreSettings();
 }
 
 export function populateScanSettings() {

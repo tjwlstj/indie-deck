@@ -2,7 +2,7 @@ import { BrowserWindow, app, dialog, ipcMain, shell } from 'electron';
 import electronUpdater from 'electron-updater';
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -73,12 +73,22 @@ import { withinLibraryRoots } from './library-roots.ts';
 import { LibraryScanController } from './library-scan.ts';
 import { getGameThumbnail, searchSteamCovers, fetchSteamCover } from './thumbnails.ts';
 import { readThumbnailPreferences, saveThumbnailPreference } from './thumbnail-preferences.ts';
+import { STORE_PROVIDERS, canonicalStoreProductUrl, readStoreLinkFile, readStoreConnections, saveStoreConnection, removeStoreConnection, resolveStoreHandoff,
+  type StoreLinkCandidate, type StoreProviderId, type StoreHandoffAction, type StoreConnection } from './store-connections.ts';
+import { exportBrowserCompanion } from './browser-companion-export.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const { autoUpdater } = electronUpdater;
 const APP_ID = 'io.github.tjwlstj.indiedeck';
 
 if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
+// Isolate the Chromium profile in source, portable and installed smoke runs.
+// Test mode never shares the user's regular IndieDeck profile or lock.
+if (process.env['INDIEDECK_SMOKE']) {
+  const profile = path.join(defaultDataDir(), 'electron-profile');
+  mkdirSync(profile, { recursive: true });
+  app.setPath('userData', profile);
+}
 
 let registry: Registry;
 let mainWindow: BrowserWindow | undefined;
@@ -148,6 +158,7 @@ const plansById = new Map<string, TranslatorPlan>();
 const planOptionsById = new Map<string, FontResolveOptions>();
 const translatorMaintenanceById = new Map<string, { gameId: string; path: string; preview: TranslatorMaintenancePreview }>();
 const archiveCandidates = new Map<string, { path: string; inspection: GameArchiveInspection }>();
+const storeLinkCandidates = new Map<string, StoreLinkCandidate>();
 const thumbnailSearchResults = new Map<string, Set<string>>();
 const thumbnailSearchGeneration = new Map<string, number>();
 interface ArchiveTask {
@@ -381,6 +392,11 @@ async function runSmokeTest(window: BrowserWindow): Promise<void> {
       else console.log(`[smoke] detail for "${detail.title}": ${detail.facts} facts, ${detail.plans} translator plans, ${detail.configSections} config sections / ${detail.configRows} settings`);
       if (process.env['INDIEDECK_DEBUG']) console.log(`[smoke] config panel says: ${detail.configText}`);
 
+      const companion = await exportBrowserCompanion(app.getAppPath(), defaultDataDir(), app.getVersion());
+      const companionManifest = JSON.parse(await readFile(path.join(companion, 'chromium', 'manifest.json'), 'utf8'));
+      if (companionManifest.version !== app.getVersion()) throw new Error('Packaged companion version disagrees with the launcher.');
+      console.log('[smoke] bundled browser companion exported and version verified; no browser profile was changed');
+
       if (process.env['INDIEDECK_SMOKE_FLOW'] === '1') await runOperationSmoke(window);
 
       const shot = process.env['INDIEDECK_SCREENSHOT'];
@@ -393,7 +409,10 @@ async function runSmokeTest(window: BrowserWindow): Promise<void> {
           );
           await new Promise((resolve) => setTimeout(resolve, 600));
         }
-        const image = await window.webContents.capturePage();
+        // DOM readiness can precede the first compositor frame for an empty
+        // library. Wait for paint before capturing the packaged smoke window.
+        await window.webContents.executeJavaScript('new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+        const image = await window.webContents.capturePage(undefined, { stayAwake: true });
         await writeFile(shot, image.toPNG());
         console.log(`[smoke] screenshot written to ${shot}`);
       }
@@ -858,6 +877,74 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
       && document.querySelectorAll('#gameList .archive-version-label').length === 2;
   })()`, 'imported version selected with library label');
   console.log('[smoke] ZIP → explicit product/edition grouping → preserved active copy → version activation/reload/revert → library refresh; original archives and predecessor preserved');
+
+  // Use the companion's real exported JSON through the real picker, parser,
+  // persistence and IPC. Only OS/browser/client launch acknowledgements are
+  // mocked by the isolated entry point; no account or session is accessed.
+  const catalogBeforeStoreLink = await readFile(path.join(defaultDataDir(), 'game-installations.json'), 'utf8');
+  const storeCalls = () => (globalThis as typeof globalThis & { __indiedeckStoreSmokeCalls?: { kind: string; url?: string; folder?: string }[] }).__indiedeckStoreSmokeCalls ?? [];
+  const storeCallStart = storeCalls().length;
+  await evaluate(`document.getElementById('openSettings').click()`);
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return state.storeConnectionsLoaded && !state.storeReadPending && document.querySelectorAll('.store-provider').length === 8;
+  })()`, 'store provider hub load');
+  await evaluate(`document.querySelector('.store-provider[data-provider="booth"] .store-open[data-action="login"]').click()`);
+  await waitFor(`(async () => !(await import('./store.js')).state.storeBusy)()`, 'browser login handoff acknowledgement');
+  if (!storeCalls().slice(storeCallStart).some((call) => call.url === 'https://accounts.booth.pm/users/sign_in')) throw new Error('Store login did not use the fixed official browser entry.');
+  await evaluate(`document.querySelector('.store-pick').click()`);
+  await waitFor(`!!document.querySelector('.store-save:not(:disabled)')`, 'companion file review');
+  await evaluate(`(() => {
+    const product = document.getElementById('storeLinkProduct'); product.value = '${firstProduct.id}';
+    product.dispatchEvent(new Event('change')); document.querySelector('.store-save').click();
+  })()`);
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return !state.storeBusy && state.storeConnections?.snapshot?.links.length === 1
+      && state.storeConnections.snapshot.links[0].managedProductId === '${firstProduct.id}';
+  })()`, 'store reference saved without payload ownership change');
+  await evaluate(`(async () => {
+    const { state } = await import('./store.js');
+    const record = state.archiveRecords.find((entry) => entry.id === '${firstArchive.id}');
+    window.dispatchEvent(new CustomEvent('indiedeck:select-game', { detail: { gameId: record.gameId } }));
+  })()`);
+  await waitFor(`!!document.querySelector('.detail-stores .store-open[data-provider="steam"]')`, 'managed game detail official-store shortcuts');
+  await evaluate(`document.getElementById('openSettings').click()`);
+  await waitFor(`!!document.querySelector('.store-link .store-open[data-action="client"]:not(:disabled)')`, 'store reference actions ready');
+  await evaluate(`document.querySelector('.store-link .store-open[data-action="client"]').click()`);
+  await waitFor(`(async () => !(await import('./store.js')).state.storeBusy)()`, 'validated Steam client handoff');
+  if (!storeCalls().some((call) => call.url === 'steam://install/440')) throw new Error('Steam handoff did not rebuild the numeric install URI.');
+  const callsBeforeInjection = storeCalls().length;
+  const rejectedStoreRequests = await evaluate<boolean>(`(async () => {
+    const { api } = await import('./store.js');
+    const requests = [() => api.stores.open('steam', 'site', 'file:///renderer-path'),
+      () => api.stores.open('steam', 'javascript:alert(1)'), () => api.stores.save('unissued-candidate')];
+    for (const request of requests) { try { await request(); return false; } catch {} }
+    return true;
+  })()`);
+  if (!rejectedStoreRequests || storeCalls().length !== callsBeforeInjection) throw new Error('A forged store request reached an external application.');
+  await evaluate(`document.querySelector('.store-companion-open').click()`);
+  await waitFor(`(async () => !(await import('./store.js')).state.storeBusy)()`, 'bundled companion folder preparation');
+  if (!storeCalls().some((call) => call.kind === 'folder' && call.folder === path.join(defaultDataDir(), 'browser-companion', app.getVersion()))) throw new Error('Companion folder was not exported to the fixed managed path.');
+  await new Promise<void>((resolve) => {
+    window.webContents.once('did-finish-load', () => resolve()); window.webContents.reload();
+  });
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return document.body.dataset.libraryState === 'ready' && state.storeConnections?.snapshot?.links.length === 1
+      && state.storeConnections.snapshot.links[0].url === 'https://store.steampowered.com/app/440/';
+  })()`, 'store link reload persistence and canonical URL');
+  await evaluate(`document.getElementById('openSettings').click()`);
+  await waitFor(`!!document.querySelector('.store-link .store-remove:not(:disabled)')`, 'store list reload settled');
+  await evaluate(`document.getElementById('storeSettings').scrollIntoView({ block: 'start' })`);
+  await evaluate(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
+  if (process.env['INDIEDECK_STORES_SCREENSHOT']) await writeFile(process.env['INDIEDECK_STORES_SCREENSHOT'], (await window.webContents.capturePage()).toPNG());
+  await evaluate(`document.querySelector('.store-remove').click()`);
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js'); return !state.storeBusy && state.storeConnections?.snapshot?.links.length === 0;
+  })()`, 'store reference removal');
+  if (catalogBeforeStoreLink !== await readFile(path.join(defaultDataDir(), 'game-installations.json'), 'utf8')) throw new Error('Store references changed payload ownership or active installations.');
+  console.log('[smoke] browser companion metadata → explicit managed-product reference → fixed browser/client handoff → reload/removal; no authentication claims or payload changes');
 
   // Real scanner/UI/IPC against disposable empty folders. Delay is owned by
   // the offline bootstrap, not an application option or renderer authority.
@@ -1382,7 +1469,36 @@ function handle<T>(channel: string, fn: (...args: never[]) => Promise<T> | T): v
 
 function localiseTaskError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
-  return /^ui\.(maintenance|archives|update)\.[a-zA-Z0-9.]+$/.test(message) ? t(message) : message;
+  return /^ui\.(maintenance|archives|update|stores)\.[a-zA-Z0-9.]+$/.test(message) ? t(message) : message;
+}
+
+const STORE_ACTIONS: StoreHandoffAction[] = ['site', 'library', 'login', 'client', 'downloadClient'];
+function storeActions(provider: StoreProviderId, link?: StoreConnection) {
+  return STORE_ACTIONS.flatMap((action) => {
+    try {
+      const handoff = resolveStoreHandoff(provider, action, link);
+      const label = action === 'client' ? ({ steam: 'steamInstall', epic: 'epicProduct', itch: 'itchLibrary' }[provider as 'steam' | 'epic' | 'itch'] ?? action) : action;
+      return [{ id: action, kind: handoff.kind, labelKey: `ui.stores.action.${label}` }];
+    } catch { return []; }
+  });
+}
+
+async function storeConnectionsPayload() {
+  const providers = STORE_PROVIDERS.map((provider) => ({
+    id: provider.id, name: provider.name, authMode: provider.authMode, actions: storeActions(provider.id),
+  }));
+  // Store references do not change the game's payload owner. A catalog failure
+  // prevents new associations while still allowing fixed official web links.
+  const products = await listGameInstallations(defaultDataDir()).then((catalog) =>
+    catalog.products.map(({ id, title }) => ({ id, title }))).catch(() => []);
+  try {
+    const snapshot = await readStoreConnections(defaultDataDir());
+    return { snapshot: { ...snapshot, links: snapshot.links.map((link) => ({
+      ...link, url: canonicalStoreProductUrl(link), actions: storeActions(link.provider, link),
+    })) }, providers, products };
+  } catch (error) {
+    return { snapshot: null, providers, products, error: localiseTaskError(error) };
+  }
 }
 
 /** The catalog owns stable product/version ids. Library profiles remain tied
@@ -1499,6 +1615,53 @@ function register(): void {
   }));
 
   handle('config:get', () => loadConfig());
+  handle('stores:list', async () => { await mutationQueue; return storeConnectionsPayload(); });
+  handleMutation('stores:pick', async () => {
+    const picked = await dialog.showOpenDialog({ properties: ['openFile'], title: t('ui.stores.pickTitle'),
+      filters: [{ name: t('ui.stores.linkFiles'), extensions: ['json'] }] });
+    const file = picked.filePaths[0];
+    if (picked.canceled || !file) return { ...await storeConnectionsPayload(), candidate: null };
+    const link = await readStoreLinkFile(file);
+    while (storeLinkCandidates.size >= 20) storeLinkCandidates.delete(storeLinkCandidates.keys().next().value!);
+    const id = crypto.randomUUID(); storeLinkCandidates.set(id, link);
+    return { ...await storeConnectionsPayload(), candidate: { ...link, id, url: canonicalStoreProductUrl(link) } };
+  });
+  handleMutation('stores:save', async (candidateId: unknown, managedProductId?: unknown) => {
+    if (typeof candidateId !== 'string' || !storeLinkCandidates.has(candidateId)) throw new Error('ui.stores.error.staleCandidate');
+    if (managedProductId !== undefined) {
+      if (typeof managedProductId !== 'string' || !(await listGameInstallations(defaultDataDir())).products.some((p) => p.id === managedProductId)) {
+        throw new Error('ui.stores.error.invalidManagedProduct');
+      }
+    }
+    await saveStoreConnection(defaultDataDir(), storeLinkCandidates.get(candidateId)!, managedProductId as string | undefined);
+    storeLinkCandidates.delete(candidateId);
+    return storeConnectionsPayload();
+  });
+  handleMutation('stores:remove', async (linkId: unknown) => {
+    if (typeof linkId !== 'string') throw new Error('ui.stores.error.invalidConnection');
+    await removeStoreConnection(defaultDataDir(), linkId);
+    return storeConnectionsPayload();
+  });
+  handleMutation('stores:open', async (provider: unknown, action: unknown, linkId?: unknown) => {
+    if (typeof provider !== 'string' || !STORE_PROVIDERS.some((entry) => entry.id === provider)) throw new Error('ui.stores.error.invalidProvider');
+    if (typeof action !== 'string' || !STORE_ACTIONS.includes(action as StoreHandoffAction)) throw new Error('ui.stores.error.invalidAction');
+    let link: StoreConnection | undefined;
+    if (linkId !== undefined) {
+      if (typeof linkId !== 'string') throw new Error('ui.stores.error.invalidConnection');
+      link = (await readStoreConnections(defaultDataDir())).links.find((entry) => entry.id === linkId && entry.provider === provider);
+      if (!link) throw new Error('ui.stores.error.invalidConnection');
+    }
+    const handoff = resolveStoreHandoff(provider as StoreProviderId, action as StoreHandoffAction, link);
+    if (handoff.kind === 'official-client' && !app.getApplicationNameForProtocol(handoff.url)) throw new Error('ui.stores.error.clientMissing');
+    await shell.openExternal(handoff.url);
+    return { opened: true, kind: handoff.kind, authentication: 'unverified' };
+  });
+  handleMutation('stores:openCompanion', async () => {
+    const folder = await exportBrowserCompanion(app.getAppPath(), defaultDataDir(), app.getVersion());
+    const error = await shell.openPath(folder);
+    if (error) throw new Error('ui.stores.error.companionOpenFailed');
+    return { opened: true };
+  });
   handle('archives:current', () => structuredClone(archiveTask));
   handle('archives:list', async () => {
     await mutationQueue;

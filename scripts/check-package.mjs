@@ -23,6 +23,8 @@ const required = [
   '\\packages\\desktop\\dist\\translator-maintenance.js',
   '\\packages\\desktop\\dist\\game-archives.js',
   '\\packages\\desktop\\dist\\game-installations.js',
+  '\\packages\\desktop\\dist\\store-connections.js',
+  '\\packages\\desktop\\dist\\browser-companion-export.js',
   '\\packages\\desktop\\dist\\launcher-updates.js',
   '\\packages\\desktop\\dist\\library-roots.js',
   '\\packages\\desktop\\dist\\library-scan.js',
@@ -42,6 +44,8 @@ const required = [
   '\\packages\\desktop\\renderer\\thumbnail-model.js',
   '\\packages\\desktop\\renderer\\panels\\maintenance.js',
   '\\packages\\desktop\\renderer\\panels\\archives.js',
+  '\\packages\\desktop\\renderer\\panels\\stores.js',
+  '\\packages\\desktop\\renderer\\store-model.js',
   '\\packages\\desktop\\renderer\\panels\\updates.js',
   '\\node_modules\\@indiedeck\\core\\dist\\index.js',
   '\\node_modules\\@indiedeck\\core\\dist\\detect\\rules.js',
@@ -51,6 +55,8 @@ const required = [
   '\\registry\\configs\\xunity-autotranslator.json',
   '\\locales\\en.json',
   '\\locales\\ko.json',
+  ...['manifest.json', 'manifest.firefox.json', 'store-link.js', 'popup-controller.js', 'popup.js', 'popup.html', 'popup.css', 'README.md']
+    .map((name) => `\\extensions\\browser-companion\\${name}`),
 ];
 
 let contents;
@@ -76,6 +82,8 @@ const currentRuntime = [
   ['packages/desktop/dist/translator-maintenance.js', 'packages/desktop/dist/translator-maintenance.js'],
   ['packages/desktop/dist/game-archives.js', 'packages/desktop/dist/game-archives.js'],
   ['packages/desktop/dist/game-installations.js', 'packages/desktop/dist/game-installations.js'],
+  ['packages/desktop/dist/store-connections.js', 'packages/desktop/dist/store-connections.js'],
+  ['packages/desktop/dist/browser-companion-export.js', 'packages/desktop/dist/browser-companion-export.js'],
   ['packages/desktop/dist/launcher-updates.js', 'packages/desktop/dist/launcher-updates.js'],
   ['packages/desktop/dist/library-roots.js', 'packages/desktop/dist/library-roots.js'],
   ['packages/desktop/dist/library-scan.js', 'packages/desktop/dist/library-scan.js'],
@@ -102,6 +110,8 @@ const currentRuntime = [
   ['packages/desktop/renderer/thumbnail-model.js', 'packages/desktop/renderer/thumbnail-model.js'],
   ['packages/desktop/renderer/panels/maintenance.js', 'packages/desktop/renderer/panels/maintenance.js'],
   ['packages/desktop/renderer/panels/archives.js', 'packages/desktop/renderer/panels/archives.js'],
+  ['packages/desktop/renderer/panels/stores.js', 'packages/desktop/renderer/panels/stores.js'],
+  ['packages/desktop/renderer/store-model.js', 'packages/desktop/renderer/store-model.js'],
   ['packages/desktop/renderer/panels/updates.js', 'packages/desktop/renderer/panels/updates.js'],
   ['packages/desktop/renderer/panels/library.js', 'packages/desktop/renderer/panels/library.js'],
   ['node_modules/@indiedeck/core/dist/detect/index.js', 'packages/core/dist/detect/index.js'],
@@ -114,6 +124,8 @@ const currentRuntime = [
   ['node_modules/@indiedeck/core/dist/library/index.js', 'packages/core/dist/library/index.js'],
   ['locales/en.json', 'locales/en.json'],
   ['locales/ko.json', 'locales/ko.json'],
+  ...['manifest.json', 'manifest.firefox.json', 'store-link.js', 'popup-controller.js', 'popup.js', 'popup.html', 'popup.css', 'README.md']
+    .map((name) => [`extensions/browser-companion/${name}`, `extensions/browser-companion/${name}`]),
 ];
 for (const [packagedPath, sourcePath] of currentRuntime) {
   const hash = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');

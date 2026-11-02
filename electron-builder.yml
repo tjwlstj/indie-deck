@@ -15,6 +15,7 @@ files:
   - packages/core/dist/**
   - registry/**
   - locales/**
+  - extensions/browser-companion/**
   - LICENSE
 
 win:

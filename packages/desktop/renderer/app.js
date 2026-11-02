@@ -17,6 +17,7 @@ import { releaseThumbnails } from './thumbnail.js';
 import { isArchiveActive } from './archive-model.js';
 import { canCancelScan, isScanActive, reduceScanStatus, scanPresentation, validScanDepth } from './scan-model.js';
 import { bindLauncherUpdateEvents, refreshLauncherUpdateStatus, renderLauncherUpdates } from './panels/updates.js';
+import { refreshStoreConnections } from './panels/stores.js';
 import {
   populateDefaultsForm,
   populateLocaleSelect,
@@ -586,6 +587,7 @@ function openSettings() {
   renderOperationChrome();
   void refreshMToolStatus().catch((err) => setStatus(err.message, 'err'));
   void refreshArchiveRecords().catch((err) => setStatus(err.message, 'err'));
+  void refreshStoreConnections();
   void refreshLauncherUpdateStatus();
 }
 
@@ -681,6 +683,7 @@ async function boot() {
   state.appInfo = await api.app.info();
   state.registry = await api.registry();
   state.config = await api.config.get();
+  void refreshStoreConnections();
   await refreshMToolStatus();
 
   applyStaticTranslations();
@@ -714,7 +717,7 @@ async function boot() {
   window.addEventListener('indiedeck:open-settings', (event) => {
     openSettings();
     const section = event.detail?.section;
-    if (['mtoolSettings', 'archiveSettings', 'launcherUpdates', 'librarySettings'].includes(section)) $(section)?.scrollIntoView({ block: 'nearest' });
+    if (['mtoolSettings', 'archiveSettings', 'launcherUpdates', 'librarySettings', 'storeSettings'].includes(section)) $(section)?.scrollIntoView({ block: 'nearest' });
   });
   $('importArchive').addEventListener('click', () => {
     openSettings();

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { spawn, spawnSync } from 'node:child_process';
 import { loadRegistry, refreshLibrary, saveConfig } from '../packages/core/dist/index.js';
+import { metadataFromProductUrl, serializeStoreLink } from '../extensions/browser-companion/store-link.js';
 
 // End-to-end desktop verification against disposable games and mocked release
 // downloads. No real executable is launched and no external service is called.
@@ -21,6 +22,7 @@ const mtoolRoot = path.join(temp, 'local-mtool');
 const mtoolExecutable = path.join(mtoolRoot, 'Tool', 'MTool.exe');
 const gameArchive = path.join(temp, 'Delta-v1.0.zip');
 const gameArchiveV2 = path.join(temp, 'Delta-v2.0.zip');
+const storeLink = path.join(temp, 'steam.indiedeck-link.json');
 const registry = loadRegistry();
 const version = registry.translators.find((t) => t.id === 'xunity-autotranslator').versions[0].version;
 
@@ -78,6 +80,7 @@ function zip(files) {
 }
 
 try {
+  await fs.writeFile(storeLink, serializeStoreLink(metadataFromProductUrl('https://store.steampowered.com/app/440/Example/?private=drop-me#drop-me', 'Offline store fixture')));
   for (const name of ['Aster Test Game', 'Birch Test Game']) {
     const game = path.join(gamesRoot, name);
     const files = {
@@ -151,6 +154,8 @@ try {
       INDIEDECK_SMOKE_MTOOL_EXE: mtoolExecutable,
       INDIEDECK_SMOKE_GAME_ARCHIVE: gameArchive,
       INDIEDECK_SMOKE_GAME_ARCHIVE_V2: gameArchiveV2,
+      INDIEDECK_SMOKE_STORE_LINK: storeLink,
+      INDIEDECK_STORES_SCREENSHOT: path.resolve('out', `desktop-stores-${locale}.png`),
       INDIEDECK_SCAN_SMOKE_ROOT: scanContainers,
       INDIEDECK_SCAN_SCREENSHOT: path.resolve('out', `desktop-scan-${locale}.png`),
       INDIEDECK_THUMBNAIL_SCREENSHOT: path.resolve('out', `desktop-thumbnail-${locale}.png`),
@@ -179,6 +184,7 @@ try {
     '[smoke] launcher update mock flow',
     '[smoke] bounded scan settings',
     '[smoke] offline Steam artwork search',
+    '[smoke] browser companion metadata',
   ];
   if (requiredSmokeMarkers.some((marker) => !smokeOutput.includes(marker))) {
     throw new Error('Desktop exited without completing every required smoke flow.');

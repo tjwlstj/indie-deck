@@ -203,11 +203,27 @@ Recovery does not run a game or redownload it. Invalid ownership, unavailable
 storage or damaged metadata require review instead of a guessed replacement.
 This recovery scope is separate from process-local translator transactions.
 
-Official-client handoffs, direct store downloads, additional archive formats
-and save migration remain planned in
+Direct store downloads, additional archive formats and save migration remain planned in
 [the store installation/update plan](docs/store-install-update-plan.md).
 Steam artwork lookup does not establish purchase entitlement or manage a
 Steam installation. Managed product/version support starts with v0.1.6.
+
+**Store and browser connections (v0.1.7).** Settings can open
+fixed official store, login, purchased-library and client-download pages in the
+default browser. Selected official-client actions are generated from validated
+product IDs. These actions report a handoff, not authenticated ownership or an
+observed completed installation. Browser passwords, cookies and profiles are
+not imported into IndieDeck.
+
+The optional browser companion exports a small product-link JSON file after an
+explicit click on a supported product page. Pick that file in Settings, review
+it and optionally connect it to an existing managed game. The connection does
+not transfer installation ownership or copy game files. Connected pages also
+appear in that managed game's detail view. Loading the extension
+in the user's browser is a separate manual step. Native Messaging and direct
+itch.io OAuth/butlerd authentication remain planned; see
+[browser/store integration](docs/browser-store-integration.md) for current
+scope, browser differences and primary sources.
 
 The offline `npm run desktop:flow` check exercises installation, settings
 navigation, renderer reload, optional and standalone fonts, config/receipt

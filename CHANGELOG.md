@@ -5,6 +5,27 @@ Versioning while the project is pre-1.0.
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-11-02
+
+### Added
+
+- Store/browser connection settings with fixed official site, login, library
+  and client-download entry points, plus selected official-client protocol
+  handoffs. Browser or launcher dispatch remains distinct from verified account
+  access, ownership and completed installation.
+- Optional explicit-click browser companion product-link export. Review a
+  system-picked metadata file and optionally associate its product with a
+  managed game without changing installation ownership or game files. Open the
+  connected product pages from that game's detail view.
+- Versioned connection persistence and renderer ordering guards; damaged
+  connection data is preserved and blocks saved-state changes until recovered.
+
+### Scope notes
+
+- Personal browser profiles, passwords, cookies and history are not imported.
+  Manual browser-extension loading remains separate from the launcher package.
+  Direct OAuth/butlerd login, store downloads and Native Messaging remain planned.
+
 ## [0.1.6] - 2026-11-02
 
 ### Added

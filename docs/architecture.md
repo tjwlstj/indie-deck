@@ -398,9 +398,33 @@ catalog revisions reject stale responses. Settings groups versions by product,
 and managed game details expose sibling versions and another-download import.
 No saves, mods, translator payloads or receipts are migrated automatically.
 
-Store-client/provider integration and further acquisition work remain planned in
+Further acquisition and direct provider authentication work remain planned in
 [the store installation/update plan](store-install-update-plan.md). The launcher
 self-updater remains an independent GitHub/NSIS path.
+
+### Store and personal-browser connections (CURRENT v0.1.7)
+
+`store-connections.ts` owns fixed provider entry points and validated product
+identities. `stores:open` accepts a provider/action/connection ID, then main
+constructs the browser or selected official-client target. It never treats a
+browser/protocol acknowledgement as proof of login, entitlement or installation.
+The existing renderer navigation boundary and CSP remain unchanged.
+
+The optional `extensions/browser-companion` popup uses a user gesture and
+`activeTab` metadata to export a bounded product-link JSON file. Main's OS
+picker issues a candidate ID; settings displays a preview and optional managed
+product association before saving. Persisted records contain product identities,
+not browser credentials, cookies, download URLs or executable commands. They
+do not change payload ownership, active installations or translator receipts.
+Managed game details show only connections with that explicit product ID;
+matching titles do not select another edition's store references.
+Catalog revisions and request tokens prevent stale list responses from restoring
+removed connections or erasing a newer read failure. Damaged catalog evidence
+is preserved and saved-state mutation stays blocked until a successful read.
+
+Native Messaging, personal-profile CDP control and direct OAuth/download engines
+are outside this implementation. [Browser/store integration](browser-store-integration.md)
+records primary sources, manual extension loading and remaining provider work.
 
 ## i18n
 

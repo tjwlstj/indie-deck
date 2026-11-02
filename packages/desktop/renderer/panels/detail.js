@@ -12,6 +12,7 @@ import { api, mutationBlocked, state } from '../store.js';
 import { fontChoiceKey, selectedFontPlan } from '../font-options.js';
 import { thumbnailElement, acceptSelectedThumbnail, retryThumbnail } from '../thumbnail.js';
 import { renderManagedVersions } from './archives.js';
+import { renderGameStoreLinks } from './stores.js';
 
 // Opaque plan ids change on every fresh detail read. Keep this presentation
 // choice by game/build identity instead, so progress renders do not reset it.
@@ -261,6 +262,7 @@ export function renderHeader(panel, ctx) {
   panel.append(sticky);
 
   renderManagedVersions(panel, profile);
+  renderGameStoreLinks(panel, profile);
 
   const coverSection = el('section', 'game-cover-section');
   const cover = thumbnailElement(profile, true);

@@ -151,7 +151,7 @@ The detailed contract and remaining acceptance criteria live in
 - [ ] Verify local MTool automatic game selection and actual translation with
       representative real games; documented argument support is not runtime proof
 
-## P1.7 — Downloaded games and store handoffs (PARTIAL / v0.1.6)
+## P1.7 — Downloaded games and store handoffs (PARTIAL / v0.1.7)
 
 - [x] Research local packages versus official-client/API ownership and map the
       existing ZIP/import/queue/receipt implementation to the required work
@@ -163,11 +163,18 @@ The detailed contract and remaining acceptance criteria live in
       original archives; product association requires an explicit user choice
 - [ ] Save/config migration previews and fresh translator plans for a new build
 - [ ] Selected download-folder candidates and validated archive-format expansion
-- [ ] Official-client/installer handoff with observed completion
+- [x] Fixed official store/login/library pages in the default browser and selected
+      official-client protocol handoffs; login/ownership/completion stay unverified
+- [x] Optional explicit-click browser companion product-link export and reviewed
+      connection to a managed product; no browser session import or file installation
+- [ ] Observe official-client/installer completion and reconcile external updates
 - [ ] Optional itch.io butlerd provider after pinned API, binary and auth validation
+- [ ] Native Messaging host with per-browser extension identities and lifecycle tests
 
 Site evidence, unresolved DLsite verification, proposed files/IPC and acceptance
 criteria are recorded in [the implementation plan](store-install-update-plan.md).
+Browser/OAuth research and the current connection scope are recorded in
+[browser/store integration](browser-store-integration.md).
 
 ## P1 — GameSession
 

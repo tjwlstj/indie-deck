@@ -9,6 +9,8 @@ const manifests = [
   'packages/core/package.json',
   'packages/cli/package.json',
   'packages/desktop/package.json',
+  'extensions/browser-companion/manifest.json',
+  'extensions/browser-companion/manifest.firefox.json',
 ];
 
 const packages = manifests.map((relative) => ({

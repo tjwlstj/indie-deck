@@ -89,6 +89,15 @@ contextBridge.exposeInMainWorld('indiedeck', {
     onProgress: (fn) => subscribe('archives:progress', fn),
   },
 
+  stores: {
+    list: () => call('stores:list'),
+    pick: () => call('stores:pick'),
+    save: (candidateId, managedProductId) => call('stores:save', candidateId, managedProductId),
+    remove: (linkId) => call('stores:remove', linkId),
+    open: (provider, action, linkId) => call('stores:open', provider, action, linkId),
+    openCompanion: () => call('stores:openCompanion'),
+  },
+
   maintenance: {
     start: (request) => call('maintenance:start', request),
     current: () => call('maintenance:current'),

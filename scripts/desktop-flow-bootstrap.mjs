@@ -21,6 +21,12 @@ await fs.mkdir(fakeResources, { recursive: true });
 await fs.writeFile(path.join(fakeResources, 'app-update.yml'), 'provider: github\nowner: tjwlstj\nrepo: indie-deck\n');
 Object.defineProperty(electron.app, 'isPackaged', { value: true });
 electron.app.getAppPath = () => path.resolve('.');
+// External handoff acknowledgement only. Tests never open a personal browser,
+// official game client or Explorer window, and never inspect its session.
+globalThis.__indiedeckStoreSmokeCalls = [];
+electron.shell.openExternal = async (url) => { globalThis.__indiedeckStoreSmokeCalls.push({ kind: 'external', url }); };
+electron.shell.openPath = async (folder) => { globalThis.__indiedeckStoreSmokeCalls.push({ kind: 'folder', folder }); return ''; };
+electron.app.getApplicationNameForProtocol = (url) => /^(steam|itch|com\.epicgames\.launcher):/.test(url) ? 'Offline official-client fixture' : '';
 Object.defineProperty(process, 'resourcesPath', { value: fakeResources });
 delete process.env.INDIEDECK_DISABLE_UPDATES;
 const updater = electronUpdater.autoUpdater;
@@ -93,6 +99,9 @@ const originalDialog = electron.dialog.showOpenDialog.bind(electron.dialog);
 let archivePickCount = 0;
 electron.dialog.showOpenDialog = async (...args) => {
   const options = args.at(-1);
+  if (options?.filters?.some((filter) => filter.extensions?.includes('json')) && process.env.INDIEDECK_SMOKE_STORE_LINK) {
+    return { canceled: false, filePaths: [process.env.INDIEDECK_SMOKE_STORE_LINK] };
+  }
   if (options?.filters?.some((filter) => filter.extensions?.includes('zip')) && process.env.INDIEDECK_SMOKE_GAME_ARCHIVE) {
     const picked = archivePickCount++ === 0 ? process.env.INDIEDECK_SMOKE_GAME_ARCHIVE : process.env.INDIEDECK_SMOKE_GAME_ARCHIVE_V2;
     return { canceled: false, filePaths: [picked] };
