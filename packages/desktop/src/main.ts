@@ -78,6 +78,9 @@ import { STORE_PROVIDERS, canonicalStoreProductUrl, readStoreLinkFile, readStore
 import { exportBrowserCompanion } from './browser-companion-export.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+// Entry-point app paths differ between `electron .`, `electron packages/desktop`
+// and packaged ASARs. Runtime assets share the compiled module's fixed layout.
+const bundleRoot = path.resolve(here, '../../..');
 const { autoUpdater } = electronUpdater;
 const APP_ID = 'io.github.tjwlstj.indiedeck';
 
@@ -392,7 +395,7 @@ async function runSmokeTest(window: BrowserWindow): Promise<void> {
       else console.log(`[smoke] detail for "${detail.title}": ${detail.facts} facts, ${detail.plans} translator plans, ${detail.configSections} config sections / ${detail.configRows} settings`);
       if (process.env['INDIEDECK_DEBUG']) console.log(`[smoke] config panel says: ${detail.configText}`);
 
-      const companion = await exportBrowserCompanion(app.getAppPath(), defaultDataDir(), app.getVersion());
+      const companion = await exportBrowserCompanion(bundleRoot, defaultDataDir(), app.getVersion());
       const companionManifest = JSON.parse(await readFile(path.join(companion, 'chromium', 'manifest.json'), 'utf8'));
       if (companionManifest.version !== app.getVersion()) throw new Error('Packaged companion version disagrees with the launcher.');
       console.log('[smoke] bundled browser companion exported and version verified; no browser profile was changed');
@@ -1657,7 +1660,7 @@ function register(): void {
     return { opened: true, kind: handoff.kind, authentication: 'unverified' };
   });
   handleMutation('stores:openCompanion', async () => {
-    const folder = await exportBrowserCompanion(app.getAppPath(), defaultDataDir(), app.getVersion());
+    const folder = await exportBrowserCompanion(bundleRoot, defaultDataDir(), app.getVersion());
     const error = await shell.openPath(folder);
     if (error) throw new Error('ui.stores.error.companionOpenFailed');
     return { opened: true };
