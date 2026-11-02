@@ -83,8 +83,17 @@ is patched in that separate operation; other settings and comments are retained.
 Recommendations are not proof of rendering in a particular game. Non-TMP and
 unknown-version games do not get a forced TMP installation action.
 
-**Local MTool handoff for RPG Maker.** The Windows launcher can connect an
-existing MTool bundle for RPG Maker MV/MZ and XP/VX/VX Ace (RGSS). It checks
+**Game thumbnails.** The current source shows local cover images and can use
+Steam's official artwork when an installed game's Steam ID can be identified.
+The game detail page also offers explicit Steam title search and a user choice;
+that search sends the title to Steam. IDs from a game's `steam_appid.txt` can
+be development placeholders, so the image can still be for the wrong game.
+The image cache is process memory, not an offline download. See
+[docs/thumbnail-guide.md](docs/thumbnail-guide.md) for priorities and limits.
+
+**Local MTool handoff.** The Windows launcher can connect an existing MTool
+bundle for RPG Maker MV/MZ and XP/VX/VX Ace (RGSS), Wolf RPG, Ren'Py and
+KiriKiri. It checks
 `D:\MTool` by default, or a bundle folder selected in Settings. The game detail
 card can open MTool with the detected game executable as one argument, open
 MTool alone, locate the executable, and rescan the game after an external change.
@@ -95,7 +104,8 @@ or modify MTool's settings, library or activation files. Disconnecting only
 disables the connection; it deletes nothing. Back up the game before using
 MTool, and do not overlap its work with IndieDeck installs or mod changes.
 External changes are outside IndieDeck's receipts and cannot be undone by its
-Uninstall action. Wolf RPG is not part of this launcher handoff.
+Uninstall action. MTool markers in a Unity game can still be reported as
+existing files; that does not enable the MTool handoff for Unity games.
 
 ## Install
 

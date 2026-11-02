@@ -825,9 +825,11 @@
         "rpgmaker-mz",
         "rpgmaker-rgss",
         "wolf-rpg",
+        "renpy",
+        "kirikiri",
         "unity"
       ],
-      "summary": "Closed-source RPG Maker translation/cheat tool. IndieDeck does not download or install it - it only detects an existing install so the library view stays honest.",
+      "summary": "External translation tool. IndieDeck can hand supported games to an existing local MTool installation; translation is controlled in MTool.",
       "detectOnly": true,
       "installedMarkers": {
         "paths": [

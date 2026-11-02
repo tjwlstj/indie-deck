@@ -5,6 +5,34 @@ Versioning while the project is pre-1.0.
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-11-02
+
+### Added
+
+- Game artwork in the library and detail views. Local covers are used before
+  automatic Steam artwork, while a user-selected Steam image takes precedence.
+  Steam artwork can be found using a matching installed manifest or
+  `steam_appid.txt`, or selected from an explicit title search. The latter sends
+  the title to Steam and stores the selected app ID in launcher data.
+- Bounded image decoding and download sizes, lazy loading, concurrency limits,
+  main-owned game identity and Steam search-result validation. An app ID may be
+  a development hint rather than proof of a correct match; users can select a
+  different result. Cached image bytes are kept only in memory for the session.
+- Local MTool handoff for Wolf RPG, Ren'Py and KiriKiri alongside RPG Maker.
+  The user still controls translation inside MTool; success is not inferred.
+
+### Security
+
+- Updated Electron to 43.8.6 and patched affected build dependencies. The npm
+  high-severity audit passes; 15 moderate advisory findings remain in the
+  build-tool minimatch dependency tree.
+
+### Verification notes
+
+- Offline tests exercise the game artwork search/selection and saved mapping,
+  including a renderer reload, with mocked Steam responses. Actual MTool/game
+  execution and a public-feed upgrade from a previous version are not implied.
+
 ## [0.1.4] - 2026-10-05
 
 ### Fixed

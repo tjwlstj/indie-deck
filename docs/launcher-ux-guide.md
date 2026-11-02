@@ -67,7 +67,7 @@
 | 상단 바 | **CURRENT** | 브랜드(버전 표기 포함), 검색, 새로고침, 설정만 남았다. 언어·엔드포인트 기본값과 폴더 관리는 설정 페이지가 소유한다. |
 | 게임 액션 | **CURRENT** | 게임 실행과 폴더 열기가 상세 화면의 sticky 영역에 고정되어 스크롤 중에도 보인다. 작업 중에는 실행이 비활성화되고 이유가 인접 문구로 안내된다. 제거 동작은 계획 섹션으로 옮겨져 고정 영역 밖이다. |
 | 추천 TMP 폰트 | **CURRENT** | 감지한 Unity·TMP·대상 언어와 등록 범위로 추천하며, 번역기 동시 설치 선택과 기존 호환 XUnity의 폰트 단독 추가·폴백 연결을 제공한다. 등록/추정 범위와 실제 게임 출력 미검증을 표시한다. |
-| RPG Maker 로컬 MTool 연계 | **CURRENT** | MV/MZ·RGSS 상세 카드와 설정의 기존 MTool 연결, 게임 실행 파일 단일 인수 전달·도구만 열기·위치 열기·적용 후 갱신을 제공한다. 복사 설치·자동 번역이 아니며, 실제 자동 선택과 번역 동작은 미검증이다. Wolf RPG는 제외한다. |
+| 로컬 MTool 연계 | **CURRENT** | RPG Maker MV/MZ·RGSS, Wolf RPG, Ren'Py, KiriKiri 상세 카드에서 기존 MTool 연결과 실행 파일 단일 인수 전달·도구만 열기·위치 열기·적용 후 갱신을 제공한다. Unity 인계는 제외한다. 실제 게임의 선택·번역 동작은 사용자가 확인해야 한다. |
 | Unity 번역기 정리·재설치 | **CURRENT** | §18의 알려진 XUnity 파일 한정, 확인 후 백업·정리·호환 재설치. 로더·타 모드·설정·번역문·폰트 보존, stale hash/unsafe metadata 차단, 프로세스 내 오류 복원. |
 | 게임 압축파일·버전 관리 | **PARTIAL** | §19의 classic ZIP 검증·별도 버전 폴더 가져오기와 원본 hash/사용자 라벨 기록은 구현. 7z/RAR는 인식만 하며 ZIP64·암호·분할 압축과 게임 자체의 정확한 버전 추출은 미지원. |
 | 런처 자체 업데이트 | **PARTIAL** | §20의 설치형 check-only 시작 확인, 명시적 다운로드·확인 후 assisted NSIS 재시작, busy/shutdown gate, 실패 재시도와 main sequence reload 복구는 구현·mock 검증됐다. 실제 packaged metadata는 검증됐지만 새 0.1.3 UI의 public `0.1.3 → N+1` 설치는 아직 미검증이다. |
@@ -1141,12 +1141,14 @@ core/renderer/desktop guard 단위 테스트와 ko/en offline Electron flow에�
 시스템 TMP 3.2+ 여부까지 검증한 것은 아니다. 버전·태그·공개 Release는
 이 후속 기능 구현 자체와 별도다.
 
-## 17. 후속 구현: RPG Maker 로컬 MTool 연결
+## 17. 로컬 MTool 연결
 
-2026-10-05 후속 구현의 **CURRENT** 범위는 기존 외부 도구의 실행 인계다.
-지원 엔진은 RPG Maker MV/MZ와 RGSS(XP/VX/VX Ace)이며, Wolf RPG나 MTool의
-다른 지원 엔진으로 자동 확장하지 않는다. 실제 게임의 자동 선택·번역 결과
-검증은 **PLANNED**이며, 런처에서 프로세스가 열렸다는 응답과 구분한다.
+기존 외부 도구로 게임 실행 파일을 전달하는 인계 기능이 **CURRENT**다.
+2026-10-05의 초기 구현은 RPG Maker MV/MZ와 RGSS(XP/VX/VX Ace)로 한정됐고,
+이후 Wolf RPG, Ren'Py, KiriKiri까지 인계 대상을 확장했다. Unity 게임의
+MTool 인계는 포함하지 않는다. 해당 엔진의 모든 게임이 호환된다는 뜻은 아니며,
+실제 게임의 선택·번역 결과는 사용자가 MTool에서 확인해야 한다. 런처에서
+프로세스가 열렸다는 응답은 번역 성공의 증거가 아니다.
 
 ### 17.1 설정과 상세 카드
 

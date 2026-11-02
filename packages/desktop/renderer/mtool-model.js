@@ -1,6 +1,6 @@
 /** Presentation-only MTool state. No paths become executable authority here. */
 
-const SUPPORTED_ENGINES = new Set(['rpgmaker-mv', 'rpgmaker-mz', 'rpgmaker-rgss']);
+const SUPPORTED_ENGINES = new Set(['rpgmaker-mv', 'rpgmaker-mz', 'rpgmaker-rgss', 'wolf-rpg', 'renpy', 'kirikiri']);
 
 export function hasMToolIntegration(context) {
   return Boolean(context?.mtoolIntegration?.supported && SUPPORTED_ENGINES.has(context?.profile?.engineId));

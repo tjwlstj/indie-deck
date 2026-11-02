@@ -153,6 +153,7 @@ try {
       INDIEDECK_SMOKE_GAME_ARCHIVE_V2: gameArchiveV2,
       INDIEDECK_SCAN_SMOKE_ROOT: scanContainers,
       INDIEDECK_SCAN_SCREENSHOT: path.resolve('out', `desktop-scan-${locale}.png`),
+      INDIEDECK_THUMBNAIL_SCREENSHOT: path.resolve('out', `desktop-thumbnail-${locale}.png`),
       INDIEDECK_FLOW_SCREENSHOT: screenshot, INDIEDECK_FLOW_PROGRESS_SCREENSHOT: progressScreenshot,
       INDIEDECK_FONT_SCREENSHOT: path.resolve('out', `desktop-fonts-${locale}.png`),
       INDIEDECK_MTOOL_SCREENSHOT: path.resolve('out', `desktop-mtool-${locale}.png`),
@@ -177,6 +178,7 @@ try {
     '[smoke] font opt-out', '[smoke] RPG Maker', '[smoke] OS-picked ZIP inspection',
     '[smoke] launcher update mock flow',
     '[smoke] bounded scan settings',
+    '[smoke] offline Steam artwork search',
   ];
   if (requiredSmokeMarkers.some((marker) => !smokeOutput.includes(marker))) {
     throw new Error('Desktop exited without completing every required smoke flow.');

@@ -134,14 +134,17 @@ test('MTool rejects linked bundle ancestry and linked application content', asyn
   assert.equal((await getMToolStatus(contents.root, { platform: 'win32' })).reasonKey, 'ui.mtool.reason.linkedPath');
 });
 
-test('RPG Maker gating excludes generic NW.js, Wolf and Unity rather than overpromising support', () => {
-  for (const engineId of ['rpgmaker-mv', 'rpgmaker-mz', 'rpgmaker-rgss']) assert.equal(isMToolGame({ engineId }), true);
-  for (const engineId of ['nwjs', 'wolf-rpg', 'unity', 'unknown', '']) assert.equal(isMToolGame({ engineId }), false);
+test('MTool gating covers officially listed engine families while excluding generic and unsupported engines', () => {
+  for (const engineId of ['rpgmaker-mv', 'rpgmaker-mz', 'rpgmaker-rgss', 'wolf-rpg', 'renpy', 'kirikiri']) assert.equal(isMToolGame({ engineId }), true);
+  for (const engineId of ['nwjs', 'tyranoscript', 'unity', 'unknown', '']) assert.equal(isMToolGame({ engineId }), false);
 });
 
 test('game handoff rejects unsupported profiles, non-PE payloads and escaped executable paths', async () => {
   const profile = game('safe-target');
   assert.equal(await getMToolGameExecutable(profile), path.join(profile.path, 'Game.exe'));
+  for (const engineId of ['wolf-rpg', 'renpy', 'kirikiri']) {
+    assert.equal(await getMToolGameExecutable({ ...profile, engineId }), path.join(profile.path, 'Game.exe'));
+  }
   await assert.rejects(getMToolGameExecutable({ ...profile, engineId: 'unity' }), /unsupportedGame/);
   for (const executable of ['../Outside.exe', 'sub/../../Outside.exe', 'Game.bat', path.join(temp, 'Outside.exe'), 'Game.exe:stream']) {
     await assert.rejects(getMToolGameExecutable({ ...profile, executable }), /invalidGameExecutable/);

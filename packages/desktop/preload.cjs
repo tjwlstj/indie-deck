@@ -60,6 +60,9 @@ contextBridge.exposeInMainWorld('indiedeck', {
   },
 
   game: {
+    thumbnail: (gameId) => call('game:thumbnail', gameId),
+    thumbnailSearch: (gameId) => call('game:thumbnailSearch', gameId),
+    thumbnailSelect: (gameId, appId) => call('game:thumbnailSelect', gameId, appId),
     detail: (gameId, options) => call('game:detail', gameId, options ?? {}),
     refresh: (gameId) => call('game:refresh', gameId),
     launch: (gameId) => call('game:launch', gameId),

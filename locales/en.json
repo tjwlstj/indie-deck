@@ -319,9 +319,15 @@
         "crcMismatch": "An extracted file failed its integrity check. Import stopped."
       }
     },
+    "thumbnail": {
+      "loading": "Finding image", "missing": "No image", "local": "Game folder image", "steam": "Official Steam image",
+      "search": "Search Steam artwork", "searchHint": "If the automatic image is for a different game, choose another. The game title is sent to Steam when you search.",
+      "searching": "Searching…", "empty": "No results found.", "choose": "Choose image", "selected": "Image applied.",
+      "failed": "Could not load the image.", "retry": "Try again"
+    },
     "mtool": {
       "settingsTitle": "Local MTool integration",
-      "title": "RPG Maker · local MTool",
+      "title": "Supported game · local MTool",
       "recommended": "Use your local MTool",
       "description": "Opens your existing MTool with this game’s executable. It does not install a second translator or start translation automatically.",
       "settingsHint": "Choose an existing MTool package folder. IndieDeck does not download, copy or update MTool. Disconnecting keeps all MTool files.",
@@ -343,7 +349,7 @@
       "concurrentWarning": "While MTool is working, do not run translator or mod installs for the same game in IndieDeck. Finish the external task and refresh before continuing.",
       "runtimeCaveat": "This is a local-tool handoff, not verified translation. MTool runtime behavior has not been tested from this launcher.",
       "docs": "MTool usage guide",
-      "gameUnsupported": "Only RPG Maker MV, MZ, XP, VX and VX Ace games can currently be connected to MTool.",
+      "gameUnsupported": "RPG Maker, Wolf RPG, Ren’Py and KiriKiri games can be connected to MTool.",
       "gameUnavailable": "The game executable is missing or its path is unsafe. Refresh the game folder.",
       "launchFailed": "Could not open MTool: {error}",
       "statusCheckFailed": "The current MTool folder could not be checked. Reopen settings to retry before launching it.",

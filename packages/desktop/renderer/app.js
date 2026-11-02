@@ -13,6 +13,7 @@ import { resetConfigPanel } from './panels/config.js';
 import { operationCard } from './panels/detail.js';
 import { refreshMToolStatus } from './panels/mtool.js';
 import { archiveProgressLabel, bindArchiveEvents, recoverArchiveProgress, refreshArchiveRecords } from './panels/archives.js';
+import { releaseThumbnails } from './thumbnail.js';
 import { isArchiveActive } from './archive-model.js';
 import { canCancelScan, isScanActive, reduceScanStatus, scanPresentation, validScanDepth } from './scan-model.js';
 import { bindLauncherUpdateEvents, refreshLauncherUpdateStatus, renderLauncherUpdates } from './panels/updates.js';
@@ -57,6 +58,7 @@ const handledOutcomes = new Map();
 
 function renderDetail() {
   const panel = $('detail');
+  releaseThumbnails(panel);
   panel.replaceChildren();
 
   if (!state.detail) {

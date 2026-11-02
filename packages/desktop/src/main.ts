@@ -70,6 +70,8 @@ import { inspectGameArchive, importGameArchive, listGameArchives, type GameArchi
 import { createLauncherUpdateController, LAUNCHER_RELEASE_URL } from './launcher-updates.ts';
 import { withinLibraryRoots } from './library-roots.ts';
 import { LibraryScanController } from './library-scan.ts';
+import { getGameThumbnail, searchSteamCovers, fetchSteamCover } from './thumbnails.ts';
+import { readThumbnailPreferences, saveThumbnailPreference } from './thumbnail-preferences.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const { autoUpdater } = electronUpdater;
@@ -145,6 +147,8 @@ const plansById = new Map<string, TranslatorPlan>();
 const planOptionsById = new Map<string, FontResolveOptions>();
 const translatorMaintenanceById = new Map<string, { gameId: string; path: string; preview: TranslatorMaintenancePreview }>();
 const archiveCandidates = new Map<string, { path: string; inspection: GameArchiveInspection }>();
+const thumbnailSearchResults = new Map<string, Set<string>>();
+const thumbnailSearchGeneration = new Map<string, number>();
 interface ArchiveTask {
   id: string;
   sequence: number;
@@ -847,6 +851,40 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
   })()`, 'complete bounded rescan commits its result after cancellation');
   console.log('[smoke] bounded scan settings → real progress → renderer reload → cancel/unchanged library revision → complete rescan passed');
 
+  // A store lookup is explicitly clicked, and both the API and image bytes
+  // come from the offline disposable harness. The selection persists across a
+  // renderer reload without touching a real game or Steam account.
+  await evaluate(`(() => {
+    const game = [...document.querySelectorAll('#gameList .game')].find((row) => row.textContent.includes('Aster Test Game'));
+    if (!game) throw new Error('Thumbnail fixture game missing'); game.click();
+  })()`);
+  await waitFor(`!!document.querySelector('.thumbnail-controls .thumbnail-actions button')`, 'thumbnail search controls');
+  await evaluate(`document.querySelector('.thumbnail-controls .thumbnail-actions button').click()`);
+  await waitFor(`document.querySelector('.thumbnail-choice')?.textContent.includes('Aster Steam Fixture')`, 'explicit Steam search fixture');
+  const deniesCrossGame = await evaluate<boolean>(`(async () => {
+    const { api, state } = await import('./store.js');
+    const other = state.games.find((game) => game.name === 'Birch Test Game');
+    if (!other) throw new Error('Missing other fixture game');
+    try { await api.game.thumbnailSelect(other.id, '440'); return false; } catch { return true; }
+  })()`);
+  if (!deniesCrossGame) throw new Error('A different game accepted another game’s search result.');
+  await evaluate(`document.querySelector('.thumbnail-choice').click()`);
+  await waitFor(`document.querySelector('.thumbnail-detail img')?.src.startsWith('data:image/png;base64,')`, 'chosen artwork visible');
+  const thumbnailShot = process.env['INDIEDECK_THUMBNAIL_SCREENSHOT'];
+  if (thumbnailShot) await writeFile(thumbnailShot, (await window.webContents.capturePage()).toPNG());
+  const thumbnailSelection = await readThumbnailPreferences(defaultDataDir());
+  if (![...thumbnailSelection.values()].includes('440')) throw new Error('Thumbnail selection was not persisted.');
+  await new Promise<void>((resolve) => {
+    window.webContents.once('did-finish-load', () => resolve()); window.webContents.reload();
+  });
+  await waitFor(`document.body.dataset.libraryState === 'ready'`, 'thumbnail reload library');
+  await evaluate(`(() => {
+    const game = [...document.querySelectorAll('#gameList .game')].find((row) => row.textContent.includes('Aster Test Game'));
+    if (!game) throw new Error('Thumbnail fixture game missing after reload'); game.click();
+  })()`);
+  await waitFor(`document.querySelector('.thumbnail-detail img')?.src.startsWith('data:image/png;base64,')`, 'saved artwork restored on reload');
+  console.log('[smoke] offline Steam artwork search → explicit choice → saved mapping → renderer reload passed');
+
   // Installed-update IPC/UI contract with a mocked native updater supplied by
   // the disposable bootstrap. This does not prove a public N→N+1 installation.
   const updateCalls = (globalThis as typeof globalThis & {
@@ -1106,7 +1144,7 @@ async function openMTool(profile?: GameProfile) {
 function requireMToolGame(gameId: string): GameProfile {
   const profile = requireDetectedGame(gameId);
   if (!isMToolGame(profile)) throw new Error(t('ui.mtool.gameUnsupported', undefined,
-    'Only RPG Maker MV/MZ/XP/VX/VX Ace games can currently be handed to MTool.'));
+    'Only supported RPG Maker, Wolf RPG, Ren\'Py and KiriKiri games can currently be handed to MTool.'));
   if (!profile.executable) throw new Error(t('ui.mtool.gameUnavailable', undefined,
     'The game executable is missing or unsafe. Refresh its folder before trying again.'));
   return profile;
@@ -1523,6 +1561,45 @@ function register(): void {
   handle('game:detail', async (gameId: string, options: ResolveOptions) => {
     requireGamePath(gameId);
     return stableGameRead(gameId, () => gameDetailPayload(gameId, safeResolveOptions(options)));
+  });
+
+  handle('game:thumbnail', async (gameId: string) => {
+    const gamePath = requireGamePath(gameId);
+    const preferences = await readThumbnailPreferences(defaultDataDir()).catch(() => new Map<string, string>());
+    const chosen = preferences.get(gameId);
+    if (chosen) {
+      const image = await fetchSteamCover(chosen).catch(() => null);
+      if (image) return image;
+    }
+    return getGameThumbnail(gamePath);
+  });
+
+  // The title is sent to Steam only after the user explicitly presses Search.
+  // A result id is usable only for the specific game whose search returned it.
+  handle('game:thumbnailSearch', async (gameId: string) => {
+    const gamePath = requireGamePath(gameId);
+    const generation = (thumbnailSearchGeneration.get(gameId) ?? 0) + 1;
+    thumbnailSearchGeneration.set(gameId, generation);
+    thumbnailSearchResults.delete(gameId);
+    const index = await loadLibrary();
+    const game = index.games.find((entry) => path.resolve(entry.path).toLowerCase() === gamePath.toLowerCase());
+    if (!game) throw new Error('Game is no longer in the library.');
+    const results = await searchSteamCovers((game.title || game.name).slice(0, 120));
+    requireGamePath(gameId);
+    if (thumbnailSearchGeneration.get(gameId) !== generation) return [];
+    if (thumbnailSearchResults.size >= 100 && !thumbnailSearchResults.has(gameId)) thumbnailSearchResults.delete(thumbnailSearchResults.keys().next().value!);
+    thumbnailSearchResults.set(gameId, new Set(results.map((result) => result.appId)));
+    return results;
+  });
+
+  handleMutation('game:thumbnailSelect', async (gameId: string, appId: unknown) => {
+    requireGamePath(gameId);
+    if (typeof appId !== 'string' || !thumbnailSearchResults.get(gameId)?.has(appId)) throw new Error('Select a current Steam search result.');
+    const image = await fetchSteamCover(appId);
+    if (!image) throw new Error('Steam artwork is unavailable.');
+    requireGamePath(gameId);
+    await saveThumbnailPreference(defaultDataDir(), gameId, appId);
+    return image;
   });
 
   handleMutation('game:refresh', async (gameId: string) => refreshGameState(gameId, () => {}));

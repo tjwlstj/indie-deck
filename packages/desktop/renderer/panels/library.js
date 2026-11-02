@@ -4,6 +4,7 @@ import { $, clear, el } from '../dom.js';
 import { t } from '../i18n.js';
 import { emit, mutationBlocked, state, visibleGames } from '../store.js';
 import { archiveRecordForGame } from '../archive-model.js';
+import { releaseThumbnails, thumbnailElement } from '../thumbnail.js';
 
 function operationBadge(gameId) {
   const operation = state.operation;
@@ -75,7 +76,9 @@ export function renderSidebar(onSelectGame) {
 }
 
 export function renderGameList(onSelectGame) {
-  const container = clear($('gameList'));
+  const container = $('gameList');
+  releaseThumbnails(container);
+  clear(container);
   const games = visibleGames();
 
   if (state.games.length === 0) {
@@ -93,6 +96,8 @@ export function renderGameList(onSelectGame) {
   for (const game of games) {
     const row = el('div', 'game');
     row.classList.toggle('selected', state.selected === game.id);
+
+    row.append(thumbnailElement(game));
 
     row.append(el('div', 'name', game.title && game.title !== game.name ? `${game.name} — ${game.title}` : game.name));
     row.append(el('span', `dot ${healthDot(game)}`));

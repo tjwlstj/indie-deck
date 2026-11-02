@@ -130,7 +130,10 @@ export async function getMToolStatus(root: string | null | undefined, options: M
 }
 
 export function isMToolGame(profile: Pick<GameProfile, 'engineId'>): boolean {
-  return ['rpgmaker-mv', 'rpgmaker-mz', 'rpgmaker-rgss'].includes(profile.engineId);
+  // These additional families are explicitly listed by MTool's official
+  // supported-engine page. This only enables a user-initiated handoff; actual
+  // game/version compatibility remains an MTool runtime decision.
+  return ['rpgmaker-mv', 'rpgmaker-mz', 'rpgmaker-rgss', 'wolf-rpg', 'renpy', 'kirikiri'].includes(profile.engineId);
 }
 
 /** Profile paths must be main-owned detection results, never renderer input. */

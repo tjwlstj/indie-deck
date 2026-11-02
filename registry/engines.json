@@ -137,6 +137,7 @@
       "translators": [
         "renpy-translator",
         "projz-renpy-translation",
+        "mtool",
         "mort",
         "lunatranslator",
         "translator-plus-plus"
@@ -519,7 +520,8 @@
       "translators": [
         "textractor",
         "lunatranslator",
-        "mort"
+        "mort",
+        "mtool"
       ]
     },
     {

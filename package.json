@@ -1,6 +1,6 @@
 {
   "name": "indie-deck",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "description": "Unified launcher for Unity and other indie games: engine classification, per-engine translator auto-install with version compatibility management, and mod management.",
   "author": "tjwlstj",
@@ -36,13 +36,13 @@
     "release:check": "node scripts/check-release.mjs"
   },
   "dependencies": {
-    "@indiedeck/core": "0.1.4",
+    "@indiedeck/core": "0.1.5",
     "electron-updater": "6.8.9"
   },
   "devDependencies": {
     "@electron/asar": "3.4.1",
     "@types/node": "^22.10.2",
-    "electron": "43.7.7",
+    "electron": "43.8.6",
     "electron-builder": "26.15.3",
     "js-yaml": "4.3.2",
     "typescript": "^5.7.2"

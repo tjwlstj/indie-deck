@@ -10,6 +10,7 @@ import { el, setStatus, severityMark, severityTone } from '../dom.js';
 import { retranslate, t } from '../i18n.js';
 import { api, mutationBlocked, state } from '../store.js';
 import { fontChoiceKey, selectedFontPlan } from '../font-options.js';
+import { thumbnailElement, acceptSelectedThumbnail, retryThumbnail } from '../thumbnail.js';
 
 // Opaque plan ids change on every fresh detail read. Keep this presentation
 // choice by game/build identity instead, so progress renders do not reset it.
@@ -257,6 +258,52 @@ export function renderHeader(panel, ctx) {
   if (state.operation?.gameId === profile.id) inner.append(operationCard(state.operation));
   sticky.append(inner);
   panel.append(sticky);
+
+  const coverSection = el('section', 'game-cover-section');
+  const cover = thumbnailElement(profile, true);
+  coverSection.append(cover);
+  const controls = el('div', 'thumbnail-controls');
+  controls.append(el('p', 'thumbnail-help', t('ui.thumbnail.searchHint', undefined,
+    'Searching sends the game title to Steam. Choose a matching result yourself.')));
+  const actionsRow = el('div', 'thumbnail-actions');
+  const search = el('button', 'ghost', t('ui.thumbnail.search', undefined, 'Search Steam images'));
+  const retry = el('button', 'ghost', t('ui.thumbnail.retry', undefined, 'Find image again'));
+  const status = el('p', 'thumbnail-status'); status.setAttribute('role', 'status');
+  const results = el('div', 'thumbnail-results');
+  search.addEventListener('click', async () => {
+    if (typeof api.game.thumbnailSearch !== 'function') return;
+    search.disabled = true; results.replaceChildren();
+    status.textContent = t('ui.thumbnail.searching', undefined, 'Searching…');
+    try {
+      const matches = await api.game.thumbnailSearch(profile.id);
+      if (!coverSection.isConnected) return;
+      const safe = Array.isArray(matches) ? matches.filter((item) => typeof item?.name === 'string' &&
+        typeof item?.appId === 'string' && /^\d{1,10}$/.test(item.appId)).slice(0, 20) : [];
+      status.textContent = safe.length ? t('ui.thumbnail.choose', undefined, 'Choose an image') : t('ui.thumbnail.empty', undefined, 'No results found.');
+      for (const item of safe) {
+        const choice = el('button', 'ghost thumbnail-choice', `${item.name} · ${item.appId}`);
+        choice.addEventListener('click', async () => {
+          for (const button of results.querySelectorAll('button')) button.disabled = true;
+          try {
+            const image = await api.game.thumbnailSelect(profile.id, item.appId);
+            if (!acceptSelectedThumbnail(profile.id, image)) throw new Error('No usable image');
+            if (!coverSection.isConnected) return;
+            status.textContent = t('ui.thumbnail.selected', undefined, 'Image applied.'); results.replaceChildren();
+          } catch { if (coverSection.isConnected) status.textContent = t('ui.thumbnail.failed', undefined, 'Could not load the image.'); }
+          finally { for (const button of results.querySelectorAll('button')) button.disabled = false; }
+        });
+        results.append(choice);
+      }
+    } catch { if (coverSection.isConnected) status.textContent = t('ui.thumbnail.failed', undefined, 'Could not load the image.'); }
+    finally { search.disabled = false; }
+  });
+  retry.addEventListener('click', async () => {
+    retry.disabled = true; status.textContent = t('ui.thumbnail.loading', undefined, 'Finding image…');
+    try { await retryThumbnail(cover); if (coverSection.isConnected) status.textContent = ''; }
+    finally { retry.disabled = false; }
+  });
+  actionsRow.append(search, retry); controls.append(actionsRow, status, results);
+  coverSection.append(controls); panel.append(coverSection);
 }
 
 /* ---------------------------------------------------------------- facts */

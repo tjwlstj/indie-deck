@@ -101,6 +101,15 @@ electron.dialog.showOpenDialog = async (...args) => {
 };
 globalThis.fetch = async (input) => {
   const url = String(input);
+  if (url.startsWith('https://store.steampowered.com/api/storesearch/')) {
+    const query = new URL(url).searchParams.get('term');
+    if (query !== 'Aster Test Game') throw new Error('Unexpected fixture title sent to Steam.');
+    return new Response(JSON.stringify({ items: [{ id: 440, name: 'Aster Steam Fixture' }] }), { headers: { 'content-type': 'application/json' } });
+  }
+  if (url === 'https://cdn.cloudflare.steamstatic.com/steam/apps/440/header.jpg') {
+    const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/a0sAAAAASUVORK5CYII=', 'base64');
+    return new Response(image, { headers: { 'content-type': 'image/png', 'content-length': String(image.length) } });
+  }
   if (url.startsWith('https://api.github.com/repos/bbepis/XUnity.AutoTranslator/releases/')) {
     return new Response(JSON.stringify({ tag_name: `v${version}`, assets: [{
       name: `XUnity.AutoTranslator-BepInEx-${version}.zip`,

@@ -11,11 +11,11 @@ import {
 } from '../../desktop/renderer/mtool-model.js';
 import { mergePostMutationState } from '../../desktop/renderer/state-model.js';
 
-test('MTool cards target RPG Maker families only and do not imply a translator installation', () => {
-  for (const engineId of ['rpgmaker-mv', 'rpgmaker-mz', 'rpgmaker-rgss']) {
+test('MTool cards cover supported engine families and do not imply a translator installation', () => {
+  for (const engineId of ['rpgmaker-mv', 'rpgmaker-mz', 'rpgmaker-rgss', 'wolf-rpg', 'renpy', 'kirikiri']) {
     assert.equal(hasMToolIntegration({ profile: { engineId }, mtoolIntegration: { supported: true } }), true);
   }
-  for (const engineId of ['unity', 'wolf-rpg', 'renpy', 'unknown']) {
+  for (const engineId of ['unity', 'nwjs', 'tyranoscript', 'unknown']) {
     assert.equal(hasMToolIntegration({ profile: { engineId }, mtoolIntegration: { supported: true } }), false);
   }
   assert.equal(hasMToolIntegration({ profile: { engineId: 'rpgmaker-mv' } }), false);

@@ -136,7 +136,7 @@ export function renderMToolIntegration(panel, ctx) {
   if (!integration?.supported) return;
   const gameId = ctx.profile.id;
   const presentation = mtoolPresentation(integration, mutationBlocked() || state.mtoolStatusLoading);
-  panel.append(el('h3', null, t('ui.mtool.title', undefined, 'RPG Maker · local MTool')));
+  panel.append(el('h3', null, t('ui.mtool.title', undefined, 'Game translation · local MTool')));
   const card = el('section', `mtool-integration ${presentation.status}`);
   const head = el('div', 'mtool-head');
   head.append(el('strong', null, t('ui.mtool.recommended', undefined, 'Use your local MTool')), statusLabel(integration));
