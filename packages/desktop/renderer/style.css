@@ -1150,14 +1150,26 @@ select {
 .archive-record .path { overflow-wrap: anywhere; }
 .archive-hash { font-size: 10.5px; color: var(--text-faint); }
 .archive-label-row { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
-.archive-label-row input {
+.archive-label-row input,
+.archive-label-row select {
   width: 100%;
   padding: 6px 9px;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--bg);
 }
-.archive-label-row input:focus-visible { outline: 1px solid var(--accent); }
+.archive-label-row input:focus-visible,
+.archive-label-row select:focus-visible { outline: 1px solid var(--accent); }
+.archive-product { margin: 16px 0; padding: 14px; border: 1px solid var(--line); border-radius: 10px; }
+.archive-product h3 { margin-top: 0; overflow-wrap: anywhere; }
+.archive-product-confirm { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; line-height: 1.6; }
+.archive-product-confirm input { flex: 0 0 auto; margin-top: 3px; }
+.archive-version-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.archive-inactive { color: var(--text-faint); }
+.archive-sibling { padding: 12px 0; border-top: 1px solid var(--line); }
+.archive-sibling > .plan-sub { display: block; margin-top: 5px; }
+.archive-recovery { margin: 12px 0; padding: 14px; border: 1px solid var(--warn); border-radius: 10px; }
+.detail-versions { margin-bottom: 18px; }
 .archive-progress progress { display: block; width: 100%; margin: 12px 0; }
 .list-toolbar { padding: 10px 12px; border-bottom: 1px solid var(--line); }
 .list-toolbar button { width: 100%; }

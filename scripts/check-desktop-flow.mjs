@@ -175,7 +175,7 @@ try {
   if (exitCode !== 0) throw new Error(`Desktop flow failed with exit code ${exitCode}.`);
   const requiredSmokeMarkers = [
     '[smoke] rendered 3 game rows', '[smoke] exact-file confirmation',
-    '[smoke] font opt-out', '[smoke] RPG Maker', '[smoke] OS-picked ZIP inspection',
+    '[smoke] font opt-out', '[smoke] RPG Maker', '[smoke] ZIP → explicit product/edition grouping',
     '[smoke] launcher update mock flow',
     '[smoke] bounded scan settings',
     '[smoke] offline Steam artwork search',

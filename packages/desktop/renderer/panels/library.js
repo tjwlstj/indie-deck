@@ -3,7 +3,7 @@
 import { $, clear, el } from '../dom.js';
 import { t } from '../i18n.js';
 import { emit, mutationBlocked, state, visibleGames } from '../store.js';
-import { archiveRecordForGame } from '../archive-model.js';
+import { archiveRecordForGame, managedInstallationForGame } from '../archive-model.js';
 import { releaseThumbnails, thumbnailElement } from '../thumbnail.js';
 
 function operationBadge(gameId) {
@@ -122,6 +122,10 @@ export function renderGameList(onSelectGame) {
       const badge = el('span', 'pill archive-version-label', versionLabel);
       badge.title = versionRecord.archiveName;
       meta.append(badge);
+      const managed = managedInstallationForGame(state.archiveCatalog, state.archiveRecords, game.id);
+      if (managed) meta.append(el('span', `pill ${managed.active ? 'ok' : 'archive-inactive'}`, managed.active
+        ? t('ui.archive.active', undefined, 'Active version')
+        : t('ui.archive.inactive', undefined, 'Retained version')));
     }
     const task = operationBadge(game.id);
     if (task) meta.append(task);

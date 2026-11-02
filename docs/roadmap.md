@@ -1,8 +1,14 @@
 # Roadmap
 
-IndieDeck is not trying to be Playnite, Heroic or Vortex. Those manage *where a
-game is*. IndieDeck manages *what a game is made of* — engine, runtime, loader,
-translator, config — and whether that combination actually works.
+IndieDeck focuses on a game's engine, runtime, loader, translator, config and
+compatibility. A proposed acquisition layer extends that work to downloaded
+game packages and official-client handoffs, while preserving the installation
+owner and the evidence behind each version.
+
+The 2026-11-02 research and implementation proposal is in
+[store-install-update-plan.md](store-install-update-plan.md). Managed full-ZIP
+product/version installation is **CURRENT in v0.1.6**; store
+providers, additional archive formats and save migration remain **PLANNED**.
 
 ```
 Game → Engine → Runtime → Compatibility → Translation → Mods → Config → Health → Launch
@@ -126,22 +132,42 @@ The detailed contract and remaining acceptance criteria live in
 - [x] Offline Electron flow checks in Korean and English
 - [x] Optional Unity TMP font recommendation and standalone fallback installation,
       with original translator receipt preservation and ordered removal
-- [x] **CURRENT: local MTool handoff** for RPG Maker MV/MZ and RGSS: default
+- [x] **CURRENT: local MTool handoff** for RPG Maker MV/MZ and RGSS, Wolf RPG,
+      Ren'Py and KiriKiri: default
       `D:\MTool` probe, system-picked folder or explicit disconnect, game-path
       argument/open-only/manual fallback and targeted refresh. This does not
-      install, update or own MTool or its external game changes; Wolf is excluded.
+      install, update or own MTool or its external game changes. Actual translation
+      remains a per-game manual verification.
 - [x] Bounded Unity XUnity payload cleanup/reinstall with preview, retained backups,
       original-baseline receipt inheritance and process-local failure rollback
 - [x] Classic ZIP game recognition and side-by-side version import with source hashes,
       optional labels and automatic library registration; 7z/RAR recognition only
 - [ ] General maintenance across loaders/patchers and durable original-baseline chains
-- [ ] Durable transaction journal and app/OS crash recovery
+- [ ] Durable translator file-transaction journal and app/OS crash recovery
 - [ ] General loader/patcher replacement and unknown-payload duplicate consolidation
 - [ ] Per-game font rendering verification and measured translator success history
 - [ ] Strict damaged-index reconstruction and incremental evidence hash cache
 - [ ] Real-game translator runtime and interrupted-install acceptance tests
 - [ ] Verify local MTool automatic game selection and actual translation with
       representative real games; documented argument support is not runtime proof
+
+## P1.7 — Downloaded games and store handoffs (PARTIAL / v0.1.6)
+
+- [x] Research local packages versus official-client/API ownership and map the
+      existing ZIP/import/queue/receipt implementation to the required work
+- [x] Stable product/release/installation records and active-version selection;
+      first install is active, later linked copies require explicit activation
+- [x] Durable managed-ZIP install journal, including publish/register failure
+      recovery; translator transactions retain their separate process-local scope
+- [x] Full ZIP installation in a new directory, retaining prior versions and
+      original archives; product association requires an explicit user choice
+- [ ] Save/config migration previews and fresh translator plans for a new build
+- [ ] Selected download-folder candidates and validated archive-format expansion
+- [ ] Official-client/installer handoff with observed completion
+- [ ] Optional itch.io butlerd provider after pinned API, binary and auth validation
+
+Site evidence, unresolved DLsite verification, proposed files/IPC and acceptance
+criteria are recorded in [the implementation plan](store-install-update-plan.md).
 
 ## P1 — GameSession
 
@@ -160,7 +186,8 @@ The detailed contract and remaining acceptance criteria live in
 
 ## P2 — Library
 
-- [ ] Cover art and metadata
+- [x] Local cover art and Steam artwork lookup/explicit selection (v0.1.5)
+- [ ] Generalised store metadata and product identity
 - [ ] Favourites, tags, sorting, recently played
 
 ## P2 — Translation Broker
@@ -184,9 +211,10 @@ provider instead of the game's config file.
 
 ## Deliberately out of scope
 
-Store integration, being a game store, replacing Playnite or Heroic, emulator
-frontends, hosting mods. Each would double the surface area and none of them is
-the problem IndieDeck exists to solve.
+Checkout/payment processing, being a game store, emulator frontends and hosting
+mods remain outside this roadmap. Downloaded-file installation and selected
+official-client/API integrations remain planned in P1.7; current local ZIP
+version management does not establish store download or entitlement support.
 
 ## Principles these follow
 

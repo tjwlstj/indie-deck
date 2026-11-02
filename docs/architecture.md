@@ -204,8 +204,8 @@ and bounded PE header, checks the expected `MToolClient`/`www/index.html`
 layout, and rejects linked path ancestors. It does not authenticate a publisher
 or inspect MTool's settings, game library or activation files.
 
-Only `rpgmaker-mv`, `rpgmaker-mz` and `rpgmaker-rgss` profiles receive the
-detail card. Main re-detects a registered game, validates the contained `.exe`,
+Only `rpgmaker-mv`, `rpgmaker-mz`, `rpgmaker-rgss`, `wolf-rpg`, `renpy` and
+`kirikiri` profiles receive the detail card. Main re-detects a registered game, validates the contained `.exe`,
 revalidates the tool, then spawns `MTool.exe` with either no arguments or one
 absolute game-executable argument. The working directory is the validated Tool
 directory; `shell: false` prevents the path from becoming shell syntax. Renderer
@@ -358,9 +358,49 @@ No saves/mods/config are automatically migrated between versions. 7z/RAR are
 recognised-only; ZIP64, encryption, split archives, unsupported encodings,
 unsafe/linked/colliding paths and forged IndieDeck metadata are rejected.
 Budgets are a source below 4 GiB, 50,000 entries, 32 GiB expanded and 16 path
-components. Disk-space availability and game runtime compatibility are not
-guaranteed. Import shares the pending-write gate and retains a monotonic
-main-owned progress snapshot across renderer reload, not OS/app restart.
+components. A filesystem free-space preflight checks expanded bytes plus a
+16 MiB margin where `statfs` is supported; it is not a space reservation or a
+guarantee of later writes. Game runtime compatibility is not guaranteed.
+Import shares the pending-write gate and retains a monotonic
+main-owned progress snapshot across renderer reload. That live progress snapshot
+does not itself survive OS/app restart; the managed-installation journal below
+provides a separate persisted recovery path.
+
+### Managed installations (CURRENT v0.1.6)
+
+`game-installations.ts` wraps the bounded archive executor with a separate
+catalog for stable products, releases, installations and installation jobs.
+These IDs describe the logical relationship between copies; library game IDs
+remain associated with physical paths so each copy is detected independently
+and has its own translation plans and file receipts. Matching titles, filename
+version guesses and Steam artwork IDs do not merge products.
+
+The renderer supplies a system-picked candidate ID, optional label and optional
+existing product ID. Main owns the source path, archive hash, installation UUID
+and registration callback. The UI requires confirmation that a linked ZIP is a
+full package for the same game and edition. The first installation is active;
+a later linked copy stays inactive until an explicit activation changes the
+product reference. All copies remain addressable in the library.
+
+The executor acknowledges journal checkpoints around staging, payload
+verification and publication. Registration and activation are distinct from
+payload publication: a failed library save must not trigger extraction of a
+second copy or remove the published files. Recovery revalidates managed UUID
+records before retrying registration, and keeps the previous active reference.
+Stage cleanup requires the exact journal installation ID, owner marker, ordinary
+path ancestry and original storage device. Changed ownership or unavailable
+storage remains a recovery issue. This durable journal applies to managed ZIP
+installation, not to the separate translator file transaction.
+
+`archives:list` returns archive records plus the versioned catalog;
+`archives:activate` and `archives:recover` share main's mutation gate. Renderer
+catalog revisions reject stale responses. Settings groups versions by product,
+and managed game details expose sibling versions and another-download import.
+No saves, mods, translator payloads or receipts are migrated automatically.
+
+Store-client/provider integration and further acquisition work remain planned in
+[the store installation/update plan](store-install-update-plan.md). The launcher
+self-updater remains an independent GitHub/NSIS path.
 
 ## i18n
 

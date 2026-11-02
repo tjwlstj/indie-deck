@@ -51,6 +51,10 @@ export interface ImportGameArchiveOptions {
   /** Bind an OS-picker candidate to its inspected content, not just its name. */
   expectedSha256?: string;
   onProgress?: (progress: GameArchiveProgress) => void;
+  /** Reserved by the durable installation journal, never provided by renderer. */
+  installationId?: string;
+  /** Acknowledged before extraction/publish and after the UUID folder is visible. */
+  onCheckpoint?: (phase: 'staging' | 'payload-verified' | 'published') => Promise<void>;
 }
 
 // Classic ZIP only: ZIP64, split/encrypted archives and legacy name encodings
@@ -334,11 +338,11 @@ export async function listGameArchives(dataDir: string): Promise<GameArchiveReco
   }
   return result.sort((a, b) => b.importedAt.localeCompare(a.importedAt));
 }
-async function removeOwnedStage(stage: string, base: string, nonce: string): Promise<void> {
-  if (path.dirname(stage) !== base || path.basename(stage) !== `.staging-${nonce}`) return;
+async function removeOwnedStage(stage: string, base: string, nonce: string): Promise<boolean> {
+  if (path.dirname(stage) !== base || path.basename(stage) !== `.staging-${nonce}`) return false;
   try {
     await ordinaryPath(stage, 'directory'); await ordinaryPath(path.join(stage, STAGE), 'file');
-    if (await fsp.readFile(path.join(stage, STAGE), 'utf8') !== nonce) return;
+    if (await fsp.readFile(path.join(stage, STAGE), 'utf8') !== nonce) return false;
     // Never recursively remove a staged folder whose ancestry or contents were
     // replaced by a link after creation. Such tampering leaves a safe orphan.
     const walk = async (directory: string): Promise<void> => {
@@ -348,8 +352,19 @@ async function removeOwnedStage(stage: string, base: string, nonce: string): Pro
         if (stat.isDirectory()) await walk(target);
       }
     };
-    await walk(stage); await fsp.rm(stage, { recursive: true, force: true });
-  } catch { /* Cleanup does not broaden ownership when the stage is tampered. */ }
+    await walk(stage); await fsp.rm(stage, { recursive: true, force: true }); return true;
+  } catch { return false; /* Cleanup does not broaden ownership when the stage is tampered. */ }
+}
+/** Recovery only removes the exact journal-owned stage on the original volume. */
+export async function cleanupGameArchiveStage(dataDir: string, installationId: string, storageDevice: string): Promise<boolean> {
+  if (!UUID.test(installationId)) return false;
+  const base = storage(dataDir), stage = path.join(base, `.staging-${installationId}`);
+  try {
+    await ordinaryPath(base, 'directory');
+    if (String((await fsp.stat(base)).dev) !== storageDevice) return false;
+    try { await fsp.lstat(stage); } catch (error) { return (error as NodeJS.ErrnoException).code === 'ENOENT'; }
+    return await removeOwnedStage(stage, base, installationId);
+  } catch { return false; }
 }
 async function findImportedGames(registry: Registry, stage: string): Promise<GameProfile[]> {
   const games: GameProfile[] = [];
@@ -376,9 +391,10 @@ async function findImportedGames(registry: Registry, stage: string): Promise<Gam
 export async function importGameArchive(archivePath: string, options: ImportGameArchiveOptions): Promise<{ record: GameArchiveRecord; duplicate: boolean }> {
   if (options.label !== undefined && (typeof options.label !== 'string' || options.label.length > 80 || /[\u0000-\u001f\u007f-\u009f]/.test(options.label))) fail('invalidLabel');
   if (options.expectedSha256 !== undefined && !SHA256.test(options.expectedSha256)) fail('changedArchive');
+  if (options.installationId !== undefined && !UUID.test(options.installationId)) fail('unsafeSource');
   await ordinaryPath(archivePath, 'file');
   const handle = await fsp.open(archivePath, 'r');
-  const base = storage(options.dataDir), nonce = crypto.randomUUID(), stage = path.join(base, `.staging-${nonce}`);
+  const base = storage(options.dataDir), nonce = options.installationId ?? crypto.randomUUID(), stage = path.join(base, `.staging-${nonce}`);
   let stageCreated = false;
   try {
     const stat = await handle.stat();
@@ -393,8 +409,17 @@ export async function importGameArchive(archivePath: string, options: ImportGame
     const existing = (await listGameArchives(options.dataDir)).find((record) => record.sourceSha256 === hash);
     if (existing) return { record: existing, duplicate: true };
     await ordinaryPath(base, 'directory', true);
+    // Exact integer arithmetic avoids large-volume rounding. This is a bounded
+    // preflight, not a reservation; later writes still handle a filling disk.
+    try {
+      const space = await fsp.statfs(base, { bigint: true });
+      if (space.bavail * space.bsize < BigInt(index.unpacked) + 16n * 1024n * 1024n) fail('insufficientSpace');
+    } catch (error) {
+      if (!['ENOSYS', 'ENOTSUP'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error;
+    }
     await fsp.mkdir(stage); stageCreated = true;
     await fsp.writeFile(path.join(stage, STAGE), nonce, { flag: 'wx' });
+    await options.onCheckpoint?.('staging');
     progress.phase = 'extract'; options.onProgress?.({ ...progress });
     for (const entry of index.entries) {
       await extractEntry(handle, entry, stage, (count) => { progress.bytesDone += count; options.onProgress?.({ ...progress }); });
@@ -417,13 +442,17 @@ export async function importGameArchive(archivePath: string, options: ImportGame
       importedAt: new Date().toISOString(), gameRelativePath, engineId: game.engineId,
       title: displayName(game.title ?? (gameRelativePath ? game.name : path.basename(archiveName, path.extname(archiveName)))),
       gameName: displayName(gameRelativePath ? game.name : path.basename(archiveName, path.extname(archiveName))), executable: game.executable };
-    await fsp.writeFile(path.join(stage, RECORD), JSON.stringify(stored, null, 2), { flag: 'wx' });
+    const recordHandle = await fsp.open(path.join(stage, RECORD), 'wx');
+    try { await recordHandle.writeFile(JSON.stringify(stored, null, 2), 'utf8'); await recordHandle.sync(); }
+    finally { await recordHandle.close(); }
+    await options.onCheckpoint?.('payload-verified');
     const destination = path.join(base, nonce);
     await ordinaryPath(base, 'directory'); await ordinaryPath(stage, 'directory');
     // UUID destination must be absent, even on the extremely unlikely collision.
     try { await fsp.lstat(destination); fail('pathCollision'); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
     progress.phase = 'publish'; options.onProgress?.({ ...progress });
     await fsp.rename(stage, destination); stageCreated = false;
+    await options.onCheckpoint?.('published');
     // The staging owner marker stays with the published folder; no post-publish
     // deletion/rollback can accidentally remove a now-visible game version.
     return { record: validateStored(stored, nonce, destination)!, duplicate: false };

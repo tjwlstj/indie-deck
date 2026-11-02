@@ -187,12 +187,39 @@ manual extraction; encrypted, split, ZIP64 and unsafe archives are rejected.
 Current limits are a ZIP smaller than 4 GiB, at most 50,000 entries and 32 GiB
 total unpacked bytes. Importing files does not execute or certify a game.
 
+**Downloaded-game version management (v0.1.6).** An imported full ZIP
+can start a new game product or, after confirmation, join an existing managed
+game as another version. The first installation becomes active; later versions
+stay inactive until **Use this version** is selected. Settings and each managed
+game's detail page show the retained versions. Every physical copy remains in
+the library, so choosing an active version does not hide or delete older games.
+Saves, translator files, configuration and mods are not copied automatically;
+a game can still use a shared save directory outside its installation.
+
+The managed ZIP importer records a durable installation journal. After an app
+restart it can retry library registration of a verified published copy, or report
+an interrupted staging job while preserving the previous active version.
+Recovery does not run a game or redownload it. Invalid ownership, unavailable
+storage or damaged metadata require review instead of a guessed replacement.
+This recovery scope is separate from process-local translator transactions.
+
+Official-client handoffs, direct store downloads, additional archive formats
+and save migration remain planned in
+[the store installation/update plan](docs/store-install-update-plan.md).
+Steam artwork lookup does not establish purchase entitlement or manage a
+Steam installation. Managed product/version support starts with v0.1.6.
+
 The offline `npm run desktop:flow` check exercises installation, settings
 navigation, renderer reload, optional and standalone fonts, config/receipt
 refresh, small-window sticky actions and ordered removal in Korean and English
 using disposable game folders and mocked downloads. The font fixture is a real
-7z archive containing synthetic bytes, not a working Unity atlas. Launcher
-update controller and renderer tests use a mocked updater to cover explicit
+7z archive containing synthetic bytes, not a working Unity atlas. ZIP flows
+also cover explicit same-product confirmation, preserving the active
+predecessor, choosing a new active version, reload persistence and reverting to
+the older copy. Managed-installation unit fixtures cover registration failure,
+source-independent recovery, atomic activation-save failure, storage identity,
+disk-space rejection and owned-stage cleanup.
+Launcher update controller and renderer tests use a mocked updater to cover explicit
 check/download/restart states, busy and shutdown gates, retry and main-owned
 reload recovery. The Korean and English desktop flows also boot an installed-
 layout updater harness and drive the real main/preload/renderer events through

@@ -214,10 +214,12 @@ test('Unity cleanup uses opaque cached previews and never promotes ordinary inst
 });
 
 test('game archive import can select paths only through the OS picker and cannot name destinations', () => {
-  assert.match(preload, /import: \(candidateId, label\) => call\('archives:import', candidateId, label\)/);
+  assert.match(preload, /import: \(candidateId, label, productId\) => call\('archives:import', candidateId, label, productId\)/);
+  assert.match(preload, /activate: \(installationId\) => call\('archives:activate', installationId\)/);
+  assert.match(preload, /recover: \(\) => call\('archives:recover'\)/);
   assert.match(preload, /pick: \(\) => call\('archives:pick'\)/);
   assert.match(main, /archiveCandidates\.set\(id, \{ path: source, inspection \}\)/);
-  assert.match(main, /importGameArchive\(candidate\.path/);
+  assert.match(main, /installGameArchiveVersion\(candidate\.path/);
   assert.match(main, /dataDir: defaultDataDir\(\), registry/);
   assert.match(main, /expectedSha256: candidate\.inspection\.sha256/);
   assert.match(main, /handle\('archives:current', \(\) => structuredClone\(archiveTask\)\)/);

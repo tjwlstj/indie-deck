@@ -5,6 +5,40 @@ Versioning while the project is pre-1.0.
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-11-02
+
+### Added
+
+- Managed product, release and installation records around downloaded Classic
+  ZIP games. A full package can be installed as a new game or explicitly linked
+  as another version of an existing managed game. The first copy becomes active;
+  later copies stay inactive until selected. Older copies remain in the library.
+- Version selection in archive settings and managed game details, with a
+  confirmation before joining a package to an existing game/edition. Labels and
+  filename version hints are not treated as verified publisher versions.
+- A durable managed-ZIP installation journal and recovery of published copies
+  whose library registration was interrupted. Recovery retains previous active
+  copies and only cleans staging directories whose identity and ownership match.
+
+### Scope notes
+
+- No save, configuration, mod or translator-receipt migration is performed.
+  Shared save paths outside game folders may still be used by individual games.
+  This journal does not change the process-local translator transaction scope.
+- Store login/download clients, official-client handoffs, patches and additional
+  archive formats remain planned.
+
+### Verification notes
+
+- Disposable ZIP/catalog fixtures exercise explicit grouping, old-version
+  preservation, publish/register recovery without the source archive, repeated
+  recovery, atomic activation-save failure, storage-identity mismatch, low disk
+  space and ownership/link checks during stage cleanup. Real power loss and
+  removable-drive disconnects are not simulated by these fixtures.
+- Korean and English desktop flows drive product confirmation and explicit
+  version activation/reload/revert through the real main/preload/renderer path;
+  no purchased game, store account or game process is used.
+
 ## [0.1.5] - 2026-11-02
 
 ### Added

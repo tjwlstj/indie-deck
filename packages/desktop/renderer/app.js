@@ -148,9 +148,9 @@ function renderOperationChrome() {
     );
   } else if (state.archiveProgress || state.archiveBusy) {
     task.hidden = false;
-    task.textContent = state.archiveProgress ? archiveProgressLabel() : t('ui.archive.inspecting', undefined, 'Inspecting archive contents…');
-    task.classList.toggle('terminal', Boolean(state.archiveProgress && !isArchiveActive(state.archiveProgress)));
-    task.classList.toggle('failed', state.archiveProgress?.status === 'failed');
+    task.textContent = (state.archiveProgress || state.archiveAction) ? archiveProgressLabel() : t('ui.archive.inspecting', undefined, 'Inspecting archive contents…');
+    task.classList.toggle('terminal', Boolean(!state.archiveBusy && state.archiveProgress && !isArchiveActive(state.archiveProgress)));
+    task.classList.toggle('failed', !state.archiveBusy && state.archiveProgress?.status === 'failed');
     task.classList.remove('warning');
   } else if (!libraryBusy) {
     task.hidden = true;

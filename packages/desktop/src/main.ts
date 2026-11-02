@@ -66,7 +66,8 @@ import { readSafeRemovalReceipts } from './receipt-guard.ts';
 import { fontWriteBlockKey } from './font-guard.ts';
 import { getMToolStatus, isMToolGame, mtoolLaunchSpec, getMToolGameExecutable, type MToolStatus } from './mtool.ts';
 import { previewTranslatorMaintenance, runTranslatorMaintenance, type TranslatorMaintenancePreview } from './translator-maintenance.ts';
-import { inspectGameArchive, importGameArchive, listGameArchives, type GameArchiveInspection } from './game-archives.ts';
+import { inspectGameArchive, listGameArchives, type GameArchiveInspection, type GameArchiveRecord } from './game-archives.ts';
+import { installGameArchiveVersion, listGameInstallations, setActiveGameInstallation, recoverGameInstallations } from './game-installations.ts';
 import { createLauncherUpdateController, LAUNCHER_RELEASE_URL } from './launcher-updates.ts';
 import { withinLibraryRoots } from './library-roots.ts';
 import { LibraryScanController } from './library-scan.ts';
@@ -161,6 +162,7 @@ interface ArchiveTask {
 }
 let archiveTask: ArchiveTask | null = null;
 let archiveSequence = 0;
+let archiveRecoveryError: string | undefined;
 
 function idFor(gamePath: string): string {
   return crypto.createHash('sha1').update(path.resolve(gamePath).toLowerCase()).digest('hex').slice(0, 16);
@@ -751,6 +753,11 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
     return !state.archiveBusy && state.archiveProgress?.status === 'complete'
       && state.archiveRecords.length === 1 && state.games.length === 4;
   })()`, 'first side-by-side game import');
+  const firstProduct = await evaluate<{ id: string; activeInstallationId: string }>(`(async () => {
+    const { state } = await import('./store.js');
+    if (state.archiveCatalog?.products.length !== 1) throw new Error('Missing stable game product.');
+    return state.archiveCatalog.products[0];
+  })()`);
   const firstArchive = await evaluate<{ gameRoot: string; id: string; hash: string }>(`(async () => {
     const record = (await import('./store.js')).state.archiveRecords[0];
     return { gameRoot: record.gameRoot, id: record.id, hash: record.sourceSha256 };
@@ -767,6 +774,13 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
   await evaluate(`document.getElementById('importArchive').click()`);
   await evaluate(`document.querySelector('#archiveSettings .archive-pick').click()`);
   await waitFor(`!!document.querySelector('#archiveSettings .archive-import:not(:disabled)')`, 'second ZIP inspection');
+  await evaluate(`(() => {
+    const product = document.getElementById('archiveProduct');
+    product.value = ${JSON.stringify(firstProduct.id)}; product.dispatchEvent(new Event('change'));
+    const confirmed = document.getElementById('archiveProductConfirmed');
+    if (!confirmed || !document.querySelector('#archiveSettings .archive-import').disabled) throw new Error('Game/edition confirmation was skipped.');
+    confirmed.checked = true; confirmed.dispatchEvent(new Event('change'));
+  })()`);
   await evaluate(`(() => {
     const input = document.getElementById('archiveVersionLabel'); input.value = '2.0 smoke'; input.dispatchEvent(new Event('input'));
     document.querySelector('#archiveSettings .archive-import').click();
@@ -786,6 +800,42 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
   if (!versions || firstGameHash !== crypto.createHash('sha256').update(await readFile(path.join(firstArchive.gameRoot, 'Game.exe'))).digest('hex')) {
     throw new Error('Archive versions overwrote their predecessor or lost version provenance/labels.');
   }
+  const newInstallationId = await evaluate<string>(`(async () => {
+    const { state } = await import('./store.js');
+    const catalog = state.archiveCatalog;
+    if (catalog.products.length !== 1 || catalog.installations.length !== 2 || catalog.releases.length !== 2
+        || catalog.products[0].id !== ${JSON.stringify(firstProduct.id)}
+        || catalog.products[0].activeInstallationId !== ${JSON.stringify(firstProduct.activeInstallationId)}) {
+      throw new Error('Version grouping changed the previous active copy.');
+    }
+    return catalog.installations.find((entry) => entry.id !== ${JSON.stringify(firstProduct.activeInstallationId)}).id;
+  })()`);
+  const forgedActivation = await evaluate<boolean>(`(async () => {
+    const { api } = await import('./store.js');
+    try { await api.archives.activate('C:/renderer-target.exe'); return false; } catch { return true; }
+  })()`);
+  if (!forgedActivation) throw new Error('Installation activation accepted a renderer-provided path.');
+  await evaluate(`document.querySelector('.archive-activate[data-installation-id="${newInstallationId}"]').click()`);
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return !state.archiveBusy && state.archiveCatalog?.products[0].activeInstallationId === '${newInstallationId}'
+      && state.view === 'library' && !!document.querySelector('.detail-versions');
+  })()`, 'explicit active version selection and detail refresh');
+  await new Promise<void>((resolve) => {
+    window.webContents.once('did-finish-load', () => resolve()); window.webContents.reload();
+  });
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return document.body.dataset.libraryState === 'ready' && state.archiveCatalog?.products[0].activeInstallationId === '${newInstallationId}';
+  })()`, 'active version survives renderer restart');
+  await evaluate(`document.getElementById('importArchive').click()`);
+  await waitFor(`!!document.querySelector('.archive-activate[data-installation-id="${firstProduct.activeInstallationId}"]:not(:disabled)')`, 'previous version still available');
+  await evaluate(`document.querySelector('.archive-activate[data-installation-id="${firstProduct.activeInstallationId}"]').click()`);
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return !state.archiveBusy && state.archiveCatalog?.products[0].activeInstallationId === '${firstProduct.activeInstallationId}';
+  })()`, 'previous active version restored');
+  await evaluate(`document.getElementById('importArchive').click()`);
   for (const source of [process.env['INDIEDECK_SMOKE_GAME_ARCHIVE']!, process.env['INDIEDECK_SMOKE_GAME_ARCHIVE_V2']!]) {
     if (!(await stat(source)).isFile()) throw new Error('Game import removed its original archive.');
   }
@@ -807,7 +857,7 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
       && document.querySelectorAll('#gameList .game').length === 5
       && document.querySelectorAll('#gameList .archive-version-label').length === 2;
   })()`, 'imported version selected with library label');
-  console.log('[smoke] OS-picked ZIP inspection → two side-by-side labeled game versions → library refresh/selection → original archives and predecessor preserved passed');
+  console.log('[smoke] ZIP → explicit product/edition grouping → preserved active copy → version activation/reload/revert → library refresh; original archives and predecessor preserved');
 
   // Real scanner/UI/IPC against disposable empty folders. Delay is owned by
   // the offline bootstrap, not an application option or renderer authority.
@@ -1335,6 +1385,24 @@ function localiseTaskError(error: unknown): string {
   return /^ui\.(maintenance|archives|update)\.[a-zA-Z0-9.]+$/.test(message) ? t(message) : message;
 }
 
+/** The catalog owns stable product/version ids. Library profiles remain tied
+ * to each physical copy so translator plans and receipts are never inherited. */
+async function registerArchiveVersion(record: GameArchiveRecord): Promise<void> {
+  const refreshed = await refreshLibraryGame(registry, record.gameRoot);
+  if (!refreshed.profile?.executable) throw new Error('ui.archives.reason.noGame');
+  const config = await addRoot(record.gameRoot);
+  libraryRoots = config.roots;
+  rememberGames(refreshed.index.games.filter((game) => withinLibraryRoot(game.path)));
+  markGameChanged(idFor(record.gameRoot));
+}
+
+async function archiveSnapshot(gameId?: string) {
+  const config = await loadConfig();
+  libraryRoots = config.roots;
+  const library = libraryPayload(await loadLibrary(), safeResolveOptions(config.defaults));
+  return { records: await archiveRecords(), catalog: await listGameInstallations(defaultDataDir()), recoveryError: archiveRecoveryError, config, library, gameId };
+}
+
 async function archiveRecords() {
   return (await listGameArchives(defaultDataDir())).map((record) => {
     const gameId = idFor(record.gameRoot);
@@ -1348,7 +1416,7 @@ function publishArchiveTask(update: Partial<ArchiveTask>): void {
   send('archives:progress', structuredClone(archiveTask));
 }
 
-function importSelectedArchive(candidateId: unknown, label: unknown) {
+function importSelectedArchive(candidateId: unknown, label: unknown, productId?: unknown) {
   if (pendingMutations > 0 || operations.isActive()) throw new Error(t('ui.operation.busy'));
   if (typeof candidateId !== 'string') throw new Error(t('ui.archives.reason.stale'));
   const candidate = archiveCandidates.get(candidateId);
@@ -1357,14 +1425,19 @@ function importSelectedArchive(candidateId: unknown, label: unknown) {
   if (label !== undefined && (typeof label !== 'string' || label.length > 80 || /[\u0000-\u001f\u007f]/u.test(label))) {
     throw new Error(t('ui.archives.reason.invalidLabel'));
   }
+  if (productId !== undefined && (typeof productId !== 'string' || !/^[0-9a-f-]{36}$/.test(productId))) {
+    throw new Error('ui.archives.reason.invalidProduct');
+  }
   archiveTask = { id: candidateId, sequence: ++archiveSequence, status: 'running', phase: 'inspect',
     completedFiles: 0, totalFiles: candidate.inspection.fileCount ?? 0,
     completedBytes: 0, totalBytes: candidate.inspection.unpackedBytes ?? 0 };
   send('archives:progress', structuredClone(archiveTask));
   return enqueueMutation(async () => {
     try {
-      const imported = await importGameArchive(candidate.path, {
+      const imported = await installGameArchiveVersion(candidate.path, {
         dataDir: defaultDataDir(), registry, label: typeof label === 'string' ? label.trim() : undefined,
+        productId: typeof productId === 'string' ? productId : undefined,
+        register: registerArchiveVersion,
         expectedSha256: candidate.inspection.sha256,
         onProgress: (event) => publishArchiveTask({
           phase: event.phase === 'verify' || event.phase === 'detect' ? 'inspect' : event.phase,
@@ -1372,14 +1445,9 @@ function importSelectedArchive(candidateId: unknown, label: unknown) {
           completedBytes: event.bytesDone, totalBytes: event.bytesTotal,
         }),
       });
-      const config = await addRoot(imported.record.gameRoot);
-      libraryRoots = config.roots;
-      const refreshed = await refreshLibraryGame(registry, imported.record.gameRoot);
-      const library = libraryPayload(refreshed.index, safeResolveOptions(config.defaults));
       const gameId = idFor(imported.record.gameRoot);
-      markGameChanged(gameId);
       const result = { record: { ...imported.record, gameId }, duplicate: imported.duplicate,
-        records: await archiveRecords(), config, library, gameId };
+        ...await archiveSnapshot(gameId) };
       publishArchiveTask({ status: 'complete', phase: 'complete', result });
       return result;
     } catch (error) {
@@ -1432,20 +1500,46 @@ function register(): void {
 
   handle('config:get', () => loadConfig());
   handle('archives:current', () => structuredClone(archiveTask));
-  handle('archives:list', async () => { await mutationQueue; return { records: await archiveRecords() }; });
+  handle('archives:list', async () => {
+    await mutationQueue;
+    const records = await archiveRecords();
+    try {
+      return { records, catalog: await listGameInstallations(defaultDataDir()), recoveryError: archiveRecoveryError };
+    } catch (error) {
+      // Preserve corrupt evidence while allowing the settings recovery card to
+      // explain it. Mutating APIs continue to require a valid on-disk catalog.
+      return { records, catalog: null, recoveryError: localiseTaskError(error) };
+    }
+  });
   handleMutation('archives:pick', async () => {
     const picked = await dialog.showOpenDialog({ properties: ['openFile'],
       title: t('ui.archives.pickTitle'), filters: [{ name: t('ui.archives.archiveFiles'), extensions: ['zip', '7z', 'rar'] }] });
     const records = await archiveRecords();
+    const catalog = await listGameInstallations(defaultDataDir());
     const source = picked.filePaths[0];
-    if (picked.canceled || !source) return { candidate: null, records };
+    if (picked.canceled || !source) return { candidate: null, records, catalog };
     const inspection = await inspectGameArchive(source);
     while (archiveCandidates.size >= 20) archiveCandidates.delete(archiveCandidates.keys().next().value!);
     const id = crypto.randomUUID();
     archiveCandidates.set(id, { path: source, inspection });
-    return { candidate: { id, ...inspection }, records };
+    return { candidate: { id, ...inspection }, records, catalog };
   });
-  handle('archives:import', (candidateId: unknown, label: unknown) => importSelectedArchive(candidateId, label));
+  handle('archives:import', (candidateId: unknown, label: unknown, productId?: unknown) => importSelectedArchive(candidateId, label, productId));
+  handleMutation('archives:activate', async (installationId: unknown) => {
+    if (typeof installationId !== 'string') throw new Error('ui.archives.reason.invalidInstallation');
+    const catalog = await listGameInstallations(defaultDataDir());
+    const installation = catalog.installations.find((entry) => entry.id === installationId);
+    const record = installation && (await listGameArchives(defaultDataDir())).find((entry) => entry.id === installation.archiveId);
+    if (!record) throw new Error('ui.archives.reason.invalidInstallation');
+    await registerArchiveVersion(record);
+    await setActiveGameInstallation(defaultDataDir(), installationId);
+    return archiveSnapshot(idFor(record.gameRoot));
+  });
+  handleMutation('archives:recover', async () => {
+    await recoverGameInstallations({ dataDir: defaultDataDir(), registry, register: registerArchiveVersion });
+    archiveRecoveryError = undefined;
+    return archiveSnapshot();
+  });
   handle('mtool:status', async () => { await mutationQueue; return currentMToolStatus(); });
   handleMutation('mtool:pick', async () => {
     const picked = await dialog.showOpenDialog({
@@ -1720,6 +1814,14 @@ void app.whenReady().then(async () => {
     return;
   }
   configureAutoUpdates();
+  // Reconcile only our own recorded UUID installations. This does not scan
+  // configured library drives or restart an interrupted source extraction.
+  try {
+    await enqueueMutation(() => recoverGameInstallations({ dataDir: defaultDataDir(), registry, register: registerArchiveVersion }));
+  } catch (error) {
+    archiveRecoveryError = localiseTaskError(error);
+    console.error('[installations] recovery failed:', archiveRecoveryError);
+  }
   register();
   createWindow();
 

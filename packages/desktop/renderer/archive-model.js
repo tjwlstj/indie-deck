@@ -18,6 +18,53 @@ export function archiveRecordForGame(records, gameId) {
   return (Array.isArray(records) ? records : []).find((record) => record.gameId === gameId) ?? null;
 }
 
+/** Catalog relations never infer product identity from a path, title or version. */
+export function managedInstallationForGame(catalog, records, gameId) {
+  const record = archiveRecordForGame(records, gameId);
+  if (!record) return null;
+  const installation = (catalog?.installations ?? []).find((item) => item.archiveId === record.id);
+  if (!installation) return null;
+  const product = (catalog?.products ?? []).find((item) => item.id === installation.productId);
+  return product ? { installation, product, record, active: product.activeInstallationId === installation.id } : null;
+}
+
+export function managedProductVersions(catalog, records, productId) {
+  const product = (catalog?.products ?? []).find((item) => item.id === productId);
+  if (!product) return [];
+  const byArchive = new Map((Array.isArray(records) ? records : []).map((record) => [record.id, record]));
+  return (catalog?.installations ?? []).filter((item) => item.productId === productId).map((installation) => ({
+    installation,
+    record: byArchive.get(installation.archiveId) ?? null,
+    release: (catalog?.releases ?? []).find((item) => item.id === installation.releaseId) ?? null,
+    active: product.activeInstallationId === installation.id,
+  })).sort((a, b) => String(b.installation.createdAt ?? '').localeCompare(String(a.installation.createdAt ?? '')));
+}
+
+export function recoverableInstallJobs(catalog) {
+  return (catalog?.jobs ?? []).filter((job) => job.phase === 'recovery-required');
+}
+
+/** A stale queued read cannot undo a completed import, activation or recovery. */
+export function acceptsInstallationCatalog(current, incoming) {
+  if (!incoming || !Array.isArray(incoming.products) || !Array.isArray(incoming.installations) || !Array.isArray(incoming.jobs) ||
+      !Number.isSafeInteger(incoming.revision) || incoming.revision < 0) return false;
+  return !Number.isSafeInteger(current?.revision) || incoming.revision >= current.revision;
+}
+
+export function installationVersionPresentation(version, blocked = false) {
+  const canOpen = typeof version?.record?.gameId === 'string' && version.record.gameId.length > 0;
+  return {
+    canOpen,
+    canActivate: canOpen && Boolean(version?.installation?.id) && version.active !== true && !blocked,
+  };
+}
+
+/** Retained progress is historical evidence, so it cannot dismiss a newer read error. */
+export function nextArchiveRecoveryError(current, result, authoritative = false) {
+  if (result?.recoveryError) return result.recoveryError;
+  return authoritative && result?.catalog ? null : current;
+}
+
 export function reduceArchiveProgress(previous, next) {
   if (!next?.id || !['running', 'complete', 'failed'].includes(next.status)) return previous;
   if (Number.isSafeInteger(previous?.sequence) && Number.isSafeInteger(next.sequence)) {

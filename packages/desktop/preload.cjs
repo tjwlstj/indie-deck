@@ -82,7 +82,9 @@ contextBridge.exposeInMainWorld('indiedeck', {
   archives: {
     list: () => call('archives:list'),
     pick: () => call('archives:pick'),
-    import: (candidateId, label) => call('archives:import', candidateId, label),
+    import: (candidateId, label, productId) => call('archives:import', candidateId, label, productId),
+    activate: (installationId) => call('archives:activate', installationId),
+    recover: () => call('archives:recover'),
     current: () => call('archives:current'),
     onProgress: (fn) => subscribe('archives:progress', fn),
   },
