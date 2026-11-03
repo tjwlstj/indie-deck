@@ -24,6 +24,7 @@ metadata before committing:
 npm run release:check
 npm run verify
 npm run desktop:flow
+npm run desktop:history
 npm audit --audit-level=high
 npm run dist:win
 npm run package:check

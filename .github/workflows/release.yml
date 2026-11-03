@@ -120,8 +120,14 @@ jobs:
       - name: Offline Korean and English desktop flows
         run: npm run desktop:flow
 
+      - name: Comparison history across app restarts
+        run: npm run desktop:history
+
       - name: Assert packaged runtime and updater metadata
         run: npm run package:check
+
+      - name: Persisted comparison in packaged application
+        run: node scripts/check-comparison-history.mjs ko --packaged
 
       - name: Smoke test packaged application
         shell: pwsh

@@ -1244,3 +1244,13 @@ select {
 .store-game-card { margin-bottom: 18px; }
 .store-game-link + .store-game-link { padding-top: 12px; border-top: 1px solid var(--line); }
 .store-game-link strong { overflow-wrap: anywhere; }
+
+/* ------------------------------------------- saved translation comparison */
+.comparison-history-card { padding: 13px 14px; margin-bottom: 18px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-raised); }
+.comparison-history-info { font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
+.comparison-history-time { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.comparison-history-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.comparison-history-actions button { max-width: 100%; white-space: normal; }
+.comparison-history-warning { color: var(--warn); font-size: 12px; line-height: 1.65; }
+.comparison-history-redaction { color: var(--text-faint); }
+.option-comparison-dialog > .comparison-history-info { margin-bottom: 14px; }

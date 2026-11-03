@@ -1,6 +1,6 @@
 import { el, setStatus } from '../dom.js';
 import { t } from '../i18n.js';
-import { mutationBlocked, state } from '../store.js';
+import { api, mutationBlocked, state } from '../store.js';
 import { comparisonRowGroups, comparisonValue, providerComparisonValue } from '../config-model.js';
 import {
   canConfirmTranslatorMaintenance,
@@ -8,15 +8,16 @@ import {
   translatorMaintenancePresentation,
 } from '../maintenance-model.js';
 
-function comparisonText(row, target = false) {
-  const presentation = comparisonValue(row, target);
+function comparisonText(row, target = false, hiddenValueIds = []) {
+  const presentation = comparisonValue(row, target, hiddenValueIds);
   const fallbacks = { empty: '(empty)', unknownValue: 'Unknown', notInFile: 'Not in file · reference: {value}',
-    secretConfigured: 'Configured · value hidden', secretMissing: 'Not configured', secretReference: 'Credential value is not compared' };
+    secretConfigured: 'Configured · value hidden', secretMissing: 'Not configured', secretReference: 'Credential value is not compared',
+    'history.savedValueHidden': 'Value omitted from saved history' };
   const value = presentation.value === '' ? t('ui.configComparison.empty', undefined, '(empty)') : presentation.value;
   return presentation.key ? t(`ui.configComparison.${presentation.key}`, { value }, fallbacks[presentation.key]) : presentation.value;
 }
 
-function comparisonTable(rows) {
+function comparisonTable(rows, hiddenValueIds = []) {
   const wrap = el('div', 'comparison-table-wrap');
   const table = el('table', 'comparison-table');
   const head = el('thead');
@@ -33,13 +34,13 @@ function comparisonTable(rows) {
   for (const row of rows) {
     const node = el('tr', 'comparison-row');
     node.dataset.optionId = row.id; node.dataset.status = row.status;
-    const label = el('th', null, row.label || row.id); label.scope = 'row';
+    const label = el('th', null, t(`configSchema.xunity-autotranslator.settings.${row.id}.label`, undefined, row.label || row.id)); label.scope = 'row';
     if ([row.currentLocation, row.targetLocation].some((location) => location && (location.assumed || location.confidence !== 'verified'))) {
       label.append(el('span', 'pill warn', t('ui.config.assumed', undefined, 'assumed')));
     }
     const statusKey = row.status === 'new-default' ? row.introduced === false ? 'missingOption' : 'newDefault' : row.status;
     const statusText = statusKey === 'missingOption' ? 'Not in current file · default reference' : statuses[row.status] || row.status;
-    node.append(label, el('td', 'comparison-current', comparisonText(row)), el('td', 'comparison-target', comparisonText(row, true)),
+    node.append(label, el('td', 'comparison-current', comparisonText(row, false, hiddenValueIds)), el('td', 'comparison-target', comparisonText(row, true, hiddenValueIds)),
       el('td', 'comparison-status', t(`ui.configComparison.${statusKey}`, undefined, statusText)));
     body.append(node);
   }
@@ -49,7 +50,7 @@ function comparisonTable(rows) {
 
 /** Read-only report bound to the shown cleanup preview. Reinstall preserves
  * bytes; target defaults describe our schema rather than a simulated migration. */
-export function renderOptionComparison(report) {
+export function renderOptionComparison(report, info = {}) {
   const card = el('section', 'maintenance-option-comparison');
   card.append(el('h4', null, t('ui.configComparison.title', undefined, 'Current options and replacement version')));
   if (!report?.available) {
@@ -79,10 +80,10 @@ export function renderOptionComparison(report) {
   if (report.configFile?.exists === false) card.append(el('p', 'maintenance-help', t('ui.configComparison.configMissing', undefined,
     'The settings file has not been generated. Current values shown here are schema references.')));
   const groups = comparisonRowGroups(report);
-  if (groups.main.length) card.append(comparisonTable(groups.main));
+  if (groups.main.length) card.append(comparisonTable(groups.main, info.hiddenValueIds));
   const advanced = el('details', 'comparison-technical');
   advanced.append(el('summary', null, t('ui.configComparison.advanced', { count: groups.advanced.length }, 'More options and mapping details ({count})')));
-  if (groups.advanced.length) advanced.append(comparisonTable(groups.advanced));
+  if (groups.advanced.length) advanced.append(comparisonTable(groups.advanced, info.hiddenValueIds));
   for (const row of [...groups.main, ...groups.advanced]) {
     if (!row.currentLocation && !row.targetLocation) continue;
     const original = row.currentLocation ? `[${row.currentLocation.section}] ${row.currentLocation.key}` : '?';
@@ -90,7 +91,8 @@ export function renderOptionComparison(report) {
     const evidence = t('ui.configComparison.mappingEvidence', {
       current: row.currentLocation?.confidence || '?', target: row.targetLocation?.confidence || '?',
     }, 'mapping evidence: {current} → {target}');
-    advanced.append(el('p', 'plan-sub', `${row.label || row.id}: ${original} → ${target} · ${evidence}`));
+    const label = t(`configSchema.xunity-autotranslator.settings.${row.id}.label`, undefined, row.label || row.id);
+    advanced.append(el('p', 'plan-sub', `${label}: ${original} → ${target} · ${evidence}`));
   }
   if (currentFile) advanced.append(el('p', 'plan-sub', t('ui.configComparison.sourceFile', { path: currentFile }, 'Current file: {path}')));
   if (targetFile) advanced.append(el('p', 'plan-sub', t('ui.configComparison.targetFile', { path: targetFile }, 'Target file: {path}')));
@@ -104,7 +106,7 @@ export function renderOptionComparison(report) {
     credentials.append(el('summary', null, t('ui.configComparison.credentials', undefined, 'Credential settings kept')),
       el('p', 'maintenance-help', t('ui.configComparison.credentialsNote', undefined, 'Credential values stay hidden; only configured status is shown. Boolean and numeric options show their current value.')));
     for (const provider of providers) {
-      credentials.append(el('strong', null, provider.label || provider.id));
+      credentials.append(el('strong', null, t(`configSchema.xunity-autotranslator.providers.${provider.id}.label`, undefined, provider.label || provider.id)));
       if (provider.roles?.length) credentials.append(el('p', 'plan-sub', provider.roles.map((role) =>
         t(`ui.configComparison.role.${role}`, undefined, role)).join(' · ')));
       if (provider.versionRequirement) {
@@ -114,13 +116,14 @@ export function renderOptionComparison(report) {
           min: condition.min || '—', max: condition.max || '—',
           current: match(provider.currentMeetsRequirement), target: match(provider.targetMeetsRequirement),
         }, 'Registered version requirement {min}…{max} · current: {current} · replacement: {target}')));
-        if (condition.reason) credentials.append(el('p', 'maintenance-help', condition.reason));
+        if (condition.reason) credentials.append(el('p', 'maintenance-help', t(`configSchema.xunity-autotranslator.providers.${provider.id}.requiresTranslatorVersion.reason`, undefined, condition.reason)));
         credentials.append(el('p', 'maintenance-help', t('ui.configComparison.requirementScope', undefined,
           'This checks registered version metadata, not API login or translation success.')));
       }
       for (const field of provider.fields ?? []) {
         const value = providerComparisonValue(field);
-        credentials.append(el('p', 'plan-sub', `${field.label || field.key}: ${value !== undefined ? value : field.configured
+        const label = t(`configSchema.xunity-autotranslator.providers.${provider.id}.fields.${field.key}.label`, undefined, field.label || field.key);
+        credentials.append(el('p', 'plan-sub', `${label}: ${value !== undefined ? value : field.configured
           ? t('ui.configComparison.configured', undefined, 'Configured') : t('ui.configComparison.missing', undefined, 'Not configured')}`));
       }
     }
@@ -138,7 +141,28 @@ export function renderOptionComparison(report) {
   return card;
 }
 
-export function openOptionComparisonDialog(report) {
+function comparisonHistoryInfo(info) {
+  const host = el('div', 'comparison-history-info');
+  if (info.recordedAt) {
+    const date = new Date(info.recordedAt);
+    const display = Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat(document.documentElement.lang || 'en', {
+      dateStyle: 'medium', timeStyle: 'short',
+    }).format(date) : t('ui.configComparison.history.timeUnknown', undefined, 'Time unavailable');
+    const time = el('time', 'comparison-history-time comparison-history-recorded-at', display);
+    if (Number.isFinite(date.getTime())) time.dateTime = date.toISOString();
+    host.append(el('span', null, t('ui.configComparison.history.recordedAt', undefined, 'Recorded: ')), time);
+  }
+  host.append(el('p', 'maintenance-help', t('ui.configComparison.history.snapshotNote', undefined,
+    'This is a pre-reinstall snapshot, not a fresh reading of the game.')));
+  if (typeof info.persistent === 'boolean') host.append(el('p', `maintenance-help${info.persistent ? '' : ' comparison-history-warning'}`,
+    t(`ui.configComparison.history.${info.persistent ? 'persistent' : 'sessionOnly'}`, undefined,
+      info.persistent ? 'Saved in the launcher; available after restarting the app.' : 'Available only during this app session; saving the history failed.')));
+  if (info.hiddenValueIds?.length) host.append(el('p', 'maintenance-help comparison-history-redaction', t('ui.configComparison.history.hiddenNote', undefined,
+    'Private paths and free-form values are omitted from saved history. Hidden values cannot be restored from this report.')));
+  return host;
+}
+
+export function openOptionComparisonDialog(report, info = {}) {
   document.getElementById('translatorOptionsComparisonDialog')?.remove();
   const dialog = el('dialog', 'maintenance-confirm option-comparison-dialog');
   dialog.id = 'translatorOptionsComparisonDialog';
@@ -146,9 +170,87 @@ export function openOptionComparisonDialog(report) {
   title.id = 'translatorOptionsComparisonTitle'; dialog.setAttribute('aria-labelledby', title.id);
   const close = el('button', 'ghost', t('ui.operation.dismiss', undefined, 'Close'));
   close.addEventListener('click', () => dialog.close());
-  dialog.append(title, renderOptionComparison(report), close);
+  dialog.append(title);
+  if (info.recordedAt || info.persistent !== undefined || info.hiddenValueIds?.length) dialog.append(comparisonHistoryInfo(info));
+  dialog.append(renderOptionComparison(report, info), close);
   dialog.addEventListener('close', () => dialog.remove(), { once: true });
   document.body.append(dialog); dialog.showModal(); close.focus({ preventScroll: true }); dialog.scrollTop = 0;
+}
+
+const clearingHistory = new Set();
+
+function confirmClearComparisonHistory(context, history, button) {
+  const gameId = context.profile.id;
+  if (mutationBlocked() || clearingHistory.has(gameId) || history.state !== 'ready') return;
+  document.getElementById('comparisonHistoryClearDialog')?.remove();
+  const dialog = el('dialog', 'maintenance-confirm comparison-history-clear-dialog');
+  dialog.id = 'comparisonHistoryClearDialog';
+  const title = el('h2', null, t('ui.configComparison.history.clearTitle', undefined, 'Delete this game’s comparison history?'));
+  title.id = 'translatorComparisonHistoryClearTitle'; dialog.setAttribute('aria-labelledby', title.id);
+  dialog.append(title, el('p', 'maintenance-help', t('ui.configComparison.history.clearNote', undefined,
+    'Only the launcher’s saved comparison is deleted. The game, translator, settings and backups stay unchanged.')));
+  const actions = el('div', 'maintenance-actions');
+  const cancel = el('button', 'ghost', t('ui.maintenance.cancel', undefined, 'Cancel'));
+  cancel.addEventListener('click', () => dialog.close());
+  const confirm = el('button', 'primary comparison-history-confirm-clear', t('ui.configComparison.history.clear', undefined, 'Delete saved comparison'));
+  confirm.addEventListener('click', async () => {
+    if (mutationBlocked() || clearingHistory.has(gameId) || state.selected !== gameId ||
+      state.detail?.comparisonHistory?.state !== 'ready' || state.detail.comparisonHistory.record?.recordedAt !== history.record.recordedAt) {
+      dialog.close(); return;
+    }
+    dialog.close();
+    clearingHistory.add(gameId); button.disabled = true;
+    button.textContent = t('ui.configComparison.history.clearing', undefined, 'Deleting comparison…');
+    try {
+      await api.translatorConfig.clearHistory(gameId);
+      setStatus(t('ui.configComparison.history.cleared', undefined, 'Saved comparison deleted. Game settings are unchanged.'), 'ok');
+      if (state.operation?.gameId === gameId && state.operation.outcome && !mutationBlocked()) {
+        window.dispatchEvent(new CustomEvent('indiedeck:dismiss-operation'));
+      }
+    } catch {
+      setStatus(t('ui.configComparison.history.clearFailed', undefined, 'The comparison could not be deleted. Refresh and try again.'), 'err');
+    } finally {
+      clearingHistory.delete(gameId);
+      button.disabled = mutationBlocked() || history.state !== 'ready';
+      button.textContent = t('ui.configComparison.history.clear', undefined, 'Delete saved comparison');
+      if (state.selected === gameId) window.dispatchEvent(new CustomEvent('indiedeck:refresh-detail'));
+    }
+  });
+  actions.append(cancel, confirm); dialog.append(actions);
+  dialog.addEventListener('close', () => dialog.remove(), { once: true });
+  document.body.append(dialog); dialog.showModal(); cancel.focus({ preventScroll: true }); dialog.scrollTop = 0;
+}
+
+/** Saved metadata stays available even when no translator maintenance preview exists. */
+export function renderComparisonHistory(panel, context) {
+  const history = context.comparisonHistory;
+  if (!history?.record && history?.state !== 'unavailable') return;
+  panel.append(el('h3', null, t('ui.configComparison.history.title', undefined, 'Last translator comparison')));
+  const card = el('section', 'comparison-history comparison-history-card');
+  card.dataset.historyState = history.state;
+  if (history.state === 'unavailable') {
+    const warning = el('p', 'comparison-history-warning comparison-history-unavailable', t('ui.configComparison.history.unavailable', undefined,
+      'Saved history could not be read safely. The existing file is preserved; history changes are blocked. Game operations remain available.'));
+    warning.setAttribute('role', 'alert'); card.append(warning);
+  }
+  if (history.record) {
+    const record = history.record;
+    card.append(comparisonHistoryInfo(record));
+    const actions = el('div', 'comparison-history-actions');
+    const review = el('button', 'ghost last-option-comparison', t('ui.configComparison.reviewPrevious', undefined, 'Review pre-reinstall options'));
+    review.addEventListener('click', () => openOptionComparisonDialog(record.report, record));
+    const clear = el('button', 'ghost comparison-history-clear', clearingHistory.has(context.profile.id)
+      ? t('ui.configComparison.history.clearing', undefined, 'Deleting comparison…')
+      : t('ui.configComparison.history.clear', undefined, 'Delete saved comparison'));
+    clear.disabled = history.state !== 'ready' || mutationBlocked() || clearingHistory.has(context.profile.id);
+    clear.addEventListener('click', () => confirmClearComparisonHistory(context, history, clear));
+    actions.append(review, clear); card.append(actions);
+  } else if (history.state === 'unavailable') {
+    const clear = el('button', 'ghost comparison-history-clear', t('ui.configComparison.history.clear', undefined, 'Delete saved comparison'));
+    clear.disabled = true;
+    card.append(clear);
+  }
+  panel.append(card);
 }
 
 function fileList(files) {
@@ -222,11 +324,6 @@ export function renderTranslatorMaintenance(panel, context) {
   const versions = (preview.currentVersions ?? []).join(', ');
   if (versions) card.append(el('p', 'plan-sub', t('ui.maintenance.versions', { versions, target: preview.targetVersion ?? '?' }, 'Detected: {versions} · Registered replacement: {target}')));
   if (preview.canReinstall || preview.optionComparison) card.append(renderOptionComparison(preview.optionComparison));
-  if (context.lastOptionComparison) {
-    const review = el('button', 'ghost last-option-comparison', t('ui.configComparison.reviewPrevious', undefined, 'Review pre-reinstall options'));
-    review.addEventListener('click', () => openOptionComparisonDialog(context.lastOptionComparison));
-    card.append(review);
-  }
   if (presentation.files.length > 0) {
     const details = el('details', 'maintenance-preview');
     details.append(el('summary', null, t('ui.maintenance.files', { count: presentation.files.length }, '{count} cleanup candidate file(s)')),

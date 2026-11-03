@@ -1,6 +1,6 @@
 {
   "name": "indie-deck",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "private": true,
   "description": "Unified launcher for Unity and other indie games: engine classification, per-engine translator auto-install with version compatibility management, and mod management.",
   "author": "tjwlstj",
@@ -30,13 +30,14 @@
     "indiedeck": "node --experimental-strip-types packages/cli/src/index.ts",
     "desktop": "npm run build && electron packages/desktop",
     "desktop:flow": "npm run build && node scripts/check-desktop-flow.mjs ko && node scripts/check-desktop-flow.mjs en",
+    "desktop:history": "npm run build && node scripts/check-comparison-history.mjs ko && node scripts/check-comparison-history.mjs en",
     "pack:win": "npm run build && electron-builder --win dir --x64",
     "dist:win": "npm run verify && electron-builder --win nsis portable --x64 --publish never",
     "package:check": "node scripts/check-package.mjs",
     "release:check": "node scripts/check-release.mjs"
   },
   "dependencies": {
-    "@indiedeck/core": "0.1.8",
+    "@indiedeck/core": "0.1.9",
     "electron-updater": "6.8.9"
   },
   "devDependencies": {

@@ -60,12 +60,21 @@ reset or automatic migration plan, and the schema does not describe every
 upstream option or version-specific default. Missing keys, declared additions,
 mapping moves and uncertain version evidence are distinguished. Primary and
 fallback provider requirements are included without exposing their credentials.
-The completed operation and maintenance card can reopen the pre-reinstall
-report. Main keeps the latest report per game for at most 20 games during the
-current app session, including renderer reloads; quitting the app clears it.
-Disk-backed comparison history is not implemented. The form also shows saved
-non-secret provider values and keeps save feedback visible. See the
+The completed operation can reopen the pre-reinstall report. The form also
+shows saved non-secret provider values and keeps save feedback visible. See the
 [comparison and editing scope](docs/config-manager.md#comparing-options-before-a-reinstall-v018-source).
+
+**Saved comparison records (v0.1.9 source).** The last successful reinstall's
+comparison can be reviewed after restarting the launcher, from its own game
+detail card even when the translator payload has been removed. Records show
+when they were stored and can be deleted explicitly without changing the game
+or its INI. The store retains the latest report for at most 20 games. It saves
+only schema-allowed values: credentials, arbitrary text, directories and unknown
+key names are omitted, and omitted values are labelled in the saved view.
+Unavailable drives do not automatically delete records. Damaged or unsafe
+history is preserved and blocks history writes rather than blocking game
+maintenance. A failed history save leaves a labelled session-only report. See
+[saved record scope](docs/config-manager.md#saved-comparison-records-v019-source).
 
 ![The translation settings panel](docs/media/config.png)
 

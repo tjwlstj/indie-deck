@@ -5,6 +5,34 @@ Versioning while the project is pre-1.0.
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-11-03
+
+### Added
+
+- A separate game-detail card for the latest saved pre-reinstall comparison,
+  including a recorded timestamp, review after app restart and explicit deletion
+  of that game's record. The card remains available without an active translator
+  payload or maintenance preview.
+- A bounded local store retaining the latest report for at most 20 games. Only
+  schema-allowed values and relative configuration paths are persisted;
+  credentials, arbitrary text, directories and unknown key names are omitted.
+  The saved view identifies values deliberately hidden from the record.
+
+### Scope notes
+
+- A saved report describes the earlier reinstall review. It does not restore
+  settings, rerun detection or simulate upstream configuration migration.
+- Damaged, oversized or linked history is preserved and blocks history writes.
+  A history-save failure does not change a committed reinstall into an operation
+  failure; the report remains available for the current session with a warning.
+  Drive disconnection and incomplete scans do not automatically prune records.
+- The full source suite reported 435 tests: 433 passed, none failed and two were
+  skipped. This change adds 11 history-store and two renderer-helper cases.
+  Korean and English history flows passed through four separate Electron
+  processes each, covering persisted review, deletion, a later empty startup and
+  damaged-file preservation with unchanged game bytes. Full desktop-flow,
+  packaging and public-release results are separate checks.
+
 ## [0.1.8] - 2026-11-03
 
 ### Added

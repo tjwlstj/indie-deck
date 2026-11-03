@@ -77,6 +77,7 @@ import { STORE_PROVIDERS, canonicalStoreProductUrl, readStoreLinkFile, readStore
   type StoreLinkCandidate, type StoreProviderId, type StoreHandoffAction, type StoreConnection } from './store-connections.ts';
 import { exportBrowserCompanion } from './browser-companion-export.ts';
 import { buildTranslationConfigComparison, type TranslationConfigComparison } from './translation-config-comparison.ts';
+import { TranslationConfigHistory, type TranslationConfigHistoryRecord } from './translation-config-history.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // Entry-point app paths differ between `electron .`, `electron packages/desktop`
@@ -95,6 +96,7 @@ if (process.env['INDIEDECK_SMOKE']) {
 }
 
 let registry: Registry;
+let comparisonHistory: TranslationConfigHistory | undefined;
 let mainWindow: BrowserWindow | undefined;
 let pendingMutations = 0;
 let updateRestartReserved = false;
@@ -162,8 +164,9 @@ const plansById = new Map<string, TranslatorPlan>();
 const planOptionsById = new Map<string, FontResolveOptions>();
 const translatorMaintenanceById = new Map<string, { gameId: string; path: string; preview: TranslatorMaintenancePreview }>();
 const optionComparisonsByPreview = new WeakMap<TranslatorMaintenancePreview, TranslationConfigComparison>();
-// Session-only redacted reports survive operation acknowledgement and reloads.
-const lastOptionComparisonsByGame = new Map<string, TranslationConfigComparison>();
+// If saving launcher history fails, the committed game operation still succeeds.
+// Keep a session fallback so its report can be reviewed with a visible notice.
+const lastOptionComparisonsByGame = new Map<string, TranslationConfigHistoryRecord>();
 const archiveCandidates = new Map<string, { path: string; inspection: GameArchiveInspection }>();
 const storeLinkCandidates = new Map<string, StoreLinkCandidate>();
 const thumbnailSearchResults = new Map<string, Set<string>>();
@@ -411,6 +414,7 @@ async function runSmokeTest(window: BrowserWindow): Promise<void> {
       console.log('[smoke] bundled browser companion exported and version verified; no browser profile was changed');
 
       if (process.env['INDIEDECK_SMOKE_FLOW'] === '1') await runOperationSmoke(window);
+      if (process.env['INDIEDECK_SMOKE_HISTORY']) await runComparisonHistorySmoke(window, process.env['INDIEDECK_SMOKE_HISTORY']);
 
       const shot = process.env['INDIEDECK_SCREENSHOT'];
       if (shot) {
@@ -438,6 +442,81 @@ async function runSmokeTest(window: BrowserWindow): Promise<void> {
 
   console.error('[smoke] renderer did not finish loading within 20s');
   app.exit(1);
+}
+
+/** Separate main processes exercise durable history rather than a renderer
+ * reload that would leave an in-memory report available. */
+async function runComparisonHistorySmoke(window: BrowserWindow, mode: string): Promise<void> {
+  if (!['view', 'clear', 'empty', 'damaged'].includes(mode)) throw new Error('Unknown comparison history smoke mode.');
+  const evaluate = <T>(source: string): Promise<T> => window.webContents.executeJavaScript(`(async () => (${source}))()`);
+  const waitFor = async (source: string, label: string) => {
+    const end = Date.now() + 12_000;
+    while (Date.now() < end) {
+      if (await evaluate<boolean>(source)) return;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    throw new Error(`Comparison history smoke timed out: ${label}`);
+  };
+  await waitFor(`(async () => !!(await import('./store.js')).state.detail?.comparisonHistory)()`, 'history detail');
+  if (mode === 'view' || mode === 'clear') {
+    await waitFor(`!!document.querySelector('#detail .last-option-comparison')`, 'saved report action');
+    const persisted = await evaluate<boolean>(`(async () => {
+      const { state } = await import('./store.js'); const item = state.detail.comparisonHistory.record;
+      return item?.persistent === true && Number.isFinite(Date.parse(item.recordedAt))
+        && item.hiddenValueIds.includes('xunity.translationDirectory')
+        && !JSON.stringify(item).includes('SyntheticPrivate');
+    })()`);
+    if (!persisted) throw new Error('History was not restored with safe values from disk.');
+  }
+  if (mode === 'view') {
+    const rejectsUnknown = await evaluate<boolean>(`(async () => {
+      for (const id of ['0000000000000000', '../outside']) {
+        try { await window.indiedeck.translatorConfig.clearHistory(id); return false; } catch {}
+      }
+      return true;
+    })()`);
+    if (!rejectsUnknown) throw new Error('History clear accepted an unknown game.');
+    await evaluate(`document.querySelector('#detail .last-option-comparison').click()`);
+    await waitFor(`!!document.querySelector('#translatorOptionsComparisonDialog[open]')`, 'historical report dialog');
+    const language = await evaluate<string>(`document.querySelector('#translatorOptionsComparisonDialog .comparison-row[data-option-id="xunity.targetLanguage"] .comparison-current')?.textContent`);
+    if (language !== 'ko') throw new Error('Persisted history lost the previous translation language.');
+    const directory = await evaluate<string>(`document.querySelector('#translatorOptionsComparisonDialog .comparison-row[data-option-id="xunity.translationDirectory"] .comparison-current')?.textContent`);
+    if (!directory || /SyntheticPrivate|Unknown|확인 불가/.test(directory)) throw new Error('Private saved values were not distinguished from unknown values.');
+    const screenshot = process.env['INDIEDECK_HISTORY_SCREENSHOT'];
+    if (screenshot) {
+      await evaluate(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
+      await writeFile(screenshot, (await window.webContents.capturePage()).toPNG());
+    }
+  } else if (mode === 'clear') {
+    await evaluate(`document.querySelector('#detail .comparison-history-clear').click()`);
+    await waitFor(`!!document.querySelector('#comparisonHistoryClearDialog[open] .comparison-history-confirm-clear')`, 'clear record confirmation');
+    await evaluate(`document.querySelector('#comparisonHistoryClearDialog .comparison-history-confirm-clear').click()`);
+    await waitFor(`(async () => {
+      const { state } = await import('./store.js');
+      return !state.detail?.comparisonHistory?.record && !document.querySelector('#detail .last-option-comparison');
+    })()`, 'record removed');
+  } else if (mode === 'empty') {
+    const empty = await evaluate<boolean>(`(async () => {
+      const { state } = await import('./store.js');
+      return state.detail.comparisonHistory.state === 'ready' && !state.detail.comparisonHistory.record
+        && !document.querySelector('#detail .last-option-comparison');
+    })()`);
+    if (!empty) throw new Error('Cleared history reappeared after an application restart.');
+  } else {
+    await waitFor(`!!document.querySelector('#detail .comparison-history-unavailable')`, 'damaged history notice');
+    const isolated = await evaluate<boolean>(`(async () => {
+      const { state } = await import('./store.js');
+      return state.detail.comparisonHistory.state === 'unavailable' && !state.detail.comparisonHistory.record
+        && !!document.querySelector('#detail h1') && !!document.querySelector('#detail .plan');
+    })()`);
+    if (!isolated) throw new Error('Damaged history blocked ordinary game details.');
+    const protectedFile = await evaluate<boolean>(`(async () => {
+      const { state } = await import('./store.js');
+      try { await window.indiedeck.translatorConfig.clearHistory(state.selected); return false; } catch { return true; }
+    })()`);
+    if (!protectedFile) throw new Error('Damaged history could be overwritten through clear IPC.');
+  }
+  console.log(`[smoke] comparison history ${mode} passed`);
 }
 
 /** Exercises the real renderer/preload/main/core flow using only the disposable
@@ -700,6 +779,22 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
   const retainedComparison = await evaluate<boolean>(`document.querySelector('#translatorOptionsComparisonDialog .comparison-row[data-option-id="xunity.targetLanguage"] .comparison-current')?.textContent === 'ko'`);
   if (!retainedComparison) throw new Error('Reinstall report disappeared after operation acknowledgement/reload.');
   await evaluate(`document.querySelector('#translatorOptionsComparisonDialog button').click()`);
+  const settingsBeforeHistoryDelete = await readFile(settingsFile);
+  await evaluate(`(() => {
+    const target = document.querySelector('#configPanel select[data-setting-id="xunity.targetLanguage"]');
+    target.value = 'en'; target.dispatchEvent(new Event('change'));
+    document.querySelector('#detail .comparison-history-clear').click();
+    document.querySelector('#comparisonHistoryClearDialog .comparison-history-confirm-clear').click();
+  })()`);
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return !state.detail?.comparisonHistory?.record && !document.querySelector('#detail .last-option-comparison');
+  })()`, 'saved comparison deletion');
+  const draftRetained = await evaluate<boolean>(`document.querySelector('#configPanel select[data-setting-id="xunity.targetLanguage"]')?.value === 'en'
+    && !document.querySelector('#cfgFooter button.primary')?.disabled`);
+  if (!draftRetained) throw new Error('Deleting launcher history discarded an unsaved translation option.');
+  await evaluate(`document.querySelector('#cfgFooter button:last-child').click()`);
+  if (!(await readFile(settingsFile)).equals(settingsBeforeHistoryDelete)) throw new Error('Deleting launcher history changed game settings.');
   console.log('[smoke] exact-file confirmation → duplicate cleanup/reinstall → retained backup and unchanged loader/mod/config/translation/font passed');
 
   await evaluate(`document.querySelector('#detail .uninstall').click()`);
@@ -1304,6 +1399,9 @@ async function translatorConfigPayload(profile: GameProfile, requested?: string)
 
 async function gameDetailPayload(gameId: string, options: ResolveOptions, detected?: GameProfile) {
   const profile = localiseProfile(registry, detected ?? requireDetectedGame(gameId));
+  const history = comparisonHistory ? await comparisonHistory.get(gameId) : { state: 'unavailable' as const, record: undefined };
+  const fallback = lastOptionComparisonsByGame.get(gameId);
+  const historyRecord = fallback ?? history.record;
   const configTranslator = profile.installedTranslators.find((entry) => entry.translatorId === 'xunity-autotranslator')
     ?? profile.installedTranslators.find((entry) => registry.configSchemas.has(entry.translatorId));
   const receiptsEvidence = readReceiptEvidence(profile.path);
@@ -1339,7 +1437,7 @@ async function gameDetailPayload(gameId: string, options: ResolveOptions, detect
     plans,
     fontRecommendation,
     fontPlan,
-    lastOptionComparison: lastOptionComparisonsByGame.get(gameId),
+    comparisonHistory: { state: history.state, ...(historyRecord ? { record: { ...historyRecord, persistent: !fallback } } : {}) },
     ...(profile.engineId === 'unity' ? { translatorMaintenance: await cacheTranslatorMaintenance(gameId, profile,
       await previewTranslatorMaintenance(registry, profile, options)) } : {}),
     ...(isMToolGame(profile) ? { mtoolIntegration: {
@@ -1503,8 +1601,13 @@ async function runMaintenance(
         const comparison = optionComparisonsByPreview.get(translatorMaintenance);
         if (comparison) {
           lastOptionComparisonsByGame.delete(request.gameId);
-          while (lastOptionComparisonsByGame.size >= 20) lastOptionComparisonsByGame.delete(lastOptionComparisonsByGame.keys().next().value!);
-          lastOptionComparisonsByGame.set(request.gameId, comparison);
+          try {
+            if (!comparisonHistory) throw new Error('Comparison history is unavailable.');
+            await comparisonHistory.save(request.gameId, comparison);
+          } catch {
+            while (lastOptionComparisonsByGame.size >= 20) lastOptionComparisonsByGame.delete(lastOptionComparisonsByGame.keys().next().value!);
+            lastOptionComparisonsByGame.set(request.gameId, { gameId: request.gameId, recordedAt: new Date().toISOString(), report: comparison, hiddenValueIds: [] });
+          }
         }
       }
       result = { ...result, status: maintained.pendingUserActions.length ? 'needs-user-action' : 'success',
@@ -2054,6 +2157,14 @@ function register(): void {
     return stableGameRead(gameId, () => translatorConfigPayload(requireDetectedGame(gameId), translatorId));
   });
 
+  handleMutation('config:clearHistory', async (gameId: string) => {
+    requireGamePath(gameId);
+    if (!comparisonHistory) throw new Error(t('ui.configComparison.history.unavailable'));
+    try { await comparisonHistory.remove(gameId); }
+    catch { throw new Error(t('ui.configComparison.history.clearFailed')); }
+    lastOptionComparisonsByGame.delete(gameId);
+  });
+
   handle('config:plan', async (gameId: string, translatorId: string, changes: ConfigChange[]) => {
     const { schema, config, profile } = await configContext(gameId, translatorId);
     const plan = planConfigChanges(schema, config, sanitiseChanges(changes), {
@@ -2095,6 +2206,8 @@ void app.whenReady().then(async () => {
     setLocale(config.locale);
     libraryRoots = config.roots;
     registry = loadRegistry(app.isPackaged ? path.join(app.getAppPath(), 'registry') : undefined);
+    const comparisonSchema = registry.configSchemas.get('xunity-autotranslator');
+    if (comparisonSchema) comparisonHistory = new TranslationConfigHistory(defaultDataDir(), comparisonSchema);
   } catch (err) {
     dialog.showErrorBox('Registry not found', (err as Error).message);
     app.quit();

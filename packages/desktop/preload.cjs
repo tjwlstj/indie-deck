@@ -106,6 +106,7 @@ contextBridge.exposeInMainWorld('indiedeck', {
   },
 
   translatorConfig: {
+    clearHistory: (gameId) => call('config:clearHistory', gameId),
     read: (gameId, translatorId) => call('config:read', gameId, translatorId),
     plan: (gameId, translatorId, changes) => call('config:plan', gameId, translatorId, changes),
     write: (gameId, translatorId, changes) => call('config:write', gameId, translatorId, changes),

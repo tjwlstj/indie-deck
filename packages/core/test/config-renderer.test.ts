@@ -59,3 +59,19 @@ test('provider comparison exposes only safe boolean and numeric current values',
     assert.equal(providerComparisonValue(field), undefined);
   }
 });
+
+test('saved history redaction hides both columns even if omitted private values accidentally reach the renderer', () => {
+  const row = { id: 'xunity.directory', currentValue: 'C:/synthetic-private/path', targetDefault: 'https://synthetic.invalid/?token=private' };
+  for (const target of [false, true]) {
+    assert.deepEqual(comparisonValue(row, target, ['xunity.directory']), { key: 'history.savedValueHidden' });
+    assert.deepEqual(comparisonValue({ ...row, currentPresent: false }, target, ['xunity.directory']), { key: 'history.savedValueHidden' });
+  }
+});
+
+test('saved history masking leaves unlisted settings and live comparison values unchanged', () => {
+  const language = { id: 'xunity.targetLanguage', currentValue: 'ko', targetDefault: 'en' };
+  assert.deepEqual(comparisonValue(language, false, ['xunity.directory']), { value: 'ko' });
+  assert.deepEqual(comparisonValue(language, true, ['xunity.directory']), { value: 'en' });
+  assert.deepEqual(comparisonValue(language), { value: 'ko' });
+  assert.deepEqual(comparisonValue(language, true), { value: 'en' });
+});

@@ -37,7 +37,8 @@ export function comparisonRowGroups(report) {
 
 /** Defensive presentation: even an accidentally populated secret DTO cannot
  * reveal a value, a mask suffix or an example default in a comparison table. */
-export function comparisonValue(row, target = false) {
+export function comparisonValue(row, target = false, hiddenValueIds = []) {
+  if (Array.isArray(hiddenValueIds) && hiddenValueIds.includes(row?.id)) return { key: 'history.savedValueHidden' };
   if (row?.isSecret) return { key: target ? 'secretReference' : row.configured ? 'secretConfigured' : 'secretMissing' };
   const value = target ? row?.targetDefault : row?.currentValue;
   if (!target && row?.currentPresent === false) return { key: 'notInFile', value: value ?? '?' };

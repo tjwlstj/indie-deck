@@ -190,13 +190,66 @@ fields expose configured/present status only in this report. Strict boolean and
 bounded numeric options can show their current value. Secret values and example
 secret defaults are omitted.
 
-The completed reinstall card can reopen the pre-reinstall report. After a
-committed reinstall, the maintenance card can also reopen the latest report for
-that game, including after operation acknowledgement or a renderer reload. Main
-retains one redacted report per game for at most 20 games during the current app
-session; another committed reinstall replaces that game's report, older entries
-can be evicted, and removing a game clears its entry. This is not a disk-backed
-history or an app-restart recovery feature: quitting the app clears the reports.
+In v0.1.8, the completed reinstall and maintenance cards reopen the pre-reinstall
+report through a main-process buffer. That version retains one redacted report
+per game for at most 20 games during the current app session, including after
+operation acknowledgement or a renderer reload. Another committed reinstall
+replaces that game's report, older entries can be evicted, and removing a game
+clears its session entry. Quitting v0.1.8 clears this buffer. The following
+section describes the separate durable record added in v0.1.9 source.
+
+## Saved comparison records (v0.1.9 source)
+
+After a committed reinstall, a separate game-detail card can reopen that game's
+last saved comparison after the launcher restarts. It remains independent of
+the current translator-maintenance preview, so removing the translator payload
+does not hide the saved review. The card shows when the report was recorded;
+the values still describe the pre-reinstall snapshot, not a fresh detection.
+This is a review record, not a settings backup, restore command or migration
+simulation. The registered schema reference keeps the limits described above.
+
+`translation-option-history.json` in the launcher data directory uses a versioned
+envelope and retains the latest report for at most 20 opaque game IDs. Saving a
+new report for a game replaces its previous record; adding another game at the
+limit evicts the oldest retained record. No game name or absolute game path is
+needed. Config-file paths are restricted to the registered schema's relative
+locations. Arbitrary text and directory values, credentials, service URLs,
+identifiers and unknown-key names are omitted from the durable projection.
+Schema-allowed choices, languages, booleans and bounded numbers can remain
+visible. An omitted value is labelled as hidden from the saved record rather
+than being confused with a value that could not be read.
+
+**Delete saved record** asks for confirmation and removes only that game's
+launcher record. It does not edit the game's configuration, restore defaults,
+remove its translator or delete other games' records. Temporarily unavailable
+drives and incomplete library scans do not prune saved records automatically.
+
+Reads and writes are bounded and reject linked or unsafe history paths. A
+damaged, oversized or invalid envelope is preserved, displays an unavailable
+state and blocks history writes and deletion. The launcher does not silently
+replace it with an empty store. Cosmetic schema-label changes can be hydrated
+from the current schema and locale; unsupported future IDs, types or mappings
+instead preserve the stored file and block writes for review. A failed history
+save is independent of the already committed reinstall. Its report remains
+available for the current session with a warning, while game maintenance and option editing keep their
+own normal authority checks.
+
+The offline `scripts/check-comparison-history.mjs ko` and `en` checks use
+disposable game/config files and separate Electron processes to exercise saved
+review, explicit deletion, a later empty startup and damaged-file preservation.
+The synthetic payload is removed before review to exercise the standalone
+history card. These checks compare game-file hashes and produce local
+`out/desktop-history-ko.png` and `out/desktop-history-en.png` captures. Their
+results are reported separately from module tests, packaging and publication;
+they do not establish real-game translation or API authentication.
+
+The full source suite reported 435 tests: 433 passed, none failed and two were
+skipped. This history change adds 11 store cases and two renderer-helper cases.
+Both Korean and English history flows passed, using four fresh Electron
+processes each (eight app processes in total). Their checks include persistence,
+explicit deletion, damaged-data preservation, rejected clear IPC for unknown
+games and unchanged fixture game/config bytes. These results do not imply that
+packaging or public release has completed.
 
 ## Editing an installed game's options (v0.1.8 source)
 
@@ -221,8 +274,8 @@ the form and reinstall review. The latter produce local
 `out/desktop-config-comparison-ko.png` and `out/desktop-config-comparison-en.png`
 captures; these are not proof that a real game migrated its config or translated
 successfully. Browser/API authentication, full upstream migration simulation,
-durable comparison history and a general draft/focus redesign are outside this
-change.
+durable comparison history and a general draft/focus redesign were outside the
+v0.1.8 change; v0.1.9 history scope is documented separately above.
 
 The full source test run reported 422 tests: 420 passed, none failed and two were
 skipped. The option work adds 26 cases across core configuration (7), comparison

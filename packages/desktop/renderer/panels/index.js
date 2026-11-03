@@ -11,7 +11,7 @@ import { renderAudit, renderFacts, renderFontRecommendation, renderHeader, rende
 import { renderConfigSection } from './config.js';
 import { renderMToolIntegration } from './mtool.js';
 import { hasMToolIntegration } from '../mtool-model.js';
-import { renderTranslatorMaintenance } from './maintenance.js';
+import { renderComparisonHistory, renderTranslatorMaintenance } from './maintenance.js';
 import { hasTranslatorMaintenance } from '../maintenance-model.js';
 
 export const SECTIONS = [
@@ -23,6 +23,8 @@ export const SECTIONS = [
     when: (ctx) => ctx.profile.installedTranslators.length > 0,
   },
   { id: 'audit', render: renderAudit, when: (ctx) => ctx.audit.issues.length > 0 },
+  { id: 'comparison-history', render: renderComparisonHistory,
+    when: (ctx) => Boolean(ctx.comparisonHistory?.record) || ctx.comparisonHistory?.state === 'unavailable' },
   { id: 'translator-maintenance', render: renderTranslatorMaintenance, when: hasTranslatorMaintenance },
   { id: 'font', render: renderFontRecommendation, when: (ctx) => Boolean(ctx.fontRecommendation) },
   { id: 'mtool', render: renderMToolIntegration, when: hasMToolIntegration },
