@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
+import childProcess from 'node:child_process';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { after, test } from 'node:test';
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
+import { after, mock, test } from 'node:test';
 import { applyPlan, readReceipts, uninstallReceipt } from '../src/install/apply.ts';
 import { downloadAsset } from '../src/install/download.ts';
 import { loadRegistry } from '../src/registry/index.ts';
@@ -175,17 +178,35 @@ test('adding an existing bundle only changes fallback, records a font receipt an
 test('a copied font has a hash-bearing font receipt, while translator payloads stay untouched', async () => {
   const game = await gameRoot('copied');
   const cacheDir = path.join(tmp, 'cache-copied');
-  const source = { type: 'url' as const, url: 'https://font-fixture.invalid/bundles.7z' };
+  const source = { type: 'url' as const, url: 'https://builds.bepinex.dev/indiedeck-fixture/bundles.7z' };
   const fixtureReg: Registry = { ...reg, fonts: { ...reg.fonts, source } };
   const originalFetch = globalThis.fetch;
+  const payload = Buffer.from('isolated atlas fixture');
+  const originalStat = fsp.lstat, executableStat = await fsp.stat(process.execPath);
+  const protectedExecutable = process.platform === 'win32' ? 'C:\\Windows\\System32\\tar.exe' : '/usr/bin/bsdtar';
+  const trustedStat = Object.assign(Object.create(Object.getPrototypeOf(executableStat)), executableStat, { uid: 0, mode: 0o100755 });
+  const statMock = mock.method(fsp, 'lstat', async (...args: Parameters<typeof fsp.lstat>) =>
+    String(args[0]) === protectedExecutable ? trustedStat : originalStat(...args));
+  const spawnMock = mock.method(childProcess, 'spawn', (command: string, args: string[]) => {
+    assert.equal(command, protectedExecutable);
+    const child = new EventEmitter() as EventEmitter & { stdout: PassThrough; stderr: PassThrough; kill: () => boolean };
+    child.stdout = new PassThrough(); child.stderr = new PassThrough();
+    child.kill = () => { child.stdout.destroy(); child.stderr.destroy(); return true; };
+    queueMicrotask(() => {
+      if (args[0] === '--version') child.stdout.end('bsdtar 3.8.9 - libarchive');
+      else if (args[0] === '-tf') child.stdout.end('arialuni_sdf_u2021\n');
+      else {
+        assert.deepEqual(args.slice(0, 1), ['-xOf']);
+        assert.deepEqual(args.slice(-2), ['--', 'arialuni_sdf_u2021']);
+        child.stdout.end(payload);
+      }
+      child.stderr.end(); child.emit('close', 0);
+    });
+    return child as unknown as ReturnType<typeof childProcess.spawn>;
+  });
   globalThis.fetch = async () => new Response(Buffer.from('isolated archive fixture'), { status: 200 });
   try {
-    const downloaded = await downloadAsset(source, { cacheDir });
-    const extractedDir = path.join(cacheDir, 'extracted', path.basename(downloaded.path).replace(/\.[^.]+$/, ''));
-    await fsp.mkdir(extractedDir, { recursive: true });
-    await fsp.writeFile(path.join(extractedDir, '.indiedeck-extracted'), '7z');
-    const payload = Buffer.from('isolated atlas fixture');
-    await fsp.writeFile(path.join(extractedDir, 'arialuni_sdf_u2021'), payload);
+    await downloadAsset(source, { cacheDir });
     const plan = resolveFontPlan(fixtureReg, game, { targetLanguage: 'ko' })!;
     const result = await applyPlan(plan, { cacheDir });
     assert.deepEqual(result.pendingUserActions, []);
@@ -200,6 +221,7 @@ test('a copied font has a hash-bearing font receipt, while translator payloads s
     assert.equal(await fsp.readFile(path.join(game.path, 'arialuni_sdf_u2021'), 'utf8'), 'user-modified atlas');
   } finally {
     globalThis.fetch = originalFetch;
+    spawnMock.mock.restore(); statMock.mock.restore();
   }
 });
 

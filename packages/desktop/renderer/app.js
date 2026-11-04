@@ -17,6 +17,7 @@ import { releaseThumbnails } from './thumbnail.js';
 import { isArchiveActive } from './archive-model.js';
 import { canCancelScan, isScanActive, reduceScanStatus, scanPresentation, validScanDepth } from './scan-model.js';
 import { bindLauncherUpdateEvents, refreshLauncherUpdateStatus, renderLauncherUpdates } from './panels/updates.js';
+import { bindSecurityEvents, refreshSecurityStatus, renderSecuritySettings, getSecuritySnapshot } from './panels/security.js';
 import { refreshStoreConnections } from './panels/stores.js';
 import {
   populateDefaultsForm,
@@ -237,6 +238,14 @@ function render(scope = 'all') {
 }
 
 subscribe(render);
+window.addEventListener('indiedeck:security-state', (event) => {
+  state.securityBusy = event.detail?.busy === true;
+  const task = event.detail?.snapshot?.task;
+  if (task?.gameId && state.detail?.profile?.id === task.gameId && task.result && task.status !== 'running') state.detail.securityResult = task.result;
+  if (state.detail) state.detail.securityEngine = event.detail?.snapshot?.engine ?? null;
+  renderOperationChrome();
+  renderSecuritySettings();
+});
 
 /* ------------------------------------------------------- selection/races */
 
@@ -662,9 +671,15 @@ async function boot() {
   bindMaintenanceEvents();
   bindArchiveEvents();
   bindLauncherUpdateEvents();
+  bindSecurityEvents();
   bindScanEvents();
   const scanRecovery = recoverScanStatus().catch((err) => setStatus(err.message, 'err'));
   const updateRecovery = refreshLauncherUpdateStatus();
+  void refreshSecurityStatus().then(() => {
+    if (getSecuritySnapshot()?.task?.status !== 'running') return;
+    state.view = 'settings'; renderView();
+    $('securitySettings')?.scrollIntoView({ block: 'nearest' });
+  });
   const recovery = recoverMaintenance().catch((err) => setStatus(err.message, 'err'));
   // current() does not wait for main's mutation queue, so a reload during an
   // import can display its progress while the library read is still waiting.

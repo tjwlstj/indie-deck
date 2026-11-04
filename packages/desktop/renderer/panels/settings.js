@@ -16,6 +16,7 @@ import { renderArchiveSettings } from './archives.js';
 import { renderLauncherUpdates } from './updates.js';
 import { renderStoreSettings } from './stores.js';
 import { validScanDepth } from '../scan-model.js';
+import { renderSecuritySettings } from './security.js';
 
 export function setSettingsMutationDisabled() {
   const disabled = mutationBlocked();
@@ -28,6 +29,7 @@ export function setSettingsMutationDisabled() {
   renderArchiveSettings();
   renderLauncherUpdates();
   renderStoreSettings();
+  renderSecuritySettings();
 }
 
 export function populateScanSettings() {

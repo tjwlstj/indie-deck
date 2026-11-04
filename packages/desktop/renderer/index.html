@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self';"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-src 'none'; worker-src 'none'; form-action 'none';"
     />
     <title>IndieDeck</title>
     <link rel="stylesheet" href="style.css" />
@@ -159,6 +159,10 @@
           </div>
         </section>
 
+        <section id="securitySettings" class="settings-section">
+          <h2 data-i18n="ui.security.title">Security</h2>
+          <div id="securitySettingsBody"></div>
+        </section>
         <section id="mtoolSettings" class="settings-section">
           <h2 data-i18n="ui.mtool.settingsTitle">Local MTool integration</h2>
           <div id="mtoolSettingsBody"></div>

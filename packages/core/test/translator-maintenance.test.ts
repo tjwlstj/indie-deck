@@ -78,8 +78,8 @@ async function withDownload<T>(preview: TranslatorMaintenancePreview, payload: B
   assert.ok(asset, 'the fixture resolves a standard registered release asset');
   globalThis.fetch = async (input) => {
     const url = String(input);
-    if (url.startsWith('https://api.github.com/repos/')) return new Response(JSON.stringify({ tag_name: 'v5.6.1', assets: [{ name: asset, browser_download_url: `https://maintenance.invalid/${asset}`, size: payload.length }] }), { status: 200 });
-    assert.equal(url, `https://maintenance.invalid/${asset}`);
+    if (url.startsWith('https://api.github.com/repos/')) return new Response(JSON.stringify({ tag_name: 'v5.6.1', assets: [{ name: asset, browser_download_url: `https://github.com/bbepis/XUnity.AutoTranslator/releases/download/fixture/${asset}`, size: payload.length }] }), { status: 200 });
+    assert.equal(url, `https://github.com/bbepis/XUnity.AutoTranslator/releases/download/fixture/${asset}`);
     duringDownload?.();
     return new Response(payload, { status: 200, headers: { 'content-length': String(payload.length) } });
   };
@@ -94,6 +94,36 @@ function own(profile: ReturnType<typeof game>, entries: InstallReceipt['entries'
 function createEntries(root: string, names: string[]): InstallReceipt['entries'] {
   return names.map((rel) => ({ path: rel, operation: 'create', sha256: sha256(bytes(root, rel)) }));
 }
+
+test('a rejected replacement security scan preserves old translator files and receipts without creating a quarantine', async () => {
+  const profile = game('security-gate');
+  own(profile, createEntries(profile.path, [PLUGIN, COMMON, CONFIG]));
+  writeReceiptFile(profile.path, { kind: 'font', componentId: FONT, entries: createEntries(profile.path, [FONT]) });
+  const preserved = [PLUGIN, COMMON, CONFIG, OTHER, LOADER, FONT, TRANSLATION, 'Game.exe', RECEIPT, `.indiedeck/receipts/font-${FONT}.json`];
+  const before = new Map(preserved.map((relative) => [relative, bytes(profile.path, relative)]));
+  const metadataBefore = fs.readdirSync(path.join(profile.path, '.indiedeck')).sort();
+  const preview = await previewTranslatorMaintenance(reg, profile, { targetLanguage: 'ko' });
+  assert.equal(preview.reinstallEligible, true);
+  const events: string[] = [];
+  let called = 0;
+  const payload = replacement();
+  await assert.rejects(withDownload(preview, payload, () => runTranslatorMaintenance(preview, 'reinstall', {
+    ...cache('security-gate'), onEvent: (event) => events.push(`${event.phase}:${event.status}`),
+    beforeUseAsset: async (asset) => {
+      called += 1;
+      assert.deepEqual(await fsp.readFile(asset.path), payload);
+      assert.equal(asset.sha256, sha256(payload));
+      for (const [relative, content] of before) assert.deepEqual(bytes(profile.path, relative), content);
+      assert.deepEqual(fs.readdirSync(path.join(profile.path, '.indiedeck')).sort(), metadataBefore);
+      throw new Error('ui.security.block.notChecked');
+    },
+  })), /ui.security.block.notChecked/);
+  assert.equal(called, 1);
+  assert.equal(events.some((event) => event.startsWith('backup:') || event.startsWith('extract:') || event.startsWith('receipt:')), false);
+  for (const [relative, content] of before) assert.deepEqual(bytes(profile.path, relative), content);
+  assert.deepEqual(fs.readdirSync(path.join(profile.path, '.indiedeck')).sort(), metadataBefore);
+  assert.equal(fs.existsSync(path.join(profile.path, '.indiedeck', 'backups')), false, 'no quarantine is created before the gate accepts the asset');
+});
 
 test('read-only preview lists exact recognised unmanaged duplicates, preserving unrelated mods and user data', async () => {
   const profile = game('duplicate', { 'Mods/XUnity.AutoTranslator.Plugin.MelonMod.dll': dllWithVersion('5.4.0') });

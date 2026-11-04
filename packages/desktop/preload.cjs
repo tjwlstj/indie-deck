@@ -36,6 +36,16 @@ contextBridge.exposeInMainWorld('indiedeck', {
 
   registry: () => call('registry:get'),
 
+  security: {
+    current: () => call('security:current'),
+    refresh: () => call('security:refresh'),
+    scanGame: (gameId) => call('security:scanGame', gameId),
+    update: () => call('security:update'),
+    cancel: (taskId) => call('security:cancel', taskId),
+    openHelp: (action) => call('security:openHelp', action),
+    onStatus: (fn) => subscribe('security:status', fn),
+  },
+
   i18n: {
     get: () => call('i18n:get'),
   },

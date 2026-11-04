@@ -61,6 +61,38 @@ async function lstatIfExists(file: string): Promise<Awaited<ReturnType<typeof fs
   }
 }
 
+async function ordinaryParents(file: string): Promise<void> {
+  const parent = path.dirname(path.resolve(file)), root = path.parse(parent).root;
+  let cursor = root;
+  const parts = [root, ...parent.slice(root.length).split(path.sep).filter(Boolean).map((part) => { cursor = path.join(cursor, part); return cursor; })];
+  for (const part of parts) {
+    const stat = await lstatIfExists(part);
+    if (!stat) return;
+    if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('Linked or non-directory copy ancestry is not supported.');
+  }
+}
+
+async function checkedCopyBytes(file: string, expectedSha256: string): Promise<Buffer> {
+  if (!/^[0-9a-f]{64}$/i.test(expectedSha256)) throw new Error('Invalid expected copy checksum.');
+  const limit = 256 * 1024 * 1024;
+  const handle = await fsp.open(file, 'r');
+  try {
+    const stat = await handle.stat();
+    if (!stat.isFile() || stat.nlink !== 1 || stat.size > limit) throw new Error('Checked copy source is not a bounded regular file.');
+    const chunks: Buffer[] = [], buffer = Buffer.alloc(64 * 1024); let total = 0;
+    for (;;) {
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, total);
+      if (!bytesRead) break;
+      total += bytesRead;
+      if (total > limit) throw new Error('Checked copy size limit exceeded.');
+      chunks.push(Buffer.from(buffer.subarray(0, bytesRead)));
+    }
+    const bytes = Buffer.concat(chunks, total);
+    if (hash(bytes) !== expectedSha256.toLowerCase()) throw new Error('Copy source changed after verification.');
+    return bytes;
+  } finally { await handle.close(); }
+}
+
 export class FileTransaction {
   readonly root: string;
   private readonly backupDir: string;
@@ -196,16 +228,21 @@ export class FileTransaction {
   }
 
   /** Copies one regular file from outside the game folder into it. */
-  async copyIn(sourceAbs: string, destRel: string): Promise<ReceiptEntry> {
+  async copyIn(sourceAbs: string, destRel: string, expectedSha256?: string): Promise<ReceiptEntry> {
     const normalised = destRel.replace(/\\/g, '/');
     const target = this.abs(normalised);
     const sourceStat = await fsp.lstat(sourceAbs);
-    if (!sourceStat.isFile() || sourceStat.isSymbolicLink()) {
+    if (!sourceStat.isFile() || sourceStat.isSymbolicLink() || sourceStat.nlink !== 1) {
       throw new Error('copyIn only supports regular files; directory copies require per-file receipt entries.');
     }
     const targetStat = await lstatIfExists(target);
-    if (targetStat && (!targetStat.isFile() || targetStat.isSymbolicLink())) {
+    if (targetStat && (!targetStat.isFile() || targetStat.isSymbolicLink() || targetStat.nlink !== 1)) {
       throw new Error(`copyIn destination is not a regular file: ${normalised}`);
+    }
+    if (expectedSha256) {
+      await ordinaryParents(sourceAbs); await ordinaryParents(target);
+      const bytes = await checkedCopyBytes(sourceAbs, expectedSha256);
+      return this.write(normalised, bytes);
     }
     const entry: ReceiptEntry = {
       path: normalised,

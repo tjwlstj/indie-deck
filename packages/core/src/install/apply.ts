@@ -13,6 +13,7 @@ import {
   downloadAsset,
   type DownloadOptions,
   type DownloadProgressEvent,
+  type DownloadResult,
 } from './download.ts';
 import { extract7z, findExtractedEntry } from './sevenzip.ts';
 import { FileTransaction, type RollbackFailure } from './transaction.ts';
@@ -49,6 +50,8 @@ export interface ApplyProgress {
 }
 
 export interface ApplyOptions extends DownloadOptions {
+  /** A caller-owned security gate. Rejection aborts before the asset is used. */
+  beforeUseAsset?: (asset: DownloadResult) => Promise<void>;
   /** Print what would happen without touching the game folder. */
   dryRun?: boolean;
   /**
@@ -185,7 +188,7 @@ export async function applyPlan(plan: TranslatorPlan, options: ApplyOptions = {}
     logger: log,
   });
 
-  let lastDownload: { path: string; name: string } | undefined;
+  let lastDownload: { path: string; name: string; sha256: string } | undefined;
   const loaderEntries: ReceiptEntry[] = [];
   const translatorEntries: ReceiptEntry[] = [];
   const externalWrites: ApplyRollbackFailure[] = [];
@@ -283,7 +286,8 @@ export async function applyPlan(plan: TranslatorPlan, options: ApplyOptions = {}
               callerDownloadEvent?.(event);
             },
           });
-          lastDownload = { path: dl.path, name: path.basename(dl.path) };
+          await options.beforeUseAsset?.(dl);
+          lastDownload = { path: dl.path, name: path.basename(dl.path), sha256: dl.sha256 };
           record(
             step,
             'done',
@@ -324,13 +328,13 @@ export async function applyPlan(plan: TranslatorPlan, options: ApplyOptions = {}
               error: 'This tools-directory write is outside the game transaction and was not rolled back.',
               scope: 'external',
             });
-            const extracted = await extractZip(lastDownload.path, dest.abs);
+            const extracted = await extractZip(lastDownload.path, dest.abs, { expectedSha256: lastDownload.sha256 });
             record(step, 'done', `${extracted.files.length} files -> ${dest.abs}`);
             break;
           }
 
           const relDest = step.dest && step.dest !== '.' ? step.dest : '.';
-          const entries = await tx.extract(lastDownload.path, relDest);
+          const entries = await tx.extract(lastDownload.path, relDest, { expectedSha256: lastDownload.sha256 });
           collect(step, entries);
           record(
             step,
@@ -353,7 +357,7 @@ export async function applyPlan(plan: TranslatorPlan, options: ApplyOptions = {}
           const copyDest = step.dest;
           const prepared = await (async () => {
             try {
-              const extracted = await extract7z(download.path, options.cacheDir ?? defaultCacheDir());
+              const extracted = await extract7z(download.path, options.cacheDir ?? defaultCacheDir(), copyDest, download.sha256);
               const source = await findExtractedEntry(extracted.dir, copyDest);
               if (!source) throw new Error(`${copyDest} not found inside ${download.name}`);
               return { extracted, source };
@@ -370,7 +374,7 @@ export async function applyPlan(plan: TranslatorPlan, options: ApplyOptions = {}
           // Once the source has been resolved, a copy failure is a transaction
           // failure. Do not turn it into a manual-success path: copyIn journals
           // before mutation so the outer catch can roll it back truthfully.
-          const entry = await tx.copyIn(prepared.source, copyDest);
+          const entry = await tx.copyIn(prepared.source, copyDest, prepared.extracted.sha256);
           collect(step, [entry]);
           record(
             step,

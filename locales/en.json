@@ -643,6 +643,98 @@
       "backedUp": "original backed up to {path}",
       "saved": "{count} setting(s) saved"
     },
+    "security": {
+      "title": "Security checks",
+      "provider": "Microsoft Defender",
+      "busy": "Wait for the active security task to finish.",
+      "refresh": "Refresh engine status",
+      "update": "Update security intelligence",
+      "cancel": "Cancel security task",
+      "scanGame": "Scan this game folder",
+      "gameTitle": "Game security check",
+      "signatureVersion": "Security intelligence: {version}",
+      "engineVersion": "Engine: {version}",
+      "signatureAge": "Intelligence age: {days} day(s)",
+      "completedAt": "Completed: {time}",
+      "targetScope": "Target fingerprint: {count} file(s)",
+      "checkedSignature": "Intelligence used: {version}",
+      "scope": {
+        "file": "Selected-file check",
+        "directory": "Game-folder check"
+      },
+      "engine": {
+        "loading": "Reading engine status…",
+        "ready": "Scanner ready",
+        "stale": "Security intelligence needs updating",
+        "unavailable": "Scanner unavailable"
+      },
+      "kind": {
+        "scan-game": "Game-folder scan",
+        "scan-file": "Selected-file scan",
+        "signature-update": "Security-intelligence update"
+      },
+      "task": {
+        "running": "In progress",
+        "complete": "Completed",
+        "failed": "Needs review",
+        "cancelled": "Cancelled"
+      },
+      "verdict": {
+        "clean": "No threats detected in this scan",
+        "attention": "Needs review: detection or scan error",
+        "not-checked": "Check not completed"
+      },
+      "updateResult": {
+        "updated": "Security-intelligence update request completed.",
+        "not-updated": "The security-intelligence update could not be confirmed."
+      },
+      "cleanScope": "This result covers the scanned target and recorded engine state. Changed files need a new check.",
+      "resultScope": "An incomplete or ambiguous check does not permit automatic installation or launch.",
+      "indeterminate": "The engine does not provide a reliable percentage. Waiting for its result…",
+      "gateHelp": "Installation and launch require a completed current check. Unavailable engines, stale intelligence and incomplete checks stop the action.",
+      "gameScope": "This checks the selected game folder. Game-file operations wait while the engine is running; changed files are checked again.",
+      "noGameScan": "This game has no current completed security check.",
+      "otherTask": "Another security task is running.",
+      "needsEngine": "Review engine status in Settings → Security checks before starting a scan.",
+      "realTimeOff": "Windows reports that real-time protection is off. Review Windows Security.",
+      "openWindows": "Open Windows Security",
+      "openMalwareZero": "Malware Zero official site",
+      "malwareZeroHelp": "Malware Zero is a separate manual cleanup tool. Open its official site to review it; IndieDeck does not bundle its files or reuse its database.",
+      "updateHelp": "This requests Microsoft's security-intelligence updater and can use the network. Review the refreshed engine status when it finishes.",
+      "policyHelp": "The engine runs in a separate process. Existing Windows Defender network and real-time-protection policies continue to apply.",
+      "statusReadFailed": "Security status could not be read. Refresh it before starting a security action.",
+      "actionFailed": "The security action could not be started. Refresh the engine status and try again.",
+      "updateFailed": "The security-intelligence update could not be confirmed.",
+      "cancelFailed": "Cancellation could not be confirmed. Read the current status again.",
+      "helpFailed": "The official security help page could not be opened.",
+      "untrustedSender": "This request did not come from the trusted launcher window.",
+      "externalBlocked": "This link is not a registered launcher source.",
+      "block": {
+        "attention": "The security check needs review, so the action was stopped. Review Windows Security and scan again.",
+        "notChecked": "The security check did not complete, so the action was stopped. Refresh the engine and try again.",
+        "changed": "The file changed after selection or download. The action was stopped; select or download it again."
+      },
+      "reason": {
+        "unsupported-platform": "This scanner requires Windows.",
+        "engine-missing": "A supported local Defender engine was not found.",
+        "engine-untrusted": "The scanner's trusted Microsoft identity could not be confirmed.",
+        "engine-unavailable": "Defender is inactive or unavailable. Review Windows Security.",
+        "stale-signatures": "Update security intelligence before checking the target.",
+        "status-error": "The engine's current state could not be confirmed.",
+        "unsafe-target": "The selected target could not be checked safely.",
+        "target-changed": "The target changed during the check. Scan it again.",
+        "engine-changed": "The engine changed during the check. Refresh its state and scan again.",
+        "scan-limit": "The target exceeded the supported scan limits; the check is incomplete.",
+        "timed-out": "The scan reached its time limit; the check is incomplete.",
+        "cancelled": "The security task was cancelled.",
+        "busy": "Another security task is running.",
+        "engine-attention": "Defender returned a detection or scan-error state. Review Windows Security.",
+        "permission-denied": "The engine did not grant the required access. Review Windows Security and permissions.",
+        "engine-error": "The engine did not complete the requested check.",
+        "output-limit": "The engine response exceeded the supported limit; the check is incomplete.",
+        "unknown": "The engine's result could not be confirmed."
+      }
+    },
     "configComparison": {
       "title": "Current options and replacement version",
       "versions": "Current {current} → registered replacement {target}",

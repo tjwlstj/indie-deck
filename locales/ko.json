@@ -643,6 +643,98 @@
       "backedUp": "원본을 {path}에 백업했습니다",
       "saved": "설정 {count}개 저장됨"
     },
+    "security": {
+      "title": "보안 검사",
+      "provider": "Microsoft Defender",
+      "busy": "진행 중인 보안 작업이 끝날 때까지 기다려 주세요.",
+      "refresh": "엔진 상태 새로고침",
+      "update": "보안 인텔리전스 갱신",
+      "cancel": "보안 작업 취소",
+      "scanGame": "이 게임 폴더 정밀 검사",
+      "gameTitle": "게임 보안 검사",
+      "signatureVersion": "보안 인텔리전스: {version}",
+      "engineVersion": "검사 엔진: {version}",
+      "signatureAge": "인텔리전스 경과: {days}일",
+      "completedAt": "완료 시각: {time}",
+      "targetScope": "검사 대상 지문: 파일 {count}개",
+      "checkedSignature": "검사 당시 인텔리전스: {version}",
+      "scope": {
+        "file": "선택 파일 검사",
+        "directory": "게임 폴더 검사"
+      },
+      "engine": {
+        "loading": "엔진 상태를 읽는 중…",
+        "ready": "검사 엔진 준비됨",
+        "stale": "보안 인텔리전스 갱신 필요",
+        "unavailable": "검사 엔진 사용 불가"
+      },
+      "kind": {
+        "scan-game": "게임 폴더 검사",
+        "scan-file": "선택 파일 검사",
+        "signature-update": "보안 인텔리전스 갱신"
+      },
+      "task": {
+        "running": "진행 중",
+        "complete": "완료",
+        "failed": "확인 필요",
+        "cancelled": "취소됨"
+      },
+      "verdict": {
+        "clean": "이번 검사에서 위협이 탐지되지 않음",
+        "attention": "확인 필요: 탐지 또는 검사 오류",
+        "not-checked": "검사 완료되지 않음"
+      },
+      "updateResult": {
+        "updated": "보안 인텔리전스 갱신 요청을 마쳤어요.",
+        "not-updated": "보안 인텔리전스 갱신을 확인하지 못했어요."
+      },
+      "cleanScope": "이 결과는 검사한 대상과 당시 엔진 상태에 해당해요. 파일이 바뀌면 새로 검사해야 해요.",
+      "resultScope": "완료되지 않았거나 판정이 불명확한 검사는 자동 설치·실행을 허용하지 않아요.",
+      "indeterminate": "검사 엔진이 신뢰할 수 있는 진행률을 제공하지 않아 결과를 기다리고 있어요.",
+      "gateHelp": "설치·실행은 현재 대상의 검사가 완료되어야 진행해요. 엔진 사용 불가, 오래된 인텔리전스, 미완료 상태에서는 작업을 멈춰요.",
+      "gameScope": "선택한 게임 폴더를 검사해요. 검사 중에는 게임 파일 작업이 대기하며, 바뀐 파일은 다시 확인해요.",
+      "noGameScan": "이 게임에는 현재 유효한 검사 완료 기록이 없어요.",
+      "otherTask": "다른 보안 작업이 진행 중이에요.",
+      "needsEngine": "설정 → 보안 검사에서 엔진 상태를 확인한 뒤 검사를 시작해 주세요.",
+      "realTimeOff": "Windows에서 실시간 보호가 꺼져 있다고 보고했어요. Windows 보안을 확인해 주세요.",
+      "openWindows": "Windows 보안 열기",
+      "openMalwareZero": "Malware Zero 공식 사이트",
+      "malwareZeroHelp": "Malware Zero는 사용자가 별도로 실행하는 수동 치료 도구예요. 공식 사이트에서 확인할 수 있으며, 런처는 파일을 내장하거나 데이터베이스를 재사용하지 않아요.",
+      "updateHelp": "Microsoft의 보안 인텔리전스 갱신을 요청하며 네트워크를 사용할 수 있어요. 완료 후 새 엔진 상태를 확인해 주세요.",
+      "policyHelp": "엔진은 별도 프로세스에서 동작해요. 네트워크와 실시간 보호에는 기존 Windows Defender 정책이 적용돼요.",
+      "statusReadFailed": "보안 상태를 읽지 못했어요. 보안 작업을 시작하기 전에 새로고침해 주세요.",
+      "actionFailed": "보안 작업을 시작하지 못했어요. 엔진 상태를 새로고침한 뒤 다시 시도해 주세요.",
+      "updateFailed": "보안 인텔리전스 갱신을 확인하지 못했어요.",
+      "cancelFailed": "취소 완료를 확인하지 못했어요. 현재 상태를 다시 읽어 주세요.",
+      "helpFailed": "공식 보안 안내를 열지 못했어요.",
+      "untrustedSender": "신뢰한 런처 화면에서 온 요청이 아니에요.",
+      "externalBlocked": "런처에 등록된 출처의 링크가 아니에요.",
+      "block": {
+        "attention": "검사 결과 확인이 필요해 작업을 중단했어요. Windows 보안을 검토한 뒤 다시 검사해 주세요.",
+        "notChecked": "검사가 완료되지 않아 작업을 중단했어요. 엔진 상태를 새로고침한 뒤 다시 시도해 주세요.",
+        "changed": "선택하거나 내려받은 뒤 파일이 바뀌어 작업을 중단했어요. 다시 선택하거나 내려받아 주세요."
+      },
+      "reason": {
+        "unsupported-platform": "이 검사 엔진은 Windows에서 사용할 수 있어요.",
+        "engine-missing": "지원하는 로컬 Defender 엔진을 찾지 못했어요.",
+        "engine-untrusted": "검사 엔진의 신뢰할 수 있는 Microsoft 서명을 확인하지 못했어요.",
+        "engine-unavailable": "Defender가 비활성 상태이거나 사용할 수 없어요. Windows 보안을 확인해 주세요.",
+        "stale-signatures": "대상을 검사하기 전에 보안 인텔리전스를 갱신해 주세요.",
+        "status-error": "검사 엔진의 현재 상태를 확인하지 못했어요.",
+        "unsafe-target": "선택한 대상을 안전하게 검사할 수 없어요.",
+        "target-changed": "검사 중 대상이 바뀌었어요. 다시 검사해 주세요.",
+        "engine-changed": "검사 중 엔진 상태가 바뀌었어요. 새로고침 후 다시 검사해 주세요.",
+        "scan-limit": "대상이 지원하는 검사 한도를 넘어 검사가 완료되지 않았어요.",
+        "timed-out": "검사 시간 한도에 도달해 검사가 완료되지 않았어요.",
+        "cancelled": "보안 작업을 취소했어요.",
+        "busy": "다른 보안 작업이 진행 중이에요.",
+        "engine-attention": "Defender가 탐지 또는 검사 오류 상태를 반환했어요. Windows 보안을 확인해 주세요.",
+        "permission-denied": "엔진이 필요한 접근을 허용하지 않았어요. Windows 보안과 권한을 확인해 주세요.",
+        "engine-error": "엔진이 요청한 검사를 완료하지 못했어요.",
+        "output-limit": "엔진 응답이 지원 한도를 넘어 검사가 완료되지 않았어요.",
+        "unknown": "엔진의 결과를 확인하지 못했어요."
+      }
+    },
     "configComparison": {
       "title": "기존 옵션과 교체 버전 비교",
       "versions": "현재 {current} → 등록된 교체 버전 {target}",

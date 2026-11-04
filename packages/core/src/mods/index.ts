@@ -322,6 +322,8 @@ export async function setModEnabled(
 /* ------------------------------------------------------------------ install */
 
 export interface InstallModOptions {
+  /** Bind UI antivirus inspection to the exact bytes used by the transaction. */
+  expectedSha256?: string;
   loaderId?: string;
   dryRun?: boolean;
   logger?: Logger;
@@ -368,8 +370,8 @@ export async function installModFromFile(
     },
     async (tx) => {
       const written = isZip
-        ? await tx.extract(sourcePath, host.dir)
-        : [await tx.copyIn(sourcePath, `${host.dir}/${path.basename(sourcePath)}`)];
+        ? await tx.extract(sourcePath, host.dir, { expectedSha256: options.expectedSha256 })
+        : [await tx.copyIn(sourcePath, `${host.dir}/${path.basename(sourcePath)}`, options.expectedSha256)];
 
       // RPG Maker plugins only take effect once registered in plugins.js. That
       // file belongs to the game, so it is patched - never replaced wholesale -

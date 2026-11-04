@@ -76,6 +76,46 @@ history is preserved and blocks history writes rather than blocking game
 maintenance. A failed history save leaves a labelled session-only report. See
 [saved record scope](docs/config-manager.md#saved-comparison-records-v019-source).
 
+**Security checks (v0.1.10 source).** Windows desktop installation and launch
+actions use a separate Microsoft Defender process. Translator/font downloads
+are checked before use; game ZIP imports check both the source archive and the
+unpublished extracted stage. Each game launch checks its executable, and MTool
+handoffs check the tool and selected game executable. Switching a managed game
+version checks its directory before changing the active pointer. A manual folder
+scan and an explicit security-intelligence update are available in the security UI,
+with cancellation and status recovery after a renderer reload. A completed
+no-detection result is scoped to the inspected bytes and engine state.
+
+Unavailable engines, stale intelligence, incomplete checks and ambiguous native
+results stop these desktop actions. The first provider supports standard
+Windows layouts, with default scan limits of 20,000 files, 20 GiB and 15 minutes.
+The seven-day intelligence-age cutoff is a launcher freshness policy.
+Core/CLI scanner callbacks remain opt-in. Registered asset downloads also enforce
+HTTPS, approved sources/redirects, transfer limits and ordinary cache files.
+ZIP format limits are separate: a format-valid archive can still exceed the
+desktop scanner's file-count or 20 GiB scope and be stopped before publication.
+Renderer permissions, remote requests, IPC senders and external links have
+explicit main-owned boundaries. Games and external tools receive an environment
+copy with named credentials and Node/Electron injection controls removed.
+ZIP preflight rejects Windows path aliases, and copied mod/font inputs are bound
+to the inspected bytes. The desktop runtime is Electron 43.8.7.
+
+The launcher keeps the machine's existing Defender cloud and real-time policies;
+the provider can use the network according to those settings. Malware Zero is
+offered through its official site for separate manual use, with no embedded files
+or database reuse. The launcher updater retains its fixed GitHub/SHA-512 flow and
+does not gain a new antivirus gate. OS-wide firewalls, a game-execution sandbox
+and guaranteed malware detection are outside this change. See
+[security scope, sources and verification](docs/security-design.md).
+
+The final Korean/English source flows, focused security flow and comparison-
+history regressions passed on Electron 43.8.7. The local packaged ASAR also passed
+the focused security and history checks, with mocked engine/process actions.
+The real native-engine evidence is a separate unchanged 77-byte text fixture;
+full source verification reported 530 tests: 528 passed, none failed and two were
+skipped. Build and registry checks passed. Exact-commit CI and public release
+evidence are separate checkpoints in the security document.
+
 ![The translation settings panel](docs/media/config.png)
 
 **Korean and English throughout.** Not just the chrome: the compatibility

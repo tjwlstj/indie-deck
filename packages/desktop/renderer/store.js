@@ -69,6 +69,7 @@ export const state = {
   /** App-level view. Settings stays in this document - no navigation, so the
    * CSP and IPC boundary of the single window are untouched (§7.3). */
   view: 'library',
+  securityBusy: false,
   appInfo: { version: '', portable: false },
 };
 
@@ -132,7 +133,7 @@ export function applyLibraryPayload(payload) {
 }
 
 export function mutationBlocked() {
-  return isOperationActive(state.operation) || state.mtoolBusy || state.archiveBusy || state.storeBusy || isArchiveActive(state.archiveProgress) ||
+  return state.securityBusy || isOperationActive(state.operation) || state.mtoolBusy || state.archiveBusy || state.storeBusy || isArchiveActive(state.archiveProgress) ||
     state.scanRequestPending || isScanActive(state.scanStatus) ||
     launcherUpdateInstallPending(state.updateStatus, state.updateAction);
 }

@@ -32,7 +32,10 @@ test('the desktop preload cannot request unredacted translator credentials', () 
 test('the desktop window keeps the renderer inside the packaged document', () => {
   assert.match(main, /sandbox: true/);
   assert.match(main, /window\.webContents\.on\('will-navigate', \(event\) => event\.preventDefault\(\)\)/);
-  assert.match(main, /if \(\/\^https:/);
+  assert.match(main, /safeExternalUrl\(url, declaredExternalUrls\(\)\)/);
+  assert.match(main, /setPermissionRequestHandler\([\s\S]*?callback\(false\)/);
+  assert.match(main, /setPermissionCheckHandler\(\(\) => false\)/);
+  assert.match(main, /isTrustedAppSender\(_event, mainWindow\.webContents, expected\)/);
   assert.doesNotMatch(main, /\^https\?:/);
 });
 

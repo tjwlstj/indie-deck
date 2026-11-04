@@ -89,6 +89,7 @@ try {
       'Game_Data/Managed/Assembly-CSharp.dll': 'stub',
       'Game_Data/Managed/Unity.TextMeshPro.dll': 'stub',
       'BepInEx/core/BepInEx.dll': Buffer.from('ProductVersion5.4.23.5\0', 'utf16le'),
+      'BepInEx/plugins/SecurityProbe.dll.disabled': 'disabled harmless security fixture',
     };
     for (const [file, content] of Object.entries(files)) {
       await fs.mkdir(path.dirname(path.join(game, file)), { recursive: true });
@@ -164,9 +165,11 @@ try {
       INDIEDECK_MTOOL_SCREENSHOT: path.resolve('out', `desktop-mtool-${locale}.png`),
       INDIEDECK_MAINTENANCE_SCREENSHOT: path.resolve('out', `desktop-maintenance-${locale}.png`),
       INDIEDECK_CONFIG_COMPARISON_SCREENSHOT: path.resolve('out', `desktop-config-comparison-${locale}.png`),
+      INDIEDECK_SECURITY_SCREENSHOT: path.resolve('out', `desktop-security-${locale}.png`),
       INDIEDECK_ARCHIVES_SCREENSHOT: path.resolve('out', `desktop-archives-${locale}.png`),
       INDIEDECK_UPDATES_SCREENSHOT: path.resolve('out', `desktop-updates-${locale}.png`),
       INDIEDECK_DISABLE_UPDATES: '1',
+      INDIEDECK_SMOKE_SECURITY: '1',
       INDIEDECK_REGISTRY: path.resolve('registry') },
   });
   let smokeOutput = '';
@@ -179,6 +182,7 @@ try {
     child.once('close', (code) => resolve(code));
   });
   if (exitCode !== 0) throw new Error(`Desktop flow failed with exit code ${exitCode}.`);
+  if (smokeOutput.includes('[renderer:error]')) throw new Error('A renderer exception occurred during the desktop flow.');
   const requiredSmokeMarkers = [
     '[smoke] rendered 3 game rows', '[smoke] exact-file confirmation',
     '[smoke] font opt-out', '[smoke] RPG Maker', '[smoke] ZIP → explicit product/edition grouping',
@@ -187,6 +191,7 @@ try {
     '[smoke] offline Steam artwork search',
     '[smoke] browser companion metadata',
     '[smoke] old/current options',
+    '[smoke] mocked security gates',
   ];
   if (requiredSmokeMarkers.some((marker) => !smokeOutput.includes(marker))) {
     throw new Error('Desktop exited without completing every required smoke flow.');

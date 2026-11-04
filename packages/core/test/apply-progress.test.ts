@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
-import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
 import zlib from 'node:zlib';
 import { applyPlan, type ApplyProgress, type ApplyResult } from '../src/install/apply.ts';
+import { downloadAsset } from '../src/install/download.ts';
 import type { TranslatorPlan } from '../src/types.ts';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'indiedeck-apply-progress-'));
@@ -14,10 +14,12 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'indiedeck-apply-progress-'));
 function makeZip(name: string, data: Buffer): Buffer {
   const nameBuf = Buffer.from(name, 'utf8');
   const compressed = zlib.deflateRawSync(data);
+  const crc = zlib.crc32(data);
   const local = Buffer.alloc(30 + nameBuf.length);
   local.writeUInt32LE(0x04034b50, 0);
   local.writeUInt16LE(20, 4);
   local.writeUInt16LE(8, 8);
+  local.writeUInt32LE(crc, 14);
   local.writeUInt32LE(compressed.length, 18);
   local.writeUInt32LE(data.length, 22);
   local.writeUInt16LE(nameBuf.length, 26);
@@ -28,6 +30,7 @@ function makeZip(name: string, data: Buffer): Buffer {
   central.writeUInt16LE(20, 4);
   central.writeUInt16LE(20, 6);
   central.writeUInt16LE(8, 10);
+  central.writeUInt32LE(crc, 16);
   central.writeUInt32LE(compressed.length, 20);
   central.writeUInt32LE(data.length, 24);
   central.writeUInt16LE(nameBuf.length, 28);
@@ -44,21 +47,17 @@ function makeZip(name: string, data: Buffer): Buffer {
 }
 
 const archive = makeZip('plugin.dll', Buffer.from('installed payload'));
-let server: http.Server;
-let assetUrl = '';
-
-before(async () => {
-  server = http.createServer((_req, res) => {
-    res.writeHead(200, { 'content-type': 'application/zip', 'content-length': String(archive.length) });
-    res.end(archive);
-  });
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const address = server.address();
-  assetUrl = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}/payload.zip`;
+const assetUrl = 'https://builds.bepinex.dev/indiedeck-fixture/payload.zip';
+const originalFetch = globalThis.fetch;
+before(() => {
+  globalThis.fetch = async (input) => {
+    assert.equal(String(input), assetUrl);
+    return new Response(archive, { headers: { 'content-type': 'application/zip', 'content-length': String(archive.length) } });
+  };
 });
-
-after(async () => {
-  await new Promise<void>((resolve) => server.close(() => resolve()));
+after(() => {
+  globalThis.fetch = originalFetch;
+  assert.equal(path.dirname(path.resolve(tmp)), path.resolve(os.tmpdir()));
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
@@ -216,4 +215,47 @@ test('an informational loader-reuse step completes without false user action', a
   assert.equal(result.performed[0]?.status, 'skipped');
   assert.equal(result.performed[0]?.detail, 'informational');
   assert.equal(result.mutationStatus, 'committed');
+});
+
+for (const cached of [false, true]) test(`a rejected ${cached ? 'cached' : 'fresh'} asset security gate prevents extraction, setup and config writes`, async () => {
+  const root = path.join(tmp, `security-gate-${cached ? 'cache' : 'fresh'}`), cacheDir = path.join(tmp, `security-cache-${cached ? 'cache' : 'fresh'}`);
+  await fsp.mkdir(root, { recursive: true });
+  const original = new Map([
+    ['plugin.dll', Buffer.from('previous user-owned plugin')],
+    ['options.ini', Buffer.from('[General]\nLanguage=ja\nKeep=original\n')],
+    ['readme.txt', Buffer.from('user notes stay unchanged')],
+  ]);
+  for (const [name, contents] of original) await fsp.writeFile(path.join(root, name), contents);
+  const gated = plan(root);
+  gated.config = { General: { Language: 'ko' } };
+  gated.steps.push(
+    { action: 'run', description: 'Start translator setup', details: { exe: 'not-created-setup.exe' } },
+    { action: 'config', description: 'Update game options', dest: 'options.ini' },
+  );
+  if (cached) await downloadAsset(gated.steps[0]!.source!, { cacheDir });
+  const events: ApplyProgress[] = [];
+  let called = 0, caught: (Error & { applyResult?: ApplyResult }) | undefined;
+  try {
+    await applyPlan(gated, {
+      cacheDir, allowRun: true, onEvent: (event) => events.push(event),
+      beforeUseAsset: async (asset) => {
+        called += 1;
+        assert.equal(asset.fromCache, cached);
+        assert.deepEqual(await fsp.readFile(asset.path), archive);
+        assert.match(asset.sha256, /^[0-9a-f]{64}$/);
+        for (const [name, contents] of original) assert.deepEqual(await fsp.readFile(path.join(root, name)), contents);
+        throw new Error('ui.security.block.attention');
+      },
+    });
+  } catch (error) { caught = error as Error & { applyResult?: ApplyResult }; }
+  assert.equal(called, 1, 'cached bytes must pass the security gate again');
+  assert.match(caught?.message ?? '', /ui.security.block.attention/);
+  assert.equal(caught?.applyResult?.mutationStatus, 'rolled-back');
+  assert.equal(caught?.applyResult?.receiptStatus, 'not-run');
+  assert.deepEqual(caught?.applyResult?.filesWritten, []);
+  assert.deepEqual(caught?.applyResult?.pendingUserActions, []);
+  assert.equal(events.some((event) => ['extract', 'run', 'config', 'receipt'].includes(event.phase)), false);
+  for (const [name, contents] of original) assert.deepEqual(await fsp.readFile(path.join(root, name)), contents);
+  assert.equal(fs.existsSync(path.join(root, 'not-created-setup.exe')), false);
+  assert.equal(fs.existsSync(path.join(root, '.indiedeck', 'receipts')), false);
 });

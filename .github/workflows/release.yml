@@ -129,6 +129,9 @@ jobs:
       - name: Persisted comparison in packaged application
         run: node scripts/check-comparison-history.mjs ko --packaged
 
+      - name: Security gates in packaged application
+        run: node scripts/check-security-flow.mjs ko --packaged
+
       - name: Smoke test packaged application
         shell: pwsh
         run: |

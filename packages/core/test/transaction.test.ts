@@ -25,6 +25,15 @@ function exe(machine = 0x8664): Buffer {
   return b;
 }
 
+function crc32(bytes: Buffer): number {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
 function makeZip(files: { name: string; data: Buffer }[]): Buffer {
   const locals: Buffer[] = [];
   const centrals: Buffer[] = [];
@@ -32,10 +41,12 @@ function makeZip(files: { name: string; data: Buffer }[]): Buffer {
   for (const file of files) {
     const nameBuf = Buffer.from(file.name, 'utf8');
     const compressed = zlib.deflateRawSync(file.data);
+    const checksum = crc32(file.data);
     const local = Buffer.alloc(30 + nameBuf.length);
     local.writeUInt32LE(0x04034b50, 0);
     local.writeUInt16LE(20, 4);
     local.writeUInt16LE(8, 8);
+    local.writeUInt32LE(checksum, 14);
     local.writeUInt32LE(compressed.length, 18);
     local.writeUInt32LE(file.data.length, 22);
     local.writeUInt16LE(nameBuf.length, 26);
@@ -47,6 +58,7 @@ function makeZip(files: { name: string; data: Buffer }[]): Buffer {
     central.writeUInt16LE(20, 4);
     central.writeUInt16LE(20, 6);
     central.writeUInt16LE(8, 10);
+    central.writeUInt32LE(checksum, 16);
     central.writeUInt32LE(compressed.length, 20);
     central.writeUInt32LE(file.data.length, 24);
     central.writeUInt16LE(nameBuf.length, 28);
@@ -272,6 +284,68 @@ test('copyIn records the exact copied-file hash and refuses directory copies bef
   );
   assert.equal(fs.existsSync(path.join(root, 'unsupported-directory')), false);
   assert.equal(tx.entries.some((item) => item.path === 'unsupported-directory'), false);
+});
+
+test('checked copy rejects changed bytes and redirected paths before backing up or changing an existing destination', async (context) => {
+  const root = makeGame('tx-checked-copy-rejected', {
+    'mods/owned.bin': 'user-owned original', '.indiedeck/receipts/existing.json': 'existing receipt bytes',
+  });
+  const source = path.join(tmp, 'checked-copy-source.bin'), verified = Buffer.from('bytes inspected by the security gate');
+  await fsp.writeFile(source, verified);
+  const expected = crypto.createHash('sha256').update(verified).digest('hex');
+  await fsp.writeFile(source, 'replaced after inspection');
+  const destination = await fsp.readFile(path.join(root, 'mods/owned.bin'));
+  const receipt = await fsp.readFile(path.join(root, '.indiedeck/receipts/existing.json'));
+  const tx = new FileTransaction({ root, backupDir: '.indiedeck/backups' });
+  await assert.rejects(tx.copyIn(source, 'mods/owned.bin', expected), /changed|checksum/i);
+  assert.deepEqual(tx.entries, []);
+  assert.deepEqual(await fsp.readFile(path.join(root, 'mods/owned.bin')), destination);
+  assert.deepEqual(await fsp.readFile(path.join(root, '.indiedeck/receipts/existing.json')), receipt);
+  assert.equal(fs.existsSync(path.join(root, '.indiedeck/backups')), false);
+
+  await fsp.writeFile(source, verified);
+  const externalSource = path.join(tmp, 'checked-source-directory'), externalTarget = path.join(tmp, 'checked-target-directory');
+  fs.mkdirSync(externalSource); fs.mkdirSync(externalTarget);
+  fs.writeFileSync(path.join(externalSource, 'payload.bin'), verified);
+  fs.writeFileSync(path.join(externalTarget, 'owned.bin'), 'outside destination must stay unchanged');
+  try {
+    fs.symlinkSync(externalSource, path.join(root, 'source-link'), process.platform === 'win32' ? 'junction' : 'dir');
+    fs.symlinkSync(externalTarget, path.join(root, 'target-link'), process.platform === 'win32' ? 'junction' : 'dir');
+  } catch (error) {
+    if (['EPERM', 'EACCES', 'ENOTSUP'].includes((error as NodeJS.ErrnoException).code ?? '')) {
+      context.diagnostic('This host cannot create the optional directory-link fixtures; checksum rejection was verified.'); return;
+    }
+    throw error;
+  }
+  await assert.rejects(tx.copyIn(path.join(root, 'source-link', 'payload.bin'), 'mods/owned.bin', expected), /[Ll]ink|ancestry/);
+  await assert.rejects(tx.copyIn(source, 'target-link/owned.bin', expected), /[Ll]ink|ancestry/);
+  assert.deepEqual(tx.entries, []);
+  assert.deepEqual(await fsp.readFile(path.join(root, 'mods/owned.bin')), destination);
+  assert.deepEqual(await fsp.readFile(path.join(root, '.indiedeck/receipts/existing.json')), receipt);
+  assert.equal(fs.readFileSync(path.join(externalTarget, 'owned.bin'), 'utf8'), 'outside destination must stay unchanged');
+  assert.deepEqual(fs.readdirSync(externalSource), ['payload.bin']);
+  assert.equal(fs.existsSync(path.join(root, '.indiedeck/backups')), false);
+});
+
+test('checked copy receipts describe the exact verified bytes and rollback restores the user original', async () => {
+  const root = makeGame('tx-checked-copy-roundtrip', { 'mods/owned.bin': 'user original before the install' });
+  const source = path.join(tmp, 'checked-copy-good-source.bin'), verified = Buffer.from('security-checked replacement bytes');
+  await fsp.writeFile(source, verified);
+  const expected = crypto.createHash('sha256').update(verified).digest('hex');
+  const original = await fsp.readFile(path.join(root, 'mods/owned.bin'));
+  const tx = new FileTransaction({ root, backupDir: '.indiedeck/backups' });
+  const entry = await tx.copyIn(source, 'mods/owned.bin', expected);
+  assert.deepEqual(await fsp.readFile(path.join(root, 'mods/owned.bin')), verified);
+  assert.equal(entry.sha256, expected); assert.equal(entry.operation, 'modify'); assert.ok(entry.backup);
+  assert.deepEqual(tx.entries, [entry]);
+  assert.deepEqual(await fsp.readFile(path.join(root, entry.backup)), original);
+  await fsp.writeFile(source, 'a later unrelated edit to the source');
+  assert.deepEqual(await fsp.readFile(path.join(root, 'mods/owned.bin')), verified);
+  assert.equal(crypto.createHash('sha256').update(await fsp.readFile(path.join(root, 'mods/owned.bin'))).digest('hex'), entry.sha256);
+  const rollback = await tx.rollback();
+  assert.equal(rollback.status, 'complete'); assert.deepEqual(rollback.failures, []);
+  assert.deepEqual(await fsp.readFile(path.join(root, 'mods/owned.bin')), original);
+  assert.equal(await fsp.readFile(source, 'utf8'), 'a later unrelated edit to the source');
 });
 
 test('an unsafe mod receipt name is rejected before any mod file is written', async () => {

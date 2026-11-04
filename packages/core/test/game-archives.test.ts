@@ -7,6 +7,7 @@ import { after, test } from 'node:test';
 import { deflateRawSync } from 'node:zlib';
 import { loadRegistry } from '../src/registry/index.ts';
 import { importGameArchive, inspectGameArchive, listGameArchives } from '../../desktop/src/game-archives.ts';
+import { installGameArchiveVersion, listGameInstallations } from '../../desktop/src/game-installations.ts';
 
 const reg = loadRegistry();
 const parent = path.resolve(os.tmpdir());
@@ -127,6 +128,40 @@ test('ZIP imports stream ordinary stored/deflated files, publish exactly one sup
   assert.deepEqual(fs.readFileSync(input), before); assert.deepEqual(fs.readFileSync(path.join(result.record.gameRoot, 'Game.exe')), pe());
   assert.equal(fs.readFileSync(path.join(result.record.gameRoot, 'data', 'System.json'), 'utf8'), '{"gameTitle":"Archive Fixture","locale":"ja_JP"}');
   assert.deepEqual(new Set(events), new Set(['verify', 'extract', 'detect', 'publish'])); assert.deepEqual(await listGameArchives(dataDir('valid')), [result.record]);
+});
+
+test('a rejected post-extraction security gate removes only the unpublished stage and never registers or activates it', async () => {
+  const store = dataDir('security-gate');
+  const old = await importGameArchive(archive('security-v1.zip', gameEntries()), { dataDir: store, registry: reg });
+  const oldExecutable = fs.readFileSync(path.join(old.record.gameRoot, 'Game.exe'));
+  const input = archive('security-v2.zip', [...gameEntries(), { name: 'Example/new-version.txt', data: 'fully extracted fixture' }]);
+  const source = fs.readFileSync(input), events: string[] = [];
+  let registrations = 0, called = 0, stagedPath: string | undefined;
+  await assert.rejects(installGameArchiveVersion(input, {
+    dataDir: store, registry: reg, register: async () => { registrations += 1; },
+    onProgress: (event) => events.push(event.phase),
+    beforePublish: async (stage) => {
+      called += 1; stagedPath = stage;
+      assert.equal(path.dirname(stage), path.join(store, 'game-versions'));
+      assert.match(path.basename(stage), /^\.staging-[0-9a-f-]{36}$/);
+      assert.deepEqual(fs.readFileSync(path.join(stage, 'Example', 'Game.exe')), pe());
+      assert.equal(fs.readFileSync(path.join(stage, 'Example', 'new-version.txt'), 'utf8'), 'fully extracted fixture');
+      assert.equal(fs.existsSync(path.join(stage, '.indiedeck-game-version.json')), false, 'the public version record is not written before acceptance');
+      assert.deepEqual((await listGameArchives(store)).map((record) => record.id), [old.record.id]);
+      assert.equal(registrations, 0);
+      throw new Error('ui.security.block.attention');
+    },
+  }), /ui.security.block.attention/);
+  assert.equal(called, 1); assert.equal(registrations, 0);
+  assert.ok(stagedPath); assert.equal(fs.existsSync(stagedPath), false);
+  assert.equal(events.includes('extract'), true); assert.equal(events.includes('detect'), true); assert.equal(events.includes('publish'), false);
+  assert.deepEqual(fs.readdirSync(path.join(store, 'game-versions')), [old.record.id]);
+  assert.deepEqual((await listGameArchives(store)).map((record) => record.id), [old.record.id]);
+  const catalog = await listGameInstallations(store);
+  assert.equal(catalog.jobs.length, 1); assert.equal(catalog.jobs[0]?.phase, 'failed');
+  assert.ok(catalog.products.every((product) => product.activeInstallationId === undefined));
+  assert.deepEqual(fs.readFileSync(path.join(old.record.gameRoot, 'Game.exe')), oldExecutable);
+  assert.deepEqual(fs.readFileSync(input), source, 'the original ZIP stays unchanged');
 });
 test('a game at ZIP root imports without turning the internal staging name into its display name', async () => {
   const result = await importGameArchive(archive('RootGame_v1.4.zip', gameEntries('')), { dataDir: dataDir('root'), registry: reg });

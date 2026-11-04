@@ -47,7 +47,10 @@ export interface TranslatorMaintenanceResult {
   failedStep?: string;
   receiptError?: string;
 }
-export interface TranslatorMaintenanceOptions extends DownloadOptions { onEvent?: (event: ApplyProgress) => void }
+export interface TranslatorMaintenanceOptions extends DownloadOptions {
+  onEvent?: (event: ApplyProgress) => void;
+  beforeUseAsset?: (asset: Awaited<ReturnType<typeof downloadAsset>>) => Promise<void>;
+}
 
 const stems = [
   'XUnity.AutoTranslator.Plugin.Core', 'XUnity.AutoTranslator.Plugin.ExtProtocol',
@@ -429,6 +432,7 @@ async function preparePayload(preview: TranslatorMaintenancePreview, options: Tr
   const source = plan!.steps.find((step) => step.action === 'download')?.source;
   if (!source) fail('archive');
   const download = await downloadAsset(source!, options);
+  await options.beforeUseAsset?.(download);
   const stat = await fsp.lstat(download.path);
   if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_ARCHIVE || !download.path.toLowerCase().endsWith('.zip')) fail('archive');
   const buffer = await fsp.readFile(download.path);

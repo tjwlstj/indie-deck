@@ -5,7 +5,7 @@ import crypto from 'node:crypto';
 import { existsSync, mkdirSync } from 'node:fs';
 import { readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   addRoot,
   applyPlan,
@@ -78,6 +78,10 @@ import { STORE_PROVIDERS, canonicalStoreProductUrl, readStoreLinkFile, readStore
 import { exportBrowserCompanion } from './browser-companion-export.ts';
 import { buildTranslationConfigComparison, type TranslationConfigComparison } from './translation-config-comparison.ts';
 import { TranslationConfigHistory, type TranslationConfigHistoryRecord } from './translation-config-history.ts';
+import { createSecurityScanner, fingerprintSecurityTarget, type SecurityScanResult } from './security-scanner.ts';
+import { createSecurityController } from './security-controller.ts';
+import { isTrustedAppSender, safeExternalUrl } from './browser-security.ts';
+import { gameProcessEnvironment } from './process-environment.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // Entry-point app paths differ between `electron .`, `electron packages/desktop`
@@ -97,6 +101,9 @@ if (process.env['INDIEDECK_SMOKE']) {
 
 let registry: Registry;
 let comparisonHistory: TranslationConfigHistory | undefined;
+let security: ReturnType<typeof createSecurityController>;
+let smokeSecurityVerdict: SecurityScanResult['verdict'] = 'clean';
+let smokeSecurityHold = false;
 let mainWindow: BrowserWindow | undefined;
 let pendingMutations = 0;
 let updateRestartReserved = false;
@@ -167,6 +174,7 @@ const optionComparisonsByPreview = new WeakMap<TranslatorMaintenancePreview, Tra
 // If saving launcher history fails, the committed game operation still succeeds.
 // Keep a session fallback so its report can be reviewed with a visible notice.
 const lastOptionComparisonsByGame = new Map<string, TranslationConfigHistoryRecord>();
+const securityResultsByGame = new Map<string, SecurityScanResult>();
 const archiveCandidates = new Map<string, { path: string; inspection: GameArchiveInspection }>();
 const storeLinkCandidates = new Map<string, StoreLinkCandidate>();
 const thumbnailSearchResults = new Map<string, Set<string>>();
@@ -192,6 +200,7 @@ function idFor(gamePath: string): string {
 function rememberGames(profiles: GameProfile[]): void {
   const currentIds = new Set(profiles.map((profile) => idFor(profile.path)));
   for (const id of lastOptionComparisonsByGame.keys()) if (!currentIds.has(id)) lastOptionComparisonsByGame.delete(id);
+  for (const id of securityResultsByGame.keys()) if (!currentIds.has(id)) securityResultsByGame.delete(id);
   for (const id of gamePathsById.keys()) if (!currentIds.has(id)) {
     gamePathsById.delete(id);
     gameRevisions.delete(id);
@@ -274,6 +283,40 @@ function requireTranslatorMaintenance(gameId: string, previewId: unknown): Trans
 
 /* ------------------------------------------------------------- window */
 
+function appSecurityScanner(): ReturnType<typeof createSecurityScanner> {
+  if (process.env['INDIEDECK_SMOKE'] !== '1') return createSecurityScanner();
+  // Offline smoke profiles never invoke the user's native antivirus. The
+  // explicit test flag enables fixture results, never production scan evidence.
+  const ready = process.env['INDIEDECK_SMOKE_SECURITY'] === '1';
+  const status = async () => ({ provider: 'microsoft-defender' as const, state: ready ? 'ready' as const : 'unavailable' as const,
+    policy: 'existing-defender-policy' as const, ...(ready ? { engineVersion: '1.0.0', signatureVersion: '1.0.0', signatureAgeDays: 0 } : { reason: 'engine-missing' as const }) });
+  return {
+    status,
+    scanTarget: async (target, options = {}) => {
+      const startedAt = new Date().toISOString();
+      while (smokeSecurityHold && !options.signal?.aborted) await new Promise((resolve) => setTimeout(resolve, 30));
+      if (!ready || options.signal?.aborted) return { provider: 'microsoft-defender', verdict: 'not-checked',
+        reason: options.signal?.aborted ? 'cancelled' : 'engine-missing', startedAt, completedAt: new Date().toISOString() };
+      const fingerprint = await fingerprintSecurityTarget(target, { signal: options.signal });
+      return { provider: 'microsoft-defender', verdict: smokeSecurityVerdict,
+        ...(smokeSecurityVerdict === 'attention' ? { reason: 'engine-attention' as const } : smokeSecurityVerdict === 'not-checked' ? { reason: 'engine-error' as const } : {}),
+        startedAt, completedAt: new Date().toISOString(), fingerprint, engineVersion: '1.0.0', signatureVersion: '1.0.0' };
+    },
+    updateSignatures: async () => ({ provider: 'microsoft-defender', state: ready ? 'updated' : 'not-updated', status: await status(), changed: false }),
+  };
+}
+
+function declaredExternalUrls(): Set<string> {
+  const font = registry.fonts.source;
+  return new Set([
+    LAUNCHER_RELEASE_URL, 'https://mtool.app/tutorial.php?lang=en',
+    ...registry.translators.flatMap((item) => item.homepage ? [item.homepage] : []),
+    ...registry.loaders.flatMap((item) => item.homepage ? [item.homepage] : []),
+    ...registry.compat.rules.flatMap((item) => item.sources ?? []),
+    ...(font.repo ? [`https://github.com/${font.repo}/releases/tag/${font.tag ?? 'latest'}`] : font.url ? [font.url] : []),
+  ]);
+}
+
 function createWindow(): void {
   const window = new BrowserWindow({
     width: 1360,
@@ -288,10 +331,18 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      webviewTag: false,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
     },
   });
 
   mainWindow = window;
+  window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  window.webContents.session.setPermissionCheckHandler(() => false);
+  window.webContents.session.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] }, (details, callback) => {
+    callback({ cancel: details.webContentsId === window.webContents.id });
+  });
 
   window.once('ready-to-show', () => window.show());
   window.on('closed', () => {
@@ -302,7 +353,8 @@ function createWindow(): void {
   // Anything that wants to leave the app goes to the real browser, never to a
   // new Electron window with node access.
   window.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https:\/\//i.test(url)) void shell.openExternal(url);
+    const allowed = safeExternalUrl(url, declaredExternalUrls());
+    if (allowed) void shell.openExternal(allowed);
     return { action: 'deny' };
   });
 
@@ -413,7 +465,10 @@ async function runSmokeTest(window: BrowserWindow): Promise<void> {
       if (companionManifest.version !== app.getVersion()) throw new Error('Packaged companion version disagrees with the launcher.');
       console.log('[smoke] bundled browser companion exported and version verified; no browser profile was changed');
 
-      if (process.env['INDIEDECK_SMOKE_FLOW'] === '1') await runOperationSmoke(window);
+      if (process.env['INDIEDECK_SMOKE_FLOW'] === '1') {
+        await runSecuritySmoke(window);
+        await runOperationSmoke(window);
+      } else if (process.env['INDIEDECK_SMOKE_SECURITY'] === '1') await runSecuritySmoke(window);
       if (process.env['INDIEDECK_SMOKE_HISTORY']) await runComparisonHistorySmoke(window, process.env['INDIEDECK_SMOKE_HISTORY']);
 
       const shot = process.env['INDIEDECK_SCREENSHOT'];
@@ -442,6 +497,87 @@ async function runSmokeTest(window: BrowserWindow): Promise<void> {
 
   console.error('[smoke] renderer did not finish loading within 20s');
   app.exit(1);
+}
+
+async function runSecuritySmoke(window: BrowserWindow): Promise<void> {
+  if (process.env['INDIEDECK_SMOKE_SECURITY'] !== '1') throw new Error('Offline security fixtures were not enabled.');
+  const evaluate = <T>(source: string): Promise<T> => window.webContents.executeJavaScript(`(async () => (${source}))()`);
+  const waitFor = async (source: string, label: string) => {
+    const end = Date.now() + 15_000;
+    while (Date.now() < end) {
+      if (await evaluate<boolean>(source)) return;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    throw new Error(`Security smoke timed out: ${label}`);
+  };
+  const gameId = await evaluate<string>(`(async () => (await import('./store.js')).state.selected)()`);
+  const before = await fingerprintSecurityTarget(requireGamePath(gameId));
+  await waitFor(`!!document.querySelector('#gameSecurityBody .game-security-scan:not(:disabled)')`, 'ready engine and game scan');
+  smokeSecurityHold = true;
+  await evaluate(`document.querySelector('#gameSecurityBody .game-security-scan').click()`);
+  await waitFor(`(async () => (await window.indiedeck.security.current()).task?.status === 'running')()`, 'running scan handshake');
+  const busy = await evaluate<boolean>(`(async () => {
+    const checks = await Promise.allSettled([window.indiedeck.security.update(), window.indiedeck.game.launch(${JSON.stringify(gameId)})]);
+    return checks.every(item => item.status === 'rejected');
+  })()`);
+  if (!busy) throw new Error('A running security scan did not reserve the file-operation slot.');
+  await new Promise<void>((resolve) => { window.webContents.once('did-finish-load', () => resolve()); window.webContents.reload(); });
+  await waitFor(`!!document.querySelector('#securitySettingsBody .security-cancel:not(:disabled)')`, 'scan recovery after reload');
+  await evaluate(`document.querySelector('#securitySettingsBody .security-cancel').click()`);
+  smokeSecurityHold = false;
+  await waitFor(`(async () => (await window.indiedeck.security.current()).task?.status === 'cancelled')()`, 'cancelled scan');
+  await waitFor(`document.body.dataset.libraryState === 'ready'`, 'library after scan cancellation');
+  await evaluate(`(() => { document.getElementById('closeSettings').click(); window.dispatchEvent(new CustomEvent('indiedeck:select-game', {detail:{gameId:${JSON.stringify(gameId)}}})); })()`);
+  await waitFor(`!!document.querySelector('#gameSecurityBody .game-security-scan:not(:disabled)')`, 'game after scan recovery');
+  for (const verdict of ['attention', 'not-checked'] as const) {
+    smokeSecurityVerdict = verdict;
+    await evaluate(`document.querySelector('#gameSecurityBody .game-security-scan').click()`);
+    await waitFor(`!!document.querySelector('#gameSecurityBody .security-result[data-verdict="${verdict}"]')`, `${verdict} result`);
+    const stopped = await evaluate<boolean>(`(async () => {
+      const { t } = await import('./i18n.js');
+      try { await window.indiedeck.game.launch(${JSON.stringify(gameId)}); return false; }
+      catch(error) { return error.message === t('ui.security.block.${verdict === 'attention' ? 'attention' : 'notChecked'}'); }
+    })()`);
+    if (!stopped) throw new Error('An incomplete or attention scan did not block game execution.');
+    const stoppedMod = await evaluate<boolean>(`(async () => {
+      const { state } = await import('./store.js'); const { t } = await import('./i18n.js');
+      const mod = state.detail.mods.find(item => !item.enabled && item.file.endsWith('SecurityProbe.dll.disabled'));
+      if (!mod) return false;
+      try { await window.indiedeck.mods.toggle(state.selected, mod.id, true); return false; }
+      catch(error) { return error.message === t('ui.security.block.${verdict === 'attention' ? 'attention' : 'notChecked'}'); }
+    })()`);
+    if (!stoppedMod) throw new Error('An incomplete or attention scan did not block mod activation.');
+  }
+  const rejectsUnknown = await evaluate<boolean>(`(async () => {
+    for (const action of [() => window.indiedeck.security.scanGame('../outside'),
+      () => window.indiedeck.security.scanGame('0000000000000000'),
+      () => window.indiedeck.security.openHelp('https://untrusted.invalid'),
+      () => window.indiedeck.open.url('https://127.0.0.1/private')]) {
+      try { await action(); return false; } catch {}
+    }
+    return true;
+  })()`);
+  if (!rejectsUnknown) throw new Error('Security IPC accepted an arbitrary target or helper action.');
+  const foreign = new BrowserWindow({ show: false, webPreferences: {
+    preload: path.join(here, '..', 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true,
+  } });
+  try {
+    await foreign.loadFile(path.join(here, '..', 'renderer', 'index.html'));
+    const denied = await foreign.webContents.executeJavaScript(`window.indiedeck.security.current().then(() => false, () => true)`);
+    if (!denied) throw new Error('A second window inherited the main window IPC authority.');
+  } finally { foreign.destroy(); }
+  smokeSecurityVerdict = 'clean';
+  await evaluate(`document.getElementById('openSettings').click()`);
+  await waitFor(`!!document.querySelector('#securitySettingsBody .security-update:not(:disabled)')`, 'security update action');
+  await evaluate(`document.querySelector('#securitySettingsBody .security-update').click()`);
+  await waitFor(`(async () => {const task=(await window.indiedeck.security.current()).task; return task?.kind==='signature-update' && task.status==='complete';})()`, 'explicit mocked signature update');
+  await evaluate(`document.getElementById('securitySettings').scrollIntoView({block:'start'})`);
+  await evaluate(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
+  if (process.env['INDIEDECK_SECURITY_SCREENSHOT']) await writeFile(process.env['INDIEDECK_SECURITY_SCREENSHOT'], (await window.webContents.capturePage()).toPNG());
+  await evaluate(`document.getElementById('closeSettings').click()`);
+  const after = await fingerprintSecurityTarget(requireGamePath(gameId));
+  if (before.sha256 !== after.sha256) throw new Error('Security review changed fixture game bytes.');
+  console.log('[smoke] mocked security gates: scoped scan → reload/cancel → attention/error game and mod activation blocked → foreign IPC rejected → explicit signature update; unchanged game bytes, no real scan/update/game process');
 }
 
 /** Separate main processes exercise durable history rather than a renderer
@@ -1438,6 +1574,8 @@ async function gameDetailPayload(gameId: string, options: ResolveOptions, detect
     fontRecommendation,
     fontPlan,
     comparisonHistory: { state: history.state, ...(historyRecord ? { record: { ...historyRecord, persistent: !fallback } } : {}) },
+    securityResult: securityResultsByGame.get(gameId),
+    securityEngine: security.current().engine,
     ...(profile.engineId === 'unity' ? { translatorMaintenance: await cacheTranslatorMaintenance(gameId, profile,
       await previewTranslatorMaintenance(registry, profile, options)) } : {}),
     ...(isMToolGame(profile) ? { mtoolIntegration: {
@@ -1479,9 +1617,12 @@ async function openMTool(profile?: GameProfile) {
   const spec = await mtoolLaunchSpec(status, profile).catch((error: Error) => {
     throw new Error(/^ui\.mtool\.reason\./.test(error.message) ? t(error.message) : error.message);
   });
+  await security.scanBeforeUse(spec.executable);
+  if (profile?.executable) await security.scanBeforeUse(path.join(profile.path, profile.executable), idFor(profile.path));
   await new Promise<void>((resolve, reject) => {
     const child = spawn(spec.executable, spec.args, {
       cwd: spec.cwd, shell: false, detached: true, stdio: 'ignore',
+      env: gameProcessEnvironment(),
       windowsHide: false, // Explicit user action opens an interactive GUI.
     });
     child.once('error', (error) => reject(new Error(t('ui.mtool.launchFailed', { error: error.message }, 'Could not open MTool: {error}'))));
@@ -1596,7 +1737,8 @@ async function runMaintenance(
     if (request.kind === 'remove-translator' || request.kind === 'reinstall-translator') {
       if (!translatorMaintenance) throw new Error(t('ui.maintenance.reason.stale'));
       const maintained = await runTranslatorMaintenance(translatorMaintenance,
-        request.kind === 'remove-translator' ? 'remove' : 'reinstall', { onEvent: (event) => report(event) });
+        request.kind === 'remove-translator' ? 'remove' : 'reinstall', { onEvent: (event) => report(event),
+          beforeUseAsset: (asset) => security.scanBeforeUse(asset.path, undefined, asset.sha256).then(() => {}) });
       if (request.kind === 'reinstall-translator' && maintained.mutationStatus === 'committed') {
         const comparison = optionComparisonsByPreview.get(translatorMaintenance);
         if (comparison) {
@@ -1629,6 +1771,7 @@ async function runMaintenance(
       const blocked = (request.kind === 'install' ? installBlockReason(fresh, receiptsEvidence, installations) : undefined) ?? (key ? t(`ui.font.block.${key}`) : undefined);
       if (blocked) throw new Error(blocked);
       const applied = await applyPlan(fresh, {
+        beforeUseAsset: (asset) => security.scanBeforeUse(asset.path, undefined, asset.sha256).then(() => {}),
         onEvent: (event) => report(event),
         logger: {
           level: 'info', debug: () => {},
@@ -1684,6 +1827,8 @@ async function runMaintenance(
 function handle<T>(channel: string, fn: (...args: never[]) => Promise<T> | T): void {
   ipcMain.handle(channel, async (_event, ...args) => {
     try {
+      const expected = pathToFileURL(path.join(here, '..', 'renderer', 'index.html')).href;
+      if (!mainWindow || !isTrustedAppSender(_event, mainWindow.webContents, expected)) throw new Error('ui.security.untrustedSender');
       if (updateRestartReserved && channel !== 'updates:current' && channel !== 'app:info') {
         throw new Error('ui.update.error.busy');
       }
@@ -1696,7 +1841,7 @@ function handle<T>(channel: string, fn: (...args: never[]) => Promise<T> | T): v
 
 function localiseTaskError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
-  return /^ui\.(maintenance|archives|update|stores)\.[a-zA-Z0-9.]+$/.test(message) ? t(message) : message;
+  return /^ui\.(maintenance|archives|update|stores|security)\.[a-zA-Z0-9.-]+$/.test(message) ? t(message) : message;
 }
 
 const STORE_ACTIONS: StoreHandoffAction[] = ['site', 'library', 'login', 'client', 'downloadClient'];
@@ -1777,11 +1922,13 @@ function importSelectedArchive(candidateId: unknown, label: unknown, productId?:
   send('archives:progress', structuredClone(archiveTask));
   return enqueueMutation(async () => {
     try {
+      await security.scanBeforeUse(candidate.path, undefined, candidate.inspection.sha256);
       const imported = await installGameArchiveVersion(candidate.path, {
         dataDir: defaultDataDir(), registry, label: typeof label === 'string' ? label.trim() : undefined,
         productId: typeof productId === 'string' ? productId : undefined,
         register: registerArchiveVersion,
         expectedSha256: candidate.inspection.sha256,
+        beforePublish: (stage) => security.scanStage(stage),
         onProgress: (event) => publishArchiveTask({
           phase: event.phase === 'verify' || event.phase === 'detect' ? 'inspect' : event.phase,
           completedFiles: event.filesDone, totalFiles: event.filesTotal,
@@ -1810,6 +1957,19 @@ function handleMutation<T>(channel: string, fn: (...args: never[]) => Promise<T>
 }
 
 function register(): void {
+  handle('security:current', () => security.current());
+  handle('security:refresh', () => security.refresh());
+  handle('security:scanGame', (gameId: string) => {
+    const target = requireGamePath(gameId);
+    return security.startGameScan(gameId, target);
+  });
+  handle('security:update', () => security.startUpdate());
+  handle('security:cancel', (id: unknown) => security.cancel(id));
+  handle('security:openHelp', async (action: unknown) => {
+    if (action !== 'windows-security' && action !== 'malware-zero') throw new Error('ui.security.actionFailed');
+    await shell.openExternal(action === 'windows-security' ? 'windowsdefender:' : 'https://malzero.xyz/');
+    return true;
+  });
   handle('app:info', () => ({
     version: app.getVersion(),
     // Portable builds set this env var; the updater deliberately stays off
@@ -1921,6 +2081,7 @@ function register(): void {
     const installation = catalog.installations.find((entry) => entry.id === installationId);
     const record = installation && (await listGameArchives(defaultDataDir())).find((entry) => entry.id === installation.archiveId);
     if (!record) throw new Error('ui.archives.reason.invalidInstallation');
+    await security.scanStage(record.root);
     await registerArchiveVersion(record);
     await setActiveGameInstallation(defaultDataDir(), installationId);
     return archiveSnapshot(idFor(record.gameRoot));
@@ -2115,6 +2276,11 @@ function register(): void {
     const gamePath = requireGamePath(gameId);
     const profile = detectGame(registry, gamePath);
     if (!profile) throw new Error('Game folder is gone.');
+    if (enabled === true) {
+      const mod = (await listMods(registry, profile)).find((item) => item.id === modId || item.name === modId);
+      if (!mod) throw new Error('ui.security.actionFailed');
+      await security.scanBeforeUse(path.join(gamePath, mod.file));
+    }
     await setModEnabled(registry, profile, String(modId), enabled === true);
     markGameChanged(gameId);
     return listMods(registry, profile);
@@ -2130,7 +2296,9 @@ function register(): void {
       filters: [{ name: 'Mods', extensions: ['zip', 'dll', 'js', 'rpy'] }],
     });
     if (picked.canceled || picked.filePaths.length === 0) return undefined;
-    await installModFromFile(registry, profile, picked.filePaths[0]!);
+    const inspected = await security.scanBeforeUse(picked.filePaths[0]!);
+    if (inspected.fingerprint?.scope !== 'file') throw new Error('ui.security.block.notChecked');
+    await installModFromFile(registry, profile, picked.filePaths[0]!, { expectedSha256: inspected.fingerprint?.sha256 });
     markGameChanged(gameId);
     return listMods(registry, profile);
   });
@@ -2139,14 +2307,17 @@ function register(): void {
   // renderer cannot name an arbitrary binary to spawn.
   handle('game:launch', async (gameId: string) => {
     if (pendingMutations > 0) throw new Error(t('ui.operation.busy', undefined, 'Wait for the current file operation to finish.'));
+    return enqueueMutation(async () => {
     const gamePath = requireGamePath(gameId);
     const profile = detectGame(registry, gamePath);
     if (!profile?.executable) throw new Error('No launchable executable was detected in this folder.');
     const target = path.join(gamePath, profile.executable);
     if (!target.startsWith(gamePath + path.sep)) throw new Error('Refusing to launch outside the game folder.');
-    const child = spawn(target, { cwd: gamePath, detached: true, stdio: 'ignore' });
+    await security.scanBeforeUse(target, gameId);
+    const child = spawn(target, { cwd: gamePath, detached: true, stdio: 'ignore', shell: false, env: gameProcessEnvironment() });
     child.unref();
     return profile.executable;
+    });
   });
 
   handle('config:read', async (gameId: string, translatorId: string) => {
@@ -2189,8 +2360,8 @@ function register(): void {
   handle('shell:openGameFolder', async (gameId: string) => shell.openPath(requireGamePath(gameId)));
 
   handle('shell:openExternal', async (url: string) => {
-    const value = String(url);
-    if (!/^https:\/\//i.test(value)) throw new Error('Only https links can be opened.');
+    const value = safeExternalUrl(url, declaredExternalUrls());
+    if (!value) throw new Error('ui.security.externalBlocked');
     await shell.openExternal(value);
     return true;
   });
@@ -2214,6 +2385,18 @@ void app.whenReady().then(async () => {
     return;
   }
   configureAutoUpdates();
+  security = createSecurityController({ scanner: appSecurityScanner(), enqueue: (work) => enqueueMutation(work),
+    isBusy: () => pendingMutations > 0 || operations.isActive() || updateRestartReserved,
+    emit: (snapshot) => {
+      const task = snapshot.task;
+      if (task?.gameId && task.result && task.status !== 'running') {
+        securityResultsByGame.delete(task.gameId);
+        while (securityResultsByGame.size >= 100) securityResultsByGame.delete(securityResultsByGame.keys().next().value!);
+        securityResultsByGame.set(task.gameId, task.result);
+      }
+      if (task?.kind === 'signature-update' && task.status === 'complete') securityResultsByGame.clear();
+      send('security:status', snapshot);
+    } });
   // Reconcile only our own recorded UUID installations. This does not scan
   // configured library drives or restart an interrupted source extraction.
   try {
@@ -2224,6 +2407,7 @@ void app.whenReady().then(async () => {
   }
   register();
   createWindow();
+  void security.refresh().catch(() => {});
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

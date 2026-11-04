@@ -13,10 +13,12 @@ import { renderMToolIntegration } from './mtool.js';
 import { hasMToolIntegration } from '../mtool-model.js';
 import { renderComparisonHistory, renderTranslatorMaintenance } from './maintenance.js';
 import { hasTranslatorMaintenance } from '../maintenance-model.js';
+import { renderGameSecurity } from './security.js';
 
 export const SECTIONS = [
   { id: 'header', render: renderHeader },
   { id: 'facts', render: renderFacts },
+  { id: 'security', render: renderGameSecurity },
   {
     id: 'config',
     render: renderConfigSection,

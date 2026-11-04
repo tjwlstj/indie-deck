@@ -55,6 +55,8 @@ export interface ImportGameArchiveOptions {
   installationId?: string;
   /** Acknowledged before extraction/publish and after the UUID folder is visible. */
   onCheckpoint?: (phase: 'staging' | 'payload-verified' | 'published') => Promise<void>;
+  /** Main-owned antivirus gate over the extracted, unpublished payload. */
+  beforePublish?: (stage: string) => Promise<void>;
 }
 
 // Classic ZIP only: ZIP64, split/encrypted archives and legacy name encodings
@@ -435,6 +437,7 @@ export async function importGameArchive(archivePath: string, options: ImportGame
     // during extraction must never publish a partial or different version.
     if (await contentHash(handle, stat.size) !== hash) fail('changedArchive');
     await ordinaryPath(archivePath, 'file');
+    await options.beforePublish?.(stage);
     const game = games[0], archiveName = displayName(path.basename(archivePath)), hint = versionHint(archiveName);
     const gameRelativePath = path.relative(stage, game.path).split(path.sep).join('/');
     const stored: StoredRecord = { schemaVersion: 1, id: nonce, format: 'zip', archiveName, sourceSha256: hash,

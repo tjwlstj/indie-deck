@@ -5,6 +5,59 @@ Versioning while the project is pre-1.0.
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-11-04
+
+### Added
+
+- A separate Microsoft Defender provider for Windows desktop security checks,
+  with engine/signature status, scoped no-detection/attention/not-checked results,
+  explicit intelligence updates, cancellation and renderer-reload recovery.
+- Required checks for desktop translator/font archives before use, the game ZIP
+  source and unpublished extraction stage before publication, each launched game
+  executable, managed version directories before activation, and MTool/selected-
+  game executables before handoff. Manual full game-folder checks are available
+  from game details.
+- Security settings and official Windows Security/Malware Zero help actions.
+  Malware Zero remains a separate manual tool; its package and database are not
+  embedded or reused.
+
+### Hardened
+
+- Registered asset downloads require approved HTTPS sources and redirects,
+  scoped GitHub authorization, transfer/time bounds and ordinary cache files.
+- Main validates the exact application WebContents/frame/document for IPC,
+  denies browser permissions and renderer remote requests, and restricts generic
+  external links to canonical declared URLs.
+- Game and external-tool process environments omit named credential families
+  and Node/Electron injection controls while preserving normal OS/game values.
+- ZIP preflight rejects Windows path aliases, selected external-decoder entries
+  use protected arguments, and copied mod/font inputs are bound to inspected
+  content before receipt-backed writes.
+- Electron is updated to 43.8.7. Its official release note describes a Wayland
+  hidden-parent-window crash fix; this update is not presented as a CVE fix.
+
+### Scope notes
+
+- The first scanner supports standard Windows layouts and defaults to 20,000
+  files, 20 GiB and 15 minutes. Unavailable, stale or incomplete checks block the
+  required desktop actions. Core/CLI scan callbacks are opt-in.
+- The seven-day intelligence-age cutoff is an IndieDeck freshness policy, not
+  a Microsoft definition-expiry date.
+- Existing Defender cloud/real-time policies still apply. No silent elevation,
+  protection disable, exclusion change, automatic cleanup or new game firewall
+  is introduced. This is not an execution sandbox or a detection guarantee.
+- The existing launcher-updater GitHub/SHA-512 path has no new antivirus gate.
+- A real local native probe checked one unchanged 77-byte synthetic C-drive text
+  file. It did not update intelligence or inspect real games, D-drive contents,
+  Malware Zero databases or malware samples.
+- Korean/English full source flows, focused security checks and source history
+  regressions passed on Electron 43.8.7. Local packaged security and history
+  flows also passed with mocked engine/process actions. The package checker
+  verified 64 required entries and 73 critical runtime hashes. Full source
+  verification reported 530 tests: 528 passed, none failed and two were skipped;
+  build and registry checks passed. Exact-commit CI and public release remain
+  separate pending checkpoints.
+
 ## [0.1.9] - 2026-11-03
 
 ### Added

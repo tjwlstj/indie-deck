@@ -37,6 +37,7 @@ export interface RecoverGameInstallationsOptions {
 export interface InstallGameArchiveVersionOptions extends RecoverGameInstallationsOptions {
   label?: string; productId?: string; expectedSha256?: string;
   onProgress?: (progress: GameArchiveProgress) => void;
+  beforePublish?: (stage: string) => Promise<void>;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -226,6 +227,7 @@ export async function installGameArchiveVersion(archivePath: string, options: In
     const imported = await importGameArchive(archivePath, { dataDir: options.dataDir, registry: options.registry,
       expectedSha256: inspected.sha256, label: options.label?.trim(), installationId: job.installationId,
       onProgress: options.onProgress,
+      beforePublish: options.beforePublish,
       onCheckpoint: async (phase) => {
         if (await device(options.dataDir) !== job.storageDevice) fail('storageChanged');
         transition(job, phase); catalog = await save(options.dataDir, catalog);
