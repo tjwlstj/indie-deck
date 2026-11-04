@@ -166,7 +166,9 @@ test('unsafe asset names, credential URLs and device cache paths are rejected be
   const events: DownloadProgressEvent[] = [];
   await assert.rejects(() => downloadAsset({ type: 'url', url: 'https://user:synthetic-private@github.com/a.zip' }, { cacheDir, onDownloadEvent: (event) => events.push(event) }), /credentials/);
   assert.doesNotMatch(JSON.stringify(events), /synthetic-private/);
-  await assert.rejects(() => downloadAsset({ type: 'url', url: base + '/ok' }, { cacheDir: '\\\\?\\C:\\not-a-cache' }), /Unsafe.*cache/);
+  for (const directory of ['\\\\?\\C:\\not-a-cache', '\\\\.\\C:\\not-a-cache']) {
+    await assert.rejects(() => downloadAsset({ type: 'url', url: base + '/ok' }, { cacheDir: directory }), /Unsafe.*cache/);
+  }
   assert.equal(requests, count);
 });
 test('both declared and actual streamed byte excess leave no published or temporary asset', async () => {

@@ -215,9 +215,14 @@ export async function downloadAsset(source: AssetSource, options: DownloadOption
   const log = options.logger ?? silentLogger, assetId = sourceAssetId(source), maximum = limit(options), scope = deadline(options);
   let partial: string | undefined, received = 0, total: number | undefined, phase: DownloadProgressEvent['phase'] = 'download';
   let failureIntegrity: DownloadResult['integrity'] | undefined;
-  const cacheDir = path.resolve(options.cacheDir ?? defaultCacheDir());
+  const requestedCacheDir = options.cacheDir ?? defaultCacheDir();
+  let cacheDir = '';
   emitDownload(options, { phase, status: 'started', assetId, received: 0 });
   try {
+    // Reject Windows device namespaces before host-specific path resolution.
+    // On POSIX, resolve() would otherwise disguise one as a relative filename.
+    if (typeof requestedCacheDir !== 'string' || requestedCacheDir.includes('\0') || /^\\\\[?.]\\/.test(requestedCacheDir)) throw new Error('Unsafe download cache directory.');
+    cacheDir = path.resolve(requestedCacheDir);
     if (source.sha256 !== undefined && !/^[0-9a-f]{64}$/i.test(source.sha256)) throw new Error('Invalid pinned asset checksum.');
     const resolved = await resolveAssetUrl(source, { ...options, signal: scope.signal });
     const { url, name, size } = resolved, target = path.join(cacheDir, cacheKey(url, name));
