@@ -4,6 +4,19 @@ function object(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object');
 }
 
+/** Node's file-URL serialization percent-encodes a tilde in Windows short
+ * paths while Chromium can retain it literally. Normalize that one unreserved
+ * pathname character; do not decode separators, dots or any other component. */
+function documentKey(url: URL): string {
+  const prefix = url.href.slice(0, url.href.length - url.pathname.length);
+  return prefix + url.pathname.replace(/%7e/gi, '~');
+}
+
+function fixedFileDocument(url: URL): boolean {
+  return url.protocol === 'file:' && !url.username && !url.password &&
+    !url.href.includes('?') && !url.href.includes('#');
+}
+
 /** IPC authority belongs to this exact top-level application document. An
  * otherwise identical URL in another WebContents or subframe is insufficient. */
 export function isTrustedAppSender(event: unknown, webContents: unknown, expectedDocumentURL: string): boolean {
@@ -11,11 +24,14 @@ export function isTrustedAppSender(event: unknown, webContents: unknown, expecte
     if (!object(event) || !object(webContents) || event.sender !== webContents || typeof expectedDocumentURL !== 'string') return false;
     if (typeof webContents.isDestroyed === 'function' && webContents.isDestroyed()) return false;
     const expected = new URL(expectedDocumentURL);
-    if (expected.protocol !== 'file:' || expected.search || expected.hash || expected.username || expected.password) return false;
+    if (!fixedFileDocument(expected)) return false;
     const frame = event.senderFrame;
     if (!object(frame) || frame !== webContents.mainFrame || frame.detached === true) return false;
     if (typeof frame.isDestroyed === 'function' && frame.isDestroyed()) return false;
-    return frame.url === expected.href;
+    if (typeof frame.url !== 'string') return false;
+    const actual = new URL(frame.url);
+    if (!fixedFileDocument(actual) || actual.host !== expected.host || actual.href !== frame.url) return false;
+    return documentKey(actual) === documentKey(expected);
   } catch {
     // Electron frame access can throw during navigation or destruction.
     return false;

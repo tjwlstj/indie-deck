@@ -31,6 +31,38 @@ test('file URL lookalikes, remote frames, queries and fragments do not inherit t
   assert.equal(isTrustedAppSender(event, contents, documentURL + '#fragment'), false);
 });
 
+test('only tilde encoding in the fixed pathname is equivalent across Node and Chromium', () => {
+  const encoded = documentURL.replace('/IndieDeck/', '/DOCUME%7E1/');
+  const literal = encoded.replace('%7E', '~');
+  const lowerEncoded = encoded.replace('%7E', '%7e');
+  for (const [expected, actual] of [[encoded, literal], [literal, encoded], [encoded, lowerEncoded]]) {
+    const { contents, event } = sender(actual);
+    assert.equal(isTrustedAppSender(event, contents, expected), true);
+    assert.equal(isTrustedAppSender({ ...event, sender: { ...contents } }, contents, expected), false);
+    assert.equal(isTrustedAppSender({ ...event, senderFrame: { ...event.senderFrame } }, contents, expected), false);
+  }
+});
+
+test('tilde compatibility does not broaden fixed-document path, query or host authority', () => {
+  const expected = documentURL.replace('/IndieDeck/', '/DOCUME%7E1/');
+  const literal = expected.replace('%7E', '~');
+  for (const actual of [literal + '?', literal + '#', literal + '?query=1', literal + '#fragment',
+    literal.replace('DOCUME~1', 'DOCUME~2'), literal.replace('DOCUME~1', 'DOCUME%257E1'),
+    literal.replace('/renderer/index.html', '/renderer%2findex.html'),
+    literal.replace('/renderer/index.html', '/renderer%5cindex.html'),
+    literal.replace('/index.html', '/index%2ehtml'),
+    literal.replace('/renderer/index.html', '/renderer/../renderer/index.html'),
+    literal.replace('/renderer/index.html', '/renderer/%2e%2e/renderer/index.html'),
+    literal.replace('file:///', 'file://other-host/'),
+  ]) {
+    const { contents, event } = sender(actual);
+    assert.equal(isTrustedAppSender(event, contents, expected), false, actual);
+  }
+  const { contents, event } = sender(literal);
+  assert.equal(isTrustedAppSender(event, contents, expected + '?'), false);
+  assert.equal(isTrustedAppSender(event, contents, expected + '#'), false);
+});
+
 test('destroyed, detached and throwing Electron frame access fails closed', () => {
   const destroyed = sender(); destroyed.contents.isDestroyed = () => true;
   assert.equal(isTrustedAppSender(destroyed.event, destroyed.contents, documentURL), false);

@@ -5,7 +5,7 @@ Versioning while the project is pre-1.0.
 
 ## [Unreleased]
 
-## [0.1.10] - 2026-11-04
+## [0.1.11] - 2026-11-04
 
 ### Added
 
@@ -23,6 +23,10 @@ Versioning while the project is pre-1.0.
 
 ### Hardened
 
+- Canonical matching of the same local application document accepts Chromium's
+  literal tilde and Node's `%7E` file-URL spelling for Windows short paths while
+  retaining the exact window/frame, path, query and fragment restrictions.
+  The failed v0.1.10 validation tag was not published as a release.
 - Registered asset downloads require approved HTTPS sources and redirects,
   scoped GitHub authorization, transfer/time bounds and ordinary cache files.
 - Main validates the exact application WebContents/frame/document for IPC,
@@ -50,13 +54,14 @@ Versioning while the project is pre-1.0.
 - A real local native probe checked one unchanged 77-byte synthetic C-drive text
   file. It did not update intelligence or inspect real games, D-drive contents,
   Malware Zero databases or malware samples.
-- Korean/English full source flows, focused security checks and source history
-  regressions passed on Electron 43.8.7. Local packaged security and history
-  flows also passed with mocked engine/process actions. The package checker
-  verified 64 required entries and 73 critical runtime hashes. Full source
-  verification reported 530 tests: 528 passed, none failed and two were skipped;
-  build and registry checks passed. Exact-commit CI and public release remain
-  separate pending checkpoints.
+- Post-fix Korean/English source flows and local packaged ASAR security/history
+  checks passed on Electron 43.8.7. The package checker verified 64 required
+  entries and 73 critical runtime hashes.
+  Post-fix source verification reported 532 tests: 530 passed, none failed and
+  two skipped, plus build and registry checks. Actual portable startup passed
+  both normal and native 8.3 TEMP/TMP cases with exit zero and screenshots.
+  Exact-commit CI and public release remain separate checkpoints recorded after
+  completion in the security verification document.
 
 ## [0.1.9] - 2026-11-03
 

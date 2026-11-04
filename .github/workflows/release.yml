@@ -153,26 +153,7 @@ jobs:
           }
 
       - name: Smoke test portable executable
-        shell: pwsh
-        run: |
-          $version = node -p "require('./package.json').version"
-          if ($LASTEXITCODE -ne 0) { throw 'Could not read package version' }
-          $smokeHome = Join-Path $env:RUNNER_TEMP 'indiedeck-portable-smoke'
-          $screenshot = Join-Path $env:RUNNER_TEMP 'indiedeck-portable-smoke.png'
-          New-Item -ItemType Directory -Force -Path $smokeHome | Out-Null
-
-          $env:INDIEDECK_SMOKE = '1'
-          $env:INDIEDECK_HOME = $smokeHome
-          $env:INDIEDECK_SCREENSHOT = $screenshot
-
-          $portable = Join-Path $PWD "release\IndieDeck-Portable-$version-x64.exe"
-          $process = Start-Process -FilePath $portable -PassThru -Wait -WindowStyle Hidden
-          if ($process.ExitCode -ne 0) {
-            throw "Portable smoke test exited with $($process.ExitCode)"
-          }
-          if (-not (Test-Path -LiteralPath $screenshot)) {
-            throw 'Portable smoke test did not render a screenshot'
-          }
+        run: node scripts/check-portable-startup.mjs
 
       - name: Smoke test installer lifecycle
         shell: pwsh

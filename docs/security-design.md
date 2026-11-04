@@ -1,6 +1,6 @@
 # Launcher security and scanner integration
 
-Research checked: **2026-11-04**. Source scope: **v0.1.10 implementation** in
+Research checked: **2026-11-04**. Source scope: **v0.1.11 implementation** in
 the C-drive checkout. The initial audit baseline was v0.1.9 at
 `80241fa778652cb8615e4e068e7a7b2c8bdbf650`. Source implementation, local native
 evidence, offline flows, packaging and public release are separate checkpoints.
@@ -147,6 +147,11 @@ installation targets itself. A matching URL in another WebContents/subframe is
 insufficient to use the privileged bridge.
 [Electron IPC sender guidance](https://www.electronjs.org/docs/latest/tutorial/security#17-validate-the-sender-of-all-ipc-messages)
 
+For the same fixed pathname, file-URL matching normalizes only `%7E`/`%7e` to
+the literal unreserved tilde. This accommodates Node/Chromium serialization of
+Windows short names. It does not resolve filesystem aliases, follow links,
+decode separators/dots, accept another frame, or remove query/fragment checks.
+
 Desktop imports check the selected ZIP source and the unpublished extracted
 stage. `game-archives.ts` still performs static game detection, path/size/CRC
 checks and source revalidation. The scan callback is before publication, so an
@@ -204,21 +209,33 @@ Malware Zero database, browser profile or malware sample was scanned. The native
 probe establishes that the supported local adapter could run on that fixture;
 it does not establish live malware-detection efficacy or game execution safety.
 
-**Source UI verification — CURRENT, offline fixtures.** Final full Korean and
-English desktop flows passed on Electron 43.8.7, including the strengthened
-renderer-error check. Focused security and source history flows passed too. Local
-logs are `out/security-complete-ko.log`, `out/security-complete-en.log` and
-`out/security-focused-final.log`. The security fixtures mock engine/process
-actions; they do not run a real game, browser or intelligence update.
+**Final post-fix source UI verification — CURRENT, offline fixtures.** Full
+Korean and English v0.1.11 desktop flows passed on Electron 43.8.7, including the
+strengthened renderer-error check. Logs are `out/security-complete-ko.log` and
+`out/security-complete-en.log`. Engine/process actions are mocked; these checks
+do not establish native malware-detection efficacy or real-game execution safety.
 
-**Aggregate source suite — CURRENT.** `npm run verify` completed successfully:
-530 tests, 528 passed, none failed and two skipped, plus the TypeScript build and
-registry self-check. The local log is `out/security-final-verify.log`. The two
-skips were file-symlink cases unavailable under this host's permissions.
-Component tests and synthetic process seams cover URL/redirect/auth/cache
-failure, scanner state and limits, task ordering/cancellation, sender/link
-authority, copied-byte protection and child environments. These checks are
-distinct from native malware-detection efficacy and hosted release verification.
+**Portable short-path regression — failure reproduced, fix scoped.** A real
+portable launch with short-name TEMP/TMP reproduced a loading failure. The CDP
+record showed a literal `~` in the renderer file URL and an existing preload
+bridge; even `app.info()` was rejected by the trusted-window check. Node's fixed
+expected file URL used `%7E` for that same character. Local evidence is
+`out/portable-short-repro-58667f1343174babba90b82d9f35a81b/debug-evidence.json`.
+The failed v0.1.10 validation tag was not published as a release.
+
+The fix preserves exact WebContents/main-frame identity and the entire fixed
+document URL, with only pathname-tilde spelling normalized. Its nine targeted
+browser-boundary tests passed, including both tilde directions, foreign frames,
+other documents/hosts, encoded separators/dots, double encoding and empty
+query/fragment rejection. These tests are separate from the actual portable
+post-fix launch check.
+
+**Final post-fix aggregate verification — CURRENT.** `npm run verify` passed
+with 532 tests: 530 passed, none failed and two skipped, plus TypeScript build
+and registry self-check. The local log is `out/security-final-verify.log`. The
+two skips are file-symlink cases unavailable under this host's permissions.
+Components cover network/cache failures, scanner limits, ordering/cancellation,
+sender/link authority, copied bytes and child environments.
 
 **Runtime version — CURRENT source/package.** Electron is 43.8.7. The official
 2026-11-03 note reports a crash fix for a hidden parent window on Wayland. This
@@ -231,7 +248,8 @@ archive probe also covered leading `./` entry names and verified that an on-disk
 marker is not adopted as authority. These are separate checks from the native
 antivirus fixture, final aggregate suite, packaged decoder and public release.
 
-**Local packaged verification — CURRENT.** The Electron 43.8.7 package checker
+**Final post-fix local packaged verification — CURRENT.** The Electron 43.8.7
+v0.1.11 package checker
 verified 64 required entries and 73 SHA-256-critical runtime files. Focused
 security checks passed against the actual packaged ASAR, covering mocked
 attention/incomplete launch gates, renderer reload, cancellation, foreign IPC
@@ -240,7 +258,18 @@ regressions passed. Logs are `out/security-packaged-final.log` and
 `out/security-history-packaged.log`; the security screenshot was inspected for
 legibility. These results remain separate from the real native text-file probe.
 
+**Final portable startup verification — CURRENT, actual artifact.** The real
+v0.1.11 self-extracting portable passed both normal and native 8.3 short-name
+TEMP/TMP launches. Both runs exited zero and produced PNG screenshots; the
+short-path case was executed, not skipped. Evidence is
+`out/security-portable-final.log` and
+`out/portable-startup-0.1.11-bf84b1f5-636e-405e-a557-0c5c2cc5ce02/summary.json`,
+with `normal.png` and `short-path.png` in that directory. This directly checks
+the previously reproduced portable startup boundary. The hosted workflow now
+uses `node scripts/check-portable-startup.mjs` for the same native short-path case;
+the hosted result remains part of the separate CI checkpoint below.
+
 **Exact-commit CI and public release — PENDING.** The release pipeline is
 configured to check runtime inclusion/hashes, installer/portable lifecycle and
 published asset integrity. Those configured steps are not proof that this source
-commit has passed hosted CI or that v0.1.10 is already publicly released.
+commit has passed hosted CI or that v0.1.11 is already publicly released.

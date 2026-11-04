@@ -76,7 +76,7 @@ history is preserved and blocks history writes rather than blocking game
 maintenance. A failed history save leaves a labelled session-only report. See
 [saved record scope](docs/config-manager.md#saved-comparison-records-v019-source).
 
-**Security checks (v0.1.10 source).** Windows desktop installation and launch
+**Security checks (v0.1.11 source).** Windows desktop installation and launch
 actions use a separate Microsoft Defender process. Translator/font downloads
 are checked before use; game ZIP imports check both the source archive and the
 unpublished extracted stage. Each game launch checks its executable, and MTool
@@ -108,13 +108,16 @@ does not gain a new antivirus gate. OS-wide firewalls, a game-execution sandbox
 and guaranteed malware detection are outside this change. See
 [security scope, sources and verification](docs/security-design.md).
 
-The final Korean/English source flows, focused security flow and comparison-
-history regressions passed on Electron 43.8.7. The local packaged ASAR also passed
-the focused security and history checks, with mocked engine/process actions.
-The real native-engine evidence is a separate unchanged 77-byte text fixture;
-full source verification reported 530 tests: 528 passed, none failed and two were
-skipped. Build and registry checks passed. Exact-commit CI and public release
-evidence are separate checkpoints in the security document.
+Post-fix Korean/English source flows and local packaged ASAR security/history
+checks passed on Electron 43.8.7. The IPC check accepts only the same pathname's
+literal `~` and `%7E` spelling while preserving exact window/frame/document
+authority. Source verification reported 532 tests: 530 passed, none failed and
+two skipped, plus build and registry checks. The actual portable artifact also
+passed normal and native 8.3 TEMP/TMP startup checks with exit zero and screenshots.
+Exact-commit CI and public release remain separate checkpoints in
+[the verification record](docs/security-design.md#verification-checkpoints).
+The real native-engine evidence remains a separate unchanged 77-byte text
+fixture; it does not establish game safety or public release completion.
 
 ![The translation settings panel](docs/media/config.png)
 
