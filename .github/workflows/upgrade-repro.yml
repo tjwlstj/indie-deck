@@ -29,4 +29,5 @@ jobs:
       - name: Verify isolated v0.1.11 to v0.1.14 update download
         env:
           INDIEDECK_LIVE_REPRO_CI: '1'
+          INDIEDECK_GITHUB_API_TOKEN: ${{ github.token }}
         run: node scripts/check-live-upgrade.mjs

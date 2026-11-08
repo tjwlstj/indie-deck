@@ -7,6 +7,7 @@ import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { pathToFileURL } from 'node:url';
 
 // This is a manual, disposable-hosted-runner diagnostic. It intentionally
 // never calls updates.install(), launches a game or changes the update feed.
@@ -37,15 +38,40 @@ function requireRunner() {
   }
 }
 
-async function response(url, accept = 'application/octet-stream', timeout = 30000) {
+export async function response(url, accept = 'application/octet-stream', timeout = 30000) {
   const result = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(timeout),
     headers: { 'User-Agent': 'IndieDeck-upgrade-check', Accept: accept } });
   return result;
 }
 
+/** The diagnostic token is used only for this literal API URL. Manual redirect
+ * handling prevents forwarding it to a different origin or a signed CDN URL. */
+export async function latestResponse() {
+  const token = process.env.INDIEDECK_GITHUB_API_TOKEN;
+  if (typeof token !== 'string' || token.length < 1 || token.length > 4096 || /[\u0000-\u0020\u007f]/.test(token)) fail('api-token-unavailable');
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    let result;
+    try {
+      result = await fetch(API_LATEST, { redirect: 'manual', signal: AbortSignal.timeout(30000),
+        headers: { 'User-Agent': 'IndieDeck-upgrade-check', Accept: 'application/vnd.github+json', Authorization: `Bearer ${token}` } });
+    } catch {
+      if (attempt === 2) fail('latest-metadata-transport');
+      await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+      continue;
+    }
+    if (result.status === 200) return result;
+    console.error(`[live-upgrade] latest HTTP status=${result.status}`);
+    void result.body?.cancel().catch(() => {});
+    if (attempt === 2 || ![403, 429, 500, 502, 503, 504].includes(result.status)) fail('latest-metadata-unavailable');
+    const retryAfter = result.headers.get('retry-after');
+    const seconds = /^\d{1,3}$/.test(retryAfter ?? '') ? Math.min(5, Math.max(1, Number(retryAfter))) : attempt + 1;
+    await new Promise(resolve => setTimeout(resolve, seconds * 1000));
+  }
+  fail('latest-metadata-unavailable');
+}
+
 async function getLatest() {
-  const result = await response(API_LATEST, 'application/vnd.github+json');
-  if (result.status !== 200) fail('latest-metadata-unavailable');
+  const result = await latestResponse();
   const length = Number(result.headers.get('content-length') || 0);
   if (length > 2 * 1024 * 1024) fail('latest-metadata-invalid');
   if (!result.body) fail('latest-metadata-invalid');
@@ -89,7 +115,7 @@ async function downloadOld(destination) {
   if (diskHash.digest('hex') !== EXPECTED_INSTALLER_SHA256) fail('old-installer-integrity');
 }
 
-function cleanEnvironment(base) {
+export function cleanEnvironment(base) {
   const env = { ...process.env };
   for (const key of Object.keys(env)) if (/^(INDIEDECK_|ELECTRON_|NODE_OPTIONS$|GH_TOKEN$|GITHUB_TOKEN$|PORTABLE_)/i.test(key)) delete env[key];
   Object.assign(env, { APPDATA: path.join(base, 'appdata'), LOCALAPPDATA: path.join(base, 'localappdata'),
@@ -188,6 +214,7 @@ async function verifyDownloadedTarget(localAppData) {
   if (hash.digest('hex') !== EXPECTED_TARGET_SHA256) fail('download-cache-integrity');
 }
 
+async function main() {
 try {
   requireRunner();
   phase = 'latest-check'; await getLatest();
@@ -220,7 +247,7 @@ try {
   phase = 'download-verification'; await verifyDownloadedTarget(env.LOCALAPPDATA);
   console.log(`[live-upgrade] PASS: installed ${OLD_VERSION}; official latest ${TARGET_VERSION}; update check and verified download completed; no upgrade installation requested.`);
 } catch (error) {
-  const known = new Set(['runner-guard', 'latest-metadata-unavailable', 'latest-metadata-invalid', 'latest-not-target',
+  const known = new Set(['runner-guard', 'api-token-unavailable', 'latest-metadata-transport', 'latest-metadata-unavailable', 'latest-metadata-invalid', 'latest-not-target',
     'old-installer-unavailable', 'old-installer-redirect', 'old-installer-integrity', 'old-installer-failed',
     'old-install-missing', 'old-feed-invalid', 'app-exited', 'debug-endpoint-invalid', 'app-start-timeout',
     'debug-timeout', 'debug-connect', 'debug-evaluation', 'old-app-mode-invalid', 'download-cache-invalid', 'download-cache-integrity']);
@@ -236,3 +263,6 @@ try {
     await fsp.rm(fixture, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 }).catch(() => {});
   }
 }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) await main();
