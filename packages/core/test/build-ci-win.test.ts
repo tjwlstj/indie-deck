@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import { makeBuilderOptions, sanitizedBuilderEnvironment } from '../../../scripts/build-ci-win.mjs';
 
@@ -40,6 +42,29 @@ test('unsafe TLS and inherited Electron download mirrors cannot affect the CI ch
     ELECTRON_MIRROR: 'https://not-used.invalid', npm_config_electron_customdir: 'other',
     NPM_CONFIG_ELECTRON_BUILDER_BINARIES_MIRROR: 'https://not-used.invalid', ELECTRON_BUILDER_BINARIES_ALLOW_HTTP: 'true' });
   assert.deepEqual(safe, { PATH: 'preserve', GITHUB_ACTIONS: 'true' });
+});
+
+test('failed CI packaging stays nonzero even when an earlier exit handler resets the code', () => {
+  const scriptUrl = new URL('../../../scripts/build-ci-win.mjs', import.meta.url).href;
+  const source = `import { reportBuildFailure } from ${JSON.stringify(scriptUrl)};
+    process.on('exit', () => { process.exitCode = 0; });
+    reportBuildFailure(new Error('synthetic packaging failure'));`;
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', source], { encoding: 'utf8', windowsHide: true });
+  assert.equal(result.error, undefined);
+  assert.equal(result.signal, null);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /\[ci-build\] synthetic packaging failure/);
+});
+
+test('CI builder entry point exits nonzero when the environment guard rejects', () => {
+  const script = fileURLToPath(new URL('../../../scripts/build-ci-win.mjs', import.meta.url));
+  const result = spawnSync(process.execPath, [script], {
+    encoding: 'utf8', windowsHide: true, env: { ...process.env, GITHUB_ACTIONS: '' },
+  });
+  assert.equal(result.error, undefined);
+  assert.equal(result.signal, null);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /\[ci-build\] Windows release wrapper is restricted/);
 });
 
 test('real builder configuration preserves YAML and accepts the checksum option', async () => {

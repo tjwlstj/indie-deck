@@ -56,6 +56,14 @@ async function main() {
   await build(options);
 }
 
+/** Match electron-builder's CLI failure handling: other exit listeners can
+ * reset exitCode during shutdown, so retain the failed outcome on exit too. */
+export function reportBuildFailure(error) {
+  console.error(`[ci-build] ${error instanceof Error ? error.message : String(error)}`);
+  process.exitCode = 1;
+  process.on('exit', () => { process.exitCode = 1; });
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  main().catch((error) => { console.error(`[ci-build] ${error.message}`); process.exitCode = 1; });
+  main().catch(reportBuildFailure);
 }
