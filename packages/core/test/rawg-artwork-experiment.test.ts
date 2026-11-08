@@ -53,6 +53,13 @@ test('RAWG candidates cannot introduce arbitrary or disguised image URLs', async
   assert.equal(await instance.select('1'), null);
 });
 
+test('a server response cannot reflect the key into public candidate names', async () => {
+  const instance = createRawgArtworkExperiment(fakeKey, { fetch: transport(() => new Response(JSON.stringify({
+    results: [{ id: 1, name: `unsafe ${fakeKey}`, background_image: image }],
+  }))) });
+  assert.deepEqual(await instance.search('Test'), []);
+});
+
 test('network, JSON, and size failures never expose the API key or request URL', async () => {
   for (const fetchMock of [
     transport((url) => { throw new Error(`private request ${url}`); }),

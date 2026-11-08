@@ -77,8 +77,8 @@ export function createRawgArtworkExperiment(key: unknown, options: RawgExperimen
           const { id: rawId, name, background_image: rawImage } = item as { id?: unknown; name?: unknown; background_image?: unknown };
           const id = typeof rawId === 'number' && Number.isSafeInteger(rawId) ? String(rawId) : typeof rawId === 'string' ? rawId : '';
           const image = imageUrl(rawImage);
-          if (!/^[1-9]\d{0,15}$/.test(id) || typeof name !== 'string' || !name.trim() || name.length > 200 ||
-              /[\u0000-\u001f\u007f]/u.test(name) || !image || found.has(id)) continue;
+          if (!/^[1-9]\d{0,15}$/.test(id) || id.includes(key) || typeof name !== 'string' || !name.trim() || name.length > 200 ||
+              /[\u0000-\u001f\u007f]/u.test(name) || name.includes(key) || !image || found.has(id)) continue;
           found.set(id, { name: name.trim(), image });
           if (found.size === 10) break;
         }
