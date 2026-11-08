@@ -78,10 +78,16 @@ function infoVersion(info: unknown): unknown { return object(info)?.['version'];
 /** Categorise privately. Arbitrary updater exception text is never forwarded to the renderer. */
 function safeError(error: unknown): { errorKey: string; error: string } {
   const text = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  // Signed release-asset URLs contain query names such as X-Amz-Signature.
+  // They describe transport credentials, not updater verification evidence.
+  // Keep the original text for network classification, but exclude complete
+  // URLs before looking for integrity terms so a failed CDN request is not
+  // mislabeled as a signature-verification failure.
+  const verificationText = text.replace(/https?:\/\/\S+/gi, ' ');
   const explicit = text.startsWith(ERROR_PREFIX) ? text.slice(ERROR_PREFIX.length) : undefined;
   const reason = explicit && ['check', 'download', 'install', 'unavailable', 'busy', 'disposed', 'reservation', 'invalidVersion', 'network', 'integrity', 'permission', 'cancelled', 'downloadIncomplete', 'generic'].includes(explicit)
     ? explicit
-    : /sha512|checksum|signature|certificate|integrity/i.test(text) ? 'integrity'
+    : /sha512|checksum|signature|certificate|integrity/i.test(verificationText) ? 'integrity'
       : /eacces|eperm|permission|access denied/i.test(text) ? 'permission'
         : /cancel|abort/i.test(text) ? 'cancelled'
           : /network|enotfound|econn|timed? ?out|http|fetch|socket/i.test(text) ? 'network' : 'generic';

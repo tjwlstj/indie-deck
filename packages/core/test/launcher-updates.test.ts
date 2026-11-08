@@ -218,6 +218,33 @@ test('native download error events are consumed and cannot silently become a suc
   assert.ok(!JSON.stringify(updates.snapshot()).includes('key=secret'));
 });
 
+test('signed release-asset URLs classify transport failures as network errors without weakening integrity failures', async () => {
+  const signedUrl = 'https://release-assets.githubusercontent.com/private/update.exe?X-Amz-Credential=private&X-Amz-Signature=secret';
+  const network = controller();
+  await network.updates.check();
+  network.updater.downloadImpl = async () => {
+    throw new Error(`Cannot download ${signedUrl}: status 403`);
+  };
+  await assert.rejects(network.updates.download(), /ui\.update\.error\.network/);
+  assert.equal(network.updates.snapshot().errorKey, 'ui.update.error.network');
+  assert.equal(network.updates.snapshot().downloadedVersion, undefined);
+  assert.throws(() => network.updates.install(), /ui\.update\.error\.unavailable/);
+  assert.ok(!JSON.stringify(network.updates.snapshot()).includes('X-Amz'));
+  assert.ok(!JSON.stringify(network.updates.snapshot()).includes('secret'));
+
+  const integrity = controller();
+  await integrity.updates.check();
+  integrity.updater.downloadImpl = async () => {
+    throw new Error(`Signature verification failed for ${signedUrl}`);
+  };
+  await assert.rejects(integrity.updates.download(), /ui\.update\.error\.integrity/);
+  assert.equal(integrity.updates.snapshot().errorKey, 'ui.update.error.integrity');
+  assert.equal(integrity.updates.snapshot().downloadedVersion, undefined);
+  assert.throws(() => integrity.updates.install(), /ui\.update\.error\.unavailable/);
+  assert.ok(!JSON.stringify(integrity.updates.snapshot()).includes('X-Amz'));
+  assert.ok(!JSON.stringify(integrity.updates.snapshot()).includes('secret'));
+});
+
 test('busy game mutations and unsafe OS shutdown prevent restart without consuming the downloaded update', async () => {
   let busy = true, safe = true, reservations = 0;
   const { updater, updates } = controller(undefined, { isBusy: () => busy, isShutdownSafe: () => safe, reserveInstall: () => { reservations += 1; return true; } });
