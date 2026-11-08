@@ -110,7 +110,7 @@ jobs:
         run: npm run release:check -- "$env:GITHUB_REF_NAME"
 
       - name: Dependency audit
-        run: npm audit --audit-level=high
+        run: npm audit --audit-level=moderate
 
       # dist:win runs the TypeScript build, tests and registry self-check before
       # electron-builder is allowed to create either Windows distribution.

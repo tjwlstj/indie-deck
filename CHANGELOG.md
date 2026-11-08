@@ -5,6 +5,16 @@ Versioning while the project is pre-1.0.
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-11-08
+
+### Security
+
+- Override vulnerable build-time minimatch versions with 11.0.5 while leaving
+  unaffected older dependency branches unchanged. CI and release checks now
+  reject moderate-or-higher dependency advisories.
+- The override crosses upstream major-version ranges. Windows distribution and
+  file-filter behavior are checked; macOS universal packaging is not verified.
+
 ## [0.1.11] - 2026-11-04
 
 ### Added
