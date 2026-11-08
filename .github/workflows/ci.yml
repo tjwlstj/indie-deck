@@ -22,6 +22,8 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - run: npm ci
+      - name: Ensure pinned Electron binary
+        run: node scripts/ensure-electron.mjs
       - name: Audit development and runtime dependencies
         if: matrix.os == 'ubuntu-latest' && matrix.node == '24.x'
         run: npm audit --audit-level=moderate

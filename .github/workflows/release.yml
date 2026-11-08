@@ -55,6 +55,8 @@ jobs:
           cache: npm
 
       - run: npm ci
+      - name: Ensure pinned Electron binary
+        run: node scripts/ensure-electron.mjs
       - name: Verify tag and package versions
         run: npm run release:check
       - run: npm run verify
@@ -105,6 +107,9 @@ jobs:
           cache: npm
 
       - run: npm ci
+
+      - name: Ensure pinned Electron binary
+        run: node scripts/ensure-electron.mjs
 
       - name: Verify tag and package versions
         run: npm run release:check -- "$env:GITHUB_REF_NAME"
