@@ -5,7 +5,7 @@ Versioning while the project is pre-1.0.
 
 ## [Unreleased]
 
-## [0.1.13] - 2026-11-08
+## [0.1.14] - 2026-11-08
 
 ### Added
 
@@ -14,6 +14,8 @@ Versioning while the project is pre-1.0.
   MTool security checks continue to apply.
 - Browser companion installation guidance, GOG cover search and bounded launch
   diagnostics for processes started by the launcher.
+- The unpublished v0.1.13 validation tag is superseded after an upstream
+  artifact download failed during release packaging.
 
 ## [0.1.12] - 2026-11-08
 

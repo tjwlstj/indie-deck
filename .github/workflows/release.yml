@@ -117,10 +117,15 @@ jobs:
       - name: Dependency audit
         run: npm audit --audit-level=moderate
 
-      # dist:win runs the TypeScript build, tests and registry self-check before
-      # electron-builder is allowed to create either Windows distribution.
+      # Verify first, then build with the installed Electron package's pinned
+      # checksums so packaging retains validation without a second checksum fetch.
       - name: Verify and package Windows distributions
-        run: npm run dist:win
+        shell: pwsh
+        run: |
+          npm run verify
+          if ($LASTEXITCODE -ne 0) { throw 'Source verification failed' }
+          node scripts/build-ci-win.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Windows packaging failed' }
 
       - name: Offline Korean and English desktop flows
         run: npm run desktop:flow
