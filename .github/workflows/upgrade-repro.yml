@@ -1,0 +1,32 @@
+name: Isolated live updater reproduction
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/upgrade-repro.yml'
+      - 'scripts/check-live-upgrade.mjs'
+
+permissions:
+  contents: read
+
+jobs:
+  upgrade-download:
+    if: >-
+      github.repository == 'tjwlstj/indie-deck' &&
+      (github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.head.ref == 'codex/update-error-classification' &&
+       github.event.pull_request.base.ref == 'main'))
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24.x'
+      - name: Verify isolated v0.1.11 to v0.1.14 update download
+        env:
+          INDIEDECK_LIVE_REPRO_CI: '1'
+        run: node scripts/check-live-upgrade.mjs
