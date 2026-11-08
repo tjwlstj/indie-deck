@@ -1,5 +1,5 @@
 import { el } from './dom.js';
-import { t } from './i18n.js';
+import { currentLocale, t } from './i18n.js';
 import { api } from './store.js';
 import { createThumbnailLoader, normaliseThumbnail } from './thumbnail-model.js';
 
@@ -13,7 +13,9 @@ function paint(node, thumbnail) {
   if (thumbnail) picture.src = thumbnail.dataUrl;
   else picture.removeAttribute('src');
   if (attribution) attribution.textContent = thumbnail
-    ? thumbnail.source === 'steam' ? t('ui.thumbnail.steam', undefined, 'Steam official image') : t('ui.thumbnail.local', undefined, 'Game folder image')
+    ? thumbnail.source === 'steam' ? t('ui.thumbnail.steam', undefined, 'Steam official image')
+      : thumbnail.source === 'gog' ? t('ui.thumbnail.gog', undefined, currentLocale().startsWith('ko') ? 'GOG 이미지' : 'GOG image')
+        : t('ui.thumbnail.local', undefined, 'Game folder image')
     : t('ui.thumbnail.missing', undefined, 'No image');
 }
 

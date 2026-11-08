@@ -1,5 +1,5 @@
 import { $, el, setStatus } from '../dom.js';
-import { t } from '../i18n.js';
+import { currentLocale, t } from '../i18n.js';
 import { api, emit, mutationBlocked, state } from '../store.js';
 import {
   acceptStoreConnectionsRead, applyStoreConnectionsMutation, beginStoreConnectionsRead,
@@ -197,6 +197,33 @@ export function renderStoreSettings() {
   const steps = el('ol', 'store-steps');
   for (const key of ['extensionStep', 'exportStep', 'importStep']) steps.append(el('li', null, t(`ui.stores.${key}`)));
   companion.append(steps);
+  // The exporter opens the version directory, which is not itself an
+  // extension: each browser must select the correct child explicitly.
+  const korean = currentLocale().toLowerCase().startsWith('ko');
+  const guide = el('details', 'store-extension-guide');
+  guide.open = true;
+  guide.append(el('summary', null, t('ui.stores.installGuideTitle', undefined,
+    korean ? '브라우저별 설치 방법' : 'Installation by browser')));
+  const instructions = el('ul', 'store-steps');
+  const guideRows = [
+    ['chrome', korean
+      ? 'Chrome: chrome://extensions → 개발자 모드 → 압축해제된 확장 프로그램 로드 → 열린 폴더 안의 chromium 폴더 선택.'
+      : 'Chrome: chrome://extensions → Developer mode → Load unpacked → choose the chromium folder inside the opened folder.'],
+    ['edge', korean
+      ? 'Edge: edge://extensions → 개발자 모드 → 압축 풀린 항목 로드 → 열린 폴더 안의 chromium 폴더 선택.'
+      : 'Edge: edge://extensions → Developer mode → Load unpacked → choose the chromium folder inside the opened folder.'],
+    ['whale', korean
+      ? 'Whale: whale://extensions → 개발자 모드 → 압축해제된 확장앱 로드 → 열린 폴더 안의 chromium 폴더 선택.'
+      : 'Whale: whale://extensions → Developer mode → load the unpacked extension → choose the chromium folder inside the opened folder.'],
+    ['firefox', korean
+      ? 'Firefox 140 이상: about:debugging → 이 Firefox → 임시 부가 기능 로드 → 열린 폴더 안의 firefox/manifest.json 선택. 브라우저를 다시 시작하면 다시 불러와야 해요.'
+      : 'Firefox 140 or newer: about:debugging → This Firefox → Load Temporary Add-on → select firefox/manifest.json inside the opened folder. Reload it after restarting Firefox.'],
+  ];
+  for (const [browser, fallback] of guideRows) {
+    instructions.append(el('li', null, t(`ui.stores.installGuide.${browser}`, undefined, fallback)));
+  }
+  guide.append(instructions);
+  companion.append(guide);
   const companionActions = el('div', 'store-actions');
   const openCompanion = el('button', 'ghost store-companion-open', t('ui.stores.openCompanion'));
   openCompanion.disabled = mutationBlocked();

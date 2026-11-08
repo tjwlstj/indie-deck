@@ -190,6 +190,34 @@
         "depth": "Choose an integer scan depth from 0 to 12."
       }
     },
+    "diagnostics": {
+      "title": "Game launch diagnostics",
+      "intro": "Observes games started by this launcher in the current session. Exit codes alone do not establish a crash or cause.",
+      "noRecord": "No launch problem recorded for the latest launch in this session.",
+      "spawnFailed": "The game process could not start.",
+      "spawnAdvice": "Check the executable, permissions and the official launcher; review quarantine in Windows Security.",
+      "nonzero": "The launched process exited with code {code}.",
+      "nonzeroAdvice": "Check the game’s own logs and run its official integrity check or repair tool.",
+      "noExe": "No executable was identified.",
+      "noExeAdvice": "Check the registered folder and the official launcher."
+    },
+    "library": {
+      "sort": "Sort",
+      "nameAsc": "Name A–Z",
+      "nameDesc": "Name Z–A",
+      "engine": "Engine",
+      "translated": "Translator installed first",
+      "favoritesFirst": "Favorites first",
+      "duplicatesFirst": "Same-name candidates first",
+      "favoritesOnly": "Favorites only",
+      "duplicatesOnly": "Same-name candidates",
+      "favoriteAdd": "Add to favorites",
+      "favoriteRemove": "Remove from favorites",
+      "duplicateCount": "Same-name candidates: {count}",
+      "duplicateHint": "Names match; these may be different games or versions. No files are changed.",
+      "preferencesUnavailable": "Could not load or save library preferences. Existing data was kept.",
+      "noMatches": "No games match these filters."
+    },
     "app": {
       "search": "Search games…",
       "to": "to",
@@ -645,6 +673,10 @@
     },
     "security": {
       "title": "Security checks",
+      "launchScanLabel": "Scan before launching games",
+      "launchScanEnabled": "Games are scanned before launch.",
+      "launchScanDisabled": "Launch scanning is off. Installation checks and manual scans remain active.",
+      "launchScanSaveFailed": "Could not save the setting.",
       "provider": "Microsoft Defender",
       "busy": "Wait for the active security task to finish.",
       "refresh": "Refresh engine status",

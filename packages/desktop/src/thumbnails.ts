@@ -2,8 +2,9 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 
-export interface Thumbnail { source: 'local' | 'steam'; dataUrl: string; steamAppId?: string }
+export interface Thumbnail { source: 'local' | 'steam' | 'gog'; dataUrl: string; steamAppId?: string; gogProductId?: string }
 export interface SteamCoverCandidate { appId: string; name: string }
+export interface GogCoverCandidate { id: string; name: string; imageHash: string }
 export interface ThumbnailOptions { fetch?: typeof fetch }
 
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
@@ -11,7 +12,9 @@ const MAX_JSON_BYTES = 512 * 1024;
 const MAX_PIXELS = 24_000_000;
 const LOCAL_NAMES = ['cover.png', 'cover.jpg', 'cover.jpeg', 'cover.webp', 'folder.png', 'folder.jpg',
   'poster.png', 'poster.jpg', 'thumbnail.png', 'thumbnail.jpg'];
-const steamCache = new Map<string, Thumbnail>();
+// The two providers share one cap, so expanding the source list does not
+// multiply the amount of image data retained while a game is running.
+const imageCache = new Map<string, Thumbnail>();
 const manifestsCache = new Map<string, { expires: number; result: Promise<Map<string, string | null>> }>();
 let activeRequests = 0;
 const queue: (() => void)[] = [];
@@ -63,10 +66,12 @@ export function imageMime(bytes: Buffer): string | null {
   return mime && width > 0 && height > 0 && width <= 8192 && height <= 8192 && width * height <= MAX_PIXELS ? mime : null;
 }
 
-function thumbnail(bytes: Buffer, source: 'local' | 'steam', appId?: string): Thumbnail | null {
+function thumbnail(bytes: Buffer, source: 'local' | 'steam' | 'gog', appId?: string): Thumbnail | null {
   const mime = imageMime(bytes);
   if (!mime) return null;
-  return { source, dataUrl: `data:${mime};base64,${bytes.toString('base64')}`, ...(appId ? { steamAppId: appId } : {}) };
+  return { source, dataUrl: `data:${mime};base64,${bytes.toString('base64')}`,
+    ...(appId && source === 'steam' ? { steamAppId: appId } : {}),
+    ...(appId && source === 'gog' ? { gogProductId: appId } : {}) };
 }
 
 /** Refuse symlinks in both the game directory and its ancestor chain. */
@@ -168,14 +173,14 @@ async function download(url: string, max: number, request: typeof fetch): Promis
 
 export async function fetchSteamCover(appId: string, options: ThumbnailOptions = {}): Promise<Thumbnail | null> {
   if (typeof appId !== 'string' || !validAppId(appId)) return null;
-  const cached = !options.fetch && steamCache.get(appId);
+  const cached = !options.fetch && imageCache.get(appId);
   if (cached) return cached;
   return limited(async () => {
     const bytes = await download(`https://cdn.cloudflare.steamstatic.com/steam/apps/${appId}/header.jpg`, MAX_IMAGE_BYTES, options.fetch ?? fetch);
     const result = bytes && thumbnail(bytes, 'steam', appId);
     if (result && !options.fetch) {
-      while (steamCache.size >= 24) steamCache.delete(steamCache.keys().next().value!);
-      steamCache.set(appId, result);
+      while (imageCache.size >= 24) imageCache.delete(imageCache.keys().next().value!);
+      imageCache.set(appId, result);
     }
     return result;
   });
@@ -201,6 +206,52 @@ export async function searchSteamCovers(query: string, options: ThumbnailOptions
       }
       return found;
     } catch { throw new Error('Steam search returned an invalid response.'); }
+  });
+}
+
+/** GOG's catalog endpoint is public but not a documented stability contract.
+ * Call only in response to a user search; never return arbitrary remote URLs. */
+export async function searchGogCovers(query: string, options: ThumbnailOptions = {}): Promise<GogCoverCandidate[]> {
+  if (typeof query !== 'string' || query.trim().length < 2 || query.length > 120 || /[\u0000-\u001f\u007f]/u.test(query)) return [];
+  return limited(async () => {
+    const params = new URLSearchParams({ limit: '10', query: `like:${query.trim()}`, productType: 'in:game' });
+    const bytes = await download(`https://catalog.gog.com/v1/catalog?${params}`, MAX_JSON_BYTES, options.fetch ?? fetch);
+    if (!bytes) throw new Error('GOG search unavailable.');
+    try {
+      const parsed: unknown = JSON.parse(bytes.toString('utf8'));
+      if (!parsed || typeof parsed !== 'object' || !Array.isArray((parsed as { products?: unknown }).products)) throw new Error('Invalid GOG catalog response.');
+      const found: GogCoverCandidate[] = [], seen = new Set<string>();
+      for (const item of (parsed as { products: unknown[] }).products.slice(0, 30)) {
+        if (!item || typeof item !== 'object') continue;
+        const { id: rawId, title: name, coverVertical } = item as { id?: unknown; title?: unknown; coverVertical?: unknown };
+        const id = typeof rawId === 'number' && Number.isSafeInteger(rawId) ? String(rawId) : typeof rawId === 'string' ? rawId : '';
+        const hash = typeof coverVertical === 'string' ? /^https:\/\/images\.gog-statics\.com\/([0-9a-f]{64})\.jpg$/.exec(coverVertical)?.[1] : undefined;
+        if (!/^[1-9]\d{0,19}$/.test(id) || typeof name !== 'string' || !name.trim() || name.length > 200 ||
+          /[\u0000-\u001f\u007f]/u.test(name) || !hash || seen.has(id)) continue;
+        found.push({ id, name, imageHash: hash }); seen.add(id);
+        if (found.length === 10) break;
+      }
+      return found;
+    } catch { throw new Error('GOG search returned an invalid response.'); }
+  });
+}
+
+/** Only an identifier validated from an explicit catalog search is used by the
+ * main process; image hosts and paths are never supplied by the renderer. */
+export async function fetchGogCover(imageHash: string, productId: string, options: ThumbnailOptions = {}): Promise<Thumbnail | null> {
+  if (typeof imageHash !== 'string' || !/^[0-9a-f]{64}$/.test(imageHash) ||
+      typeof productId !== 'string' || !/^[1-9]\d{0,19}$/.test(productId)) return null;
+  const key = `gog:${productId}:${imageHash}`;
+  const cached = !options.fetch && imageCache.get(key);
+  if (cached) return cached;
+  return limited(async () => {
+    const bytes = await download(`https://images.gog-statics.com/${imageHash}.jpg`, MAX_IMAGE_BYTES, options.fetch ?? fetch);
+    const result = bytes && thumbnail(bytes, 'gog', productId);
+    if (result && !options.fetch) {
+      while (imageCache.size >= 24) imageCache.delete(imageCache.keys().next().value!);
+      imageCache.set(key, result);
+    }
+    return result;
   });
 }
 

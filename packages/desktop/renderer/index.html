@@ -75,6 +75,18 @@
       <section class="list">
         <div class="list-toolbar">
           <button id="importArchive" class="ghost" data-i18n="ui.archive.toolbar">Import game archive</button>
+          <label for="librarySort" data-i18n="ui.library.sort">Sort</label>
+          <select id="librarySort">
+            <option value="name-asc" data-i18n="ui.library.nameAsc">Name A–Z</option>
+            <option value="name-desc" data-i18n="ui.library.nameDesc">Name Z–A</option>
+            <option value="engine" data-i18n="ui.library.engine">Engine</option>
+            <option value="translated" data-i18n="ui.library.translated">Translator installed first</option>
+            <option value="favorites" data-i18n="ui.library.favoritesFirst">Favorites first</option>
+            <option value="duplicates" data-i18n="ui.library.duplicatesFirst">Same-name candidates first</option>
+          </select>
+          <button id="libraryFavoritesOnly" class="ghost" aria-pressed="false" data-i18n="ui.library.favoritesOnly">Favorites only</button>
+          <button id="libraryDuplicatesOnly" class="ghost" aria-pressed="false" data-i18n="ui.library.duplicatesOnly">Same-name candidates</button>
+          <span id="libraryPreferencesStatus" class="library-preferences-status" role="status"></span>
         </div>
         <div id="gameList" class="game-list"></div>
       </section>

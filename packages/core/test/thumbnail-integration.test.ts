@@ -60,6 +60,23 @@ test('invalid opaque ids and injected app IDs cannot create thumbnail preference
   await assert.rejects(fsp.stat(dataDir), { code: 'ENOENT' });
 });
 
+test('GOG selection preserves legacy Steam entries and remains scoped after restart and replacement', async () => {
+  const dataDir = path.join(fixture, 'providers'); await fsp.mkdir(dataDir);
+  const file = path.join(dataDir, 'thumbnail-preferences.json');
+  const hash = 'a'.repeat(64), gog = `gog:1234567890:${hash}`;
+  await fsp.writeFile(file, JSON.stringify({ [first]: '440', [second]: '570' }));
+  assert.equal((await readThumbnailPreferences(dataDir)).get(first), '440');
+  await saveThumbnailPreference(dataDir, first, gog);
+  assert.deepEqual([...await readThumbnailPreferences(dataDir)], [[first, gog], [second, '570']]);
+  const stored = await fsp.readFile(file, 'utf8');
+  for (const bad of [`gog:1:https://evil.test/${hash}`, `gog:../1:${hash}`, `gog:1:${hash}?x`, `gog:1:${hash.toUpperCase()}`]) {
+    await assert.rejects(saveThumbnailPreference(dataDir, first, bad), /Invalid thumbnail selection/);
+  }
+  assert.equal(await fsp.readFile(file, 'utf8'), stored);
+  await saveThumbnailPreference(dataDir, first, '440');
+  assert.deepEqual([...await readThumbnailPreferences(dataDir)], [[first, '440'], [second, '570']]);
+});
+
 test('offline store fallback leaves game files untouched after a saved preference exists', async () => {
   const gameDir = path.join(fixture, 'offline-game'), dataDir = path.join(fixture, 'offline-data');
   await fsp.mkdir(gameDir); await fsp.writeFile(path.join(gameDir, 'steam_appid.txt'), '440');

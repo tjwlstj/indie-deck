@@ -14,11 +14,13 @@ import { hasMToolIntegration } from '../mtool-model.js';
 import { renderComparisonHistory, renderTranslatorMaintenance } from './maintenance.js';
 import { hasTranslatorMaintenance } from '../maintenance-model.js';
 import { renderGameSecurity } from './security.js';
+import { renderDiagnostics } from './diagnostics.js';
 
 export const SECTIONS = [
   { id: 'header', render: renderHeader },
   { id: 'facts', render: renderFacts },
   { id: 'security', render: renderGameSecurity },
+  { id: 'diagnostics', render: renderDiagnostics },
   {
     id: 'config',
     render: renderConfigSection,

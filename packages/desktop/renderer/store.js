@@ -12,6 +12,7 @@ import { isOperationActive, mergeLibraryPayload } from './state-model.js';
 import { isArchiveActive } from './archive-model.js';
 import { launcherUpdateInstallPending } from './update-model.js';
 import { isScanActive } from './scan-model.js';
+import { duplicateNameCounts, sortedLibraryGames } from './library-preferences.js';
 
 export const api = window.indiedeck;
 
@@ -57,6 +58,9 @@ export const state = {
   registry: null,
   engineFilter: 'all',
   statusFilter: 'all',
+  libraryPreferences: { sort: 'name-asc', favoritesOnly: false, duplicatesOnly: false, favorites: [] },
+  libraryPreferencesLoaded: false,
+  libraryPreferencesError: false,
   query: '',
   selected: null,
   detail: null,
@@ -87,8 +91,13 @@ export function emit(scope = 'all') {
 
 export function visibleGames() {
   const query = state.query.trim().toLowerCase();
-  return state.games.filter((game) => {
+  const preferences = state.libraryPreferences;
+  const favorites = new Set(preferences.favorites);
+  const duplicates = duplicateNameCounts(state.games);
+  const games = state.games.filter((game) => {
     if (state.engineFilter !== 'all' && game.engineId !== state.engineFilter) return false;
+    if (preferences.favoritesOnly && !favorites.has(game.id)) return false;
+    if (preferences.duplicatesOnly && !duplicates.has(game.id)) return false;
     if (state.statusFilter === 'untranslated' && game.installedTranslators.length > 0) return false;
     if (state.statusFilter === 'translated' && game.installedTranslators.length === 0) return false;
     if (state.statusFilter === 'issues' && !state.audits.has(game.id)) return false;
@@ -98,6 +107,7 @@ export function visibleGames() {
     }
     return true;
   });
+  return sortedLibraryGames(games, preferences, duplicates);
 }
 
 /**

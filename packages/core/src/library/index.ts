@@ -18,6 +18,8 @@ export interface LauncherConfig {
     endpoint: string;
   };
   scanDepth: number;
+  /** Only a literal false disables the per-launch executable scan. */
+  scanOnLaunch?: boolean;
   /** Undefined probes the Windows default; null explicitly disables MTool. */
   externalTools?: { mtoolRoot?: string | null };
 }
@@ -37,6 +39,7 @@ const DEFAULT_CONFIG: LauncherConfig = {
   locale: 'system',
   defaults: { targetLanguage: 'en', sourceLanguage: 'ja', endpoint: 'GoogleTranslate' },
   scanDepth: normalizeScanDepth(undefined),
+  scanOnLaunch: true,
 };
 
 export function configPath(dataDir = defaultDataDir()): string {
@@ -66,6 +69,7 @@ export async function loadConfig(dataDir = defaultDataDir()): Promise<LauncherCo
       // Preserve valid existing depths (including 2); only new/malformed
       // configurations use the broader default. No silent user-setting migration.
       scanDepth: normalizeScanDepth(parsed.scanDepth),
+      scanOnLaunch: parsed.scanOnLaunch !== false,
       // A malformed persisted value cannot become a privileged tool target.
       // Omit it rather than coercing objects/numbers into filesystem paths.
       externalTools: mtoolRoot === undefined ? undefined : { mtoolRoot },
@@ -77,7 +81,7 @@ export async function loadConfig(dataDir = defaultDataDir()): Promise<LauncherCo
 
 export async function saveConfig(config: LauncherConfig, dataDir = defaultDataDir()): Promise<void> {
   await ensureDir(dataDir);
-  await fsp.writeFile(configPath(dataDir), JSON.stringify({ ...config, scanDepth: normalizeScanDepth(config.scanDepth) }, null, 2), 'utf8');
+  await fsp.writeFile(configPath(dataDir), JSON.stringify({ ...config, scanDepth: normalizeScanDepth(config.scanDepth), scanOnLaunch: config.scanOnLaunch !== false }, null, 2), 'utf8');
 }
 
 export async function addRoot(root: string, dataDir = defaultDataDir()): Promise<LauncherConfig> {

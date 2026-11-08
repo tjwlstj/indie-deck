@@ -1,6 +1,6 @@
 import { $, el, setStatus } from '../dom.js';
 import { currentLocale, t } from '../i18n.js';
-import { api, mutationBlocked } from '../store.js';
+import { api, mutationBlocked, state } from '../store.js';
 import {
   acceptSecurityRead, applySecuritySnapshot, beginSecurityRead, canCancelSecurityTask,
   createSecurityViewState, failSecurityRead, isSecurityBusy, normalizeSecurityResult, securityPresentation,
@@ -154,6 +154,14 @@ async function openHelp(action) {
   catch { setStatus(t('ui.security.helpFailed'), 'err'); }
 }
 
+async function setLaunchScan(enabled) {
+  if (mutationBlocked() || view.action || !state.config || typeof enabled !== 'boolean') return;
+  view.action = 'launch-scan-preference'; notify(view.snapshot);
+  try { state.config = await api.security.setLaunchScan(enabled); }
+  catch { setStatus(t('ui.security.launchScanSaveFailed', undefined, 'Could not save the setting.'), 'err'); }
+  finally { view.action = null; notify(view.snapshot); }
+}
+
 export function renderSecuritySettings() {
   const body = $('securitySettingsBody');
   if (!body) return;
@@ -161,7 +169,16 @@ export function renderSecuritySettings() {
   const card = el('section', 'security-settings-card');
   card.append(engineCard(view.snapshot?.engine));
   if (view.readError) card.append(el('p', 'security-warning security-read-error', t('ui.security.statusReadFailed')));
-  card.append(el('p', 'security-help', t('ui.security.gateHelp')));
+  const label = el('label', 'security-launch-scan');
+  const toggle = document.createElement('input');
+  toggle.type = 'checkbox'; toggle.className = 'security-launch-scan-toggle';
+  toggle.checked = state.config?.scanOnLaunch !== false;
+  toggle.disabled = mutationBlocked() || Boolean(view.action) || !state.config || !api.security?.setLaunchScan;
+  toggle.addEventListener('change', () => void setLaunchScan(toggle.checked));
+  label.append(toggle, el('span', null, t('ui.security.launchScanLabel', undefined, 'Scan before launching games')));
+  card.append(label, el('p', toggle.checked ? 'security-help' : 'security-warning',
+    t(toggle.checked ? 'ui.security.launchScanEnabled' : 'ui.security.launchScanDisabled')));
+  if (toggle.checked) card.append(el('p', 'security-help', t('ui.security.gateHelp')));
   const currentTask = taskCard(view.snapshot?.task);
   if (currentTask) card.append(currentTask);
   const actions = el('div', 'security-actions');
@@ -199,6 +216,7 @@ function fillGameSecurity(card, context) {
   scan.disabled = !display().canScan;
   scan.addEventListener('click', () => void runAction('scan-game', gameId));
   card.append(scan, el('p', 'security-help', t('ui.security.gameScope')));
+  if (state.config?.scanOnLaunch === false) card.append(el('p', 'security-warning', t('ui.security.launchScanDisabled')));
   if (view.readError || view.snapshot?.engine?.state !== 'ready') card.append(el('p', 'security-warning', t('ui.security.needsEngine')));
 }
 

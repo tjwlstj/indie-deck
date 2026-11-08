@@ -76,10 +76,11 @@ history is preserved and blocks history writes rather than blocking game
 maintenance. A failed history save leaves a labelled session-only report. See
 [saved record scope](docs/config-manager.md#saved-comparison-records-v019-source).
 
-**Security checks (v0.1.11 source).** Windows desktop installation and launch
+**Security checks (development source).** Windows desktop installation and launch
 actions use a separate Microsoft Defender process. Translator/font downloads
 are checked before use; game ZIP imports check both the source archive and the
-unpublished extracted stage. Each game launch checks its executable, and MTool
+unpublished extracted stage. Game launches check their executable by default;
+the global launch-scan switch can disable that check. MTool
 handoffs check the tool and selected game executable. Switching a managed game
 version checks its directory before changing the active pointer. A manual folder
 scan and an explicit security-intelligence update are available in the security UI,
@@ -87,7 +88,7 @@ with cancellation and status recovery after a renderer reload. A completed
 no-detection result is scoped to the inspected bytes and engine state.
 
 Unavailable engines, stale intelligence, incomplete checks and ambiguous native
-results stop these desktop actions. The first provider supports standard
+results stop actions that require a scan. The first provider supports standard
 Windows layouts, with default scan limits of 20,000 files, 20 GiB and 15 minutes.
 The seven-day intelligence-age cutoff is a launcher freshness policy.
 Core/CLI scanner callbacks remain opt-in. Registered asset downloads also enforce
@@ -151,8 +152,9 @@ unknown-version games do not get a forced TMP installation action.
 
 **Game thumbnails.** The current source shows local cover images and can use
 Steam's official artwork when an installed game's Steam ID can be identified.
-The game detail page also offers explicit Steam title search and a user choice;
-that search sends the title to Steam. IDs from a game's `steam_appid.txt` can
+The game detail page also offers explicit Steam and experimental GOG title
+searches and a user choice; each search sends the title to its chosen service.
+GOG's public catalog has no verified API stability contract. IDs from a game's `steam_appid.txt` can
 be development placeholders, so the image can still be for the wrong game.
 The image cache is process memory, not an offline download. See
 [docs/thumbnail-guide.md](docs/thumbnail-guide.md) for priorities and limits.

@@ -1,10 +1,11 @@
 /** Only main-validated image data may reach an <img>; never accept remote URLs. */
 export function normaliseThumbnail(value) {
-  if (!value || !['local', 'steam'].includes(value.source) || typeof value.dataUrl !== 'string' ||
+  if (!value || !['local', 'steam', 'gog'].includes(value.source) || typeof value.dataUrl !== 'string' ||
       value.dataUrl.length > 12 * 1024 * 1024 ||
       !/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value.dataUrl)) return null;
   return { source: value.source, dataUrl: value.dataUrl,
-    ...(typeof value.steamAppId === 'string' && /^\d{1,10}$/.test(value.steamAppId) ? { steamAppId: value.steamAppId } : {}) };
+    ...(typeof value.steamAppId === 'string' && /^\d{1,10}$/.test(value.steamAppId) ? { steamAppId: value.steamAppId } : {}),
+    ...(typeof value.gogProductId === 'string' && /^[1-9]\d{0,19}$/.test(value.gogProductId) ? { gogProductId: value.gogProductId } : {}) };
 }
 
 /** Bounded parallel lookups and LRU, including negative results. A manual choice

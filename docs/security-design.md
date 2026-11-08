@@ -1,6 +1,6 @@
 # Launcher security and scanner integration
 
-Research checked: **2026-11-04**. Source scope: **v0.1.11 implementation** in
+Research checked: **2026-11-04**. Source scope: **current development implementation** in
 the C-drive checkout. The initial audit baseline was v0.1.9 at
 `80241fa778652cb8615e4e068e7a7b2c8bdbf650`. Source implementation, local native
 evidence, offline flows, packaging and public release are separate checkpoints.
@@ -19,7 +19,7 @@ them establishes that a game is harmless under every future execution.
 | Bounded game ZIP import | CURRENT in v0.1.9 | Static inspection, ordinary-path checks, entry/size limits, CRC and source hashes, staging and atomic publication. |
 | Asset network policy | CURRENT source | Approved HTTPS sources/redirects, scoped authorization, bounded transfers and ordinary cache files. |
 | Microsoft Defender adapter and security UI | CURRENT source / bounded native probe observed | Separate verified local provider, engine/intelligence status, explicit update, manual folder scan, cancellation and reload recovery. Full UI/package results remain separate. |
-| Required desktop scan gates | CURRENT source | Translator/font archives before use, ZIP source plus unpublished stage, managed-version activation, each game executable launch and MTool/selected-game handoff. A checksum alone does not satisfy the gate. |
+| Desktop scan gates | CURRENT source | Translator/font archives before use, ZIP source plus unpublished stage, managed-version activation, and MTool/selected-game handoff require checks. Game executable checks default on and can be disabled globally. A checksum alone does not satisfy a required gate. |
 | Browser and IPC boundaries | CURRENT source | Exact main-window frame/document sender validation, denied browser permissions/renderer remote requests and declared canonical external URLs. |
 | Child-process environment | CURRENT source | Named credentials and Node/Electron injection controls are omitted before game/tool launch. |
 | Selected-entry external decoder protection | CURRENT source / targeted checks observed | Protected arguments and selected-entry validation; the related network/extractor/font suite passed separately from the scanner and packaging. |
@@ -161,12 +161,14 @@ published old installation permanently trusted. Activating an existing managed
 version checks that version's directory before changing the active pointer.
 
 Translator/font installation and reinstall scan the downloaded archive before
-use or existing-payload cleanup. Every normal game launch checks its selected
+use or existing-payload cleanup. By default each normal game launch checks its selected
 executable, while MTool handoffs check the tool and selected game executable.
-The manual folder action supplies a broader scoped check; it does not replace
-the next launch's executable check. Main coordinates these actions with task
-cancellation, file mutations and update restart; no renderer-controlled skip or
-arbitrary native command/path is exposed.
+The manual folder action supplies a broader scoped check. When launch scanning
+is enabled, its result does not replace the next executable check. The explicit
+global preference can disable only that game-launch check; installation, MTool
+and manual checks retain their own policies. Main validates the preference and
+coordinates actions with cancellation, file mutations and update restart; no
+arbitrary native command or path is exposed to the renderer.
 
 ZIP preflight also rejects unsafe Win32 path aliases before extraction. The
 selected-entry external-decoder path protects its arguments and entry names.

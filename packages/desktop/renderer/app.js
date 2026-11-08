@@ -239,12 +239,14 @@ function render(scope = 'all') {
 
 subscribe(render);
 window.addEventListener('indiedeck:security-state', (event) => {
+  const wasBusy = state.securityBusy;
   state.securityBusy = event.detail?.busy === true;
   const task = event.detail?.snapshot?.task;
   if (task?.gameId && state.detail?.profile?.id === task.gameId && task.result && task.status !== 'running') state.detail.securityResult = task.result;
   if (state.detail) state.detail.securityEngine = event.detail?.snapshot?.engine ?? null;
   renderOperationChrome();
   renderSecuritySettings();
+  if (wasBusy !== state.securityBusy && bootReady && state.view === 'library') renderGameList(selectGame);
 });
 
 /* ------------------------------------------------------- selection/races */

@@ -4,7 +4,7 @@ import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
-import { fetchSteamCover, getGameThumbnail, imageMime, searchSteamCovers } from '../../desktop/src/thumbnails.ts';
+import { fetchGogCover, fetchSteamCover, getGameThumbnail, imageMime, searchGogCovers, searchSteamCovers } from '../../desktop/src/thumbnails.ts';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'indiedeck-thumb-'));
 after(() => { assert.equal(path.dirname(root), path.resolve(os.tmpdir())); fs.rmSync(root, { recursive: true, force: true }); });
@@ -80,6 +80,47 @@ test('explicit store search is bounded, returns names and IDs only, and does not
   assert.deepEqual(await searchSteamCovers('a', { fetch: request }), []);
   assert.deepEqual(await searchSteamCovers('test\nheader', { fetch: request }), []);
   assert.equal(requests.length, 1);
+});
+
+test('GOG search returns only fixed-CDN image hashes from a bounded explicit catalog response', async () => {
+  const hash = 'a'.repeat(64), calls: string[] = [];
+  const request = fakeFetch((url, init) => {
+    calls.push(url); assert.equal(init?.redirect, 'error'); assert.ok(init?.signal);
+    return new Response(JSON.stringify({ products: [
+      { id: '1234567890', title: 'Known game', coverVertical: `https://images.gog-statics.com/${hash}.jpg` },
+      { id: 1234567890, title: 'duplicate', coverVertical: `https://images.gog-statics.com/${hash}.jpg` },
+      { id: '22', title: 'injected host', coverVertical: `https://images.gog-statics.com.evil.test/${hash}.jpg` },
+      { id: '23', title: 'path traversal', coverVertical: `https://images.gog-statics.com/../${hash}.jpg` },
+      { id: '24', title: 'query injection', coverVertical: `https://images.gog-statics.com/${hash}.jpg?x=1` },
+      { id: '25', title: 'unsafe scheme', coverVertical: `http://images.gog-statics.com/${hash}.jpg` },
+      { id: '../26', title: 'invalid ID', coverVertical: `https://images.gog-statics.com/${hash}.jpg` },
+    ] }));
+  });
+  assert.deepEqual(await searchGogCovers('Known game', { fetch: request }), [{ id: '1234567890', name: 'Known game', imageHash: hash }]);
+  assert.equal(calls.length, 1);
+  const url = new URL(calls[0]!);
+  assert.equal(url.origin, 'https://catalog.gog.com');
+  assert.equal(url.pathname, '/v1/catalog');
+  assert.equal(url.searchParams.get('query'), 'like:Known game');
+  assert.deepEqual(await searchGogCovers('x', { fetch: request }), []);
+  assert.equal(calls.length, 1);
+});
+
+test('GOG cover fetch reconstructs only its fixed host, caps bytes and validates image content', async () => {
+  const hash = 'f'.repeat(64), calls: string[] = [];
+  const request = fakeFetch((url, init) => {
+    calls.push(url); assert.equal(init?.redirect, 'error'); assert.ok(init?.signal); return new Response(png);
+  });
+  assert.equal((await fetchGogCover(hash, '9876', { fetch: request }))?.gogProductId, '9876');
+  assert.deepEqual(calls, [`https://images.gog-statics.com/${hash}.jpg`]);
+  for (const bad of ['../' + hash, hash.toUpperCase(), hash + '?x=1', 'https://evil.test/']) {
+    assert.equal(await fetchGogCover(bad, '9876', { fetch: request }), null);
+  }
+  assert.equal(await fetchGogCover(hash, '../1', { fetch: request }), null);
+  assert.equal(calls.length, 1);
+  assert.equal(await fetchGogCover(hash, '9876', { fetch: fakeFetch(() => new Response('<html/>')) }), null);
+  assert.equal(await fetchGogCover(hash, '9876', { fetch: fakeFetch(() => new Response(png, { headers: { 'content-length': String(3 * 1024 * 1024) } })) }), null);
+  await assert.rejects(searchGogCovers('Known game', { fetch: fakeFetch(() => new Response('invalid')) }), /invalid response/);
 });
 
 test('offline or failed official requests quietly fall back without writing to game folders', async () => {

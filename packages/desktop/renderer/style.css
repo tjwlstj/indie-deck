@@ -283,7 +283,7 @@ button.ghost {
 
 .game {
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr) auto;
+  grid-template-columns: 64px minmax(0, 1fr) auto auto;
   gap: 2px 10px;
   padding: 8px 10px;
   border-radius: var(--radius);
@@ -1193,7 +1193,15 @@ select {
 .detail-versions { margin-bottom: 18px; }
 .archive-progress progress { display: block; width: 100%; margin: 12px 0; }
 .list-toolbar { padding: 10px 12px; border-bottom: 1px solid var(--line); }
-.list-toolbar button { width: 100%; }
+.list-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.list-toolbar label { color: var(--text-dim); font-size: 12px; }
+.list-toolbar select { min-width: 0; max-width: 100%; }
+.list-toolbar button[aria-pressed='true'] { color: var(--accent); border-color: var(--accent); }
+.library-preferences-status { flex-basis: 100%; color: var(--warn); font-size: 11px; }
+.favorite-toggle { min-width: 26px; padding: 0 4px; color: var(--text-faint); font-size: 18px; line-height: 1; }
+.favorite-toggle[aria-pressed='true'] { color: var(--accent); }
+.game .duplicate-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.list-toolbar #importArchive { width: 100%; }
 
 /* --------------------------------------------------- launcher updates */
 .launcher-update-card {

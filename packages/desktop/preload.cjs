@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld('indiedeck', {
 
   security: {
     current: () => call('security:current'),
+    setLaunchScan: (enabled) => call('security:setLaunchScan', enabled),
     refresh: () => call('security:refresh'),
     scanGame: (gameId) => call('security:scanGame', gameId),
     update: () => call('security:update'),
@@ -55,6 +56,11 @@ contextBridge.exposeInMainWorld('indiedeck', {
     set: (config) => call('config:set', config),
   },
 
+  libraryPreferences: {
+    read: () => call('library-preferences:read'),
+    save: (input) => call('library-preferences:save', input),
+  },
+
   roots: {
     // Adding always goes through the OS folder picker, opened by the main
     // process; there is deliberately no add(path).
@@ -70,9 +76,12 @@ contextBridge.exposeInMainWorld('indiedeck', {
   },
 
   game: {
+    onLaunchDiagnostic: (fn) => subscribe('game:launch-diagnostic', fn),
     thumbnail: (gameId) => call('game:thumbnail', gameId),
     thumbnailSearch: (gameId) => call('game:thumbnailSearch', gameId),
     thumbnailSelect: (gameId, appId) => call('game:thumbnailSelect', gameId, appId),
+    thumbnailSearchGog: (gameId) => call('game:thumbnailSearchGog', gameId),
+    thumbnailSelectGog: (gameId, id) => call('game:thumbnailSelectGog', gameId, id),
     detail: (gameId, options) => call('game:detail', gameId, options ?? {}),
     refresh: (gameId) => call('game:refresh', gameId),
     launch: (gameId) => call('game:launch', gameId),

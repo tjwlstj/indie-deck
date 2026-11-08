@@ -4,10 +4,12 @@ import { createThumbnailLoader, normaliseThumbnail } from '../../desktop/rendere
 
 const local = { source: 'local', dataUrl: 'data:image/png;base64,AAAA' };
 const steam = { source: 'steam', dataUrl: 'data:image/jpeg;base64,AABB', steamAppId: '123' };
+const gog = { source: 'gog', dataUrl: 'data:image/jpeg;base64,AABB', gogProductId: '1234567890' };
 
 test('thumbnail presentation accepts only bounded image data from an expected source', () => {
   assert.deepEqual(normaliseThumbnail(local), local);
   assert.deepEqual(normaliseThumbnail(steam), steam);
+  assert.deepEqual(normaliseThumbnail(gog), gog);
   for (const bad of [null, {}, { source: 'remote', dataUrl: local.dataUrl },
     { source: 'steam', dataUrl: 'https://evil.example/tracker.png' },
     { source: 'local', dataUrl: 'data:image/svg+xml;base64,AAAA' },

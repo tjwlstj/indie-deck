@@ -5,6 +5,16 @@ Versioning while the project is pre-1.0.
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-11-08
+
+### Added
+
+- Library sorting, favorites, and non-destructive same-name candidate views.
+- A global opt-out for game launch scans (enabled by default); installation and
+  MTool security checks continue to apply.
+- Browser companion installation guidance, GOG cover search and bounded launch
+  diagnostics for processes started by the launcher.
+
 ## [0.1.12] - 2026-11-08
 
 ### Security

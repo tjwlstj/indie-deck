@@ -71,7 +71,8 @@ import { installGameArchiveVersion, listGameInstallations, setActiveGameInstalla
 import { createLauncherUpdateController, LAUNCHER_RELEASE_URL } from './launcher-updates.ts';
 import { withinLibraryRoots } from './library-roots.ts';
 import { LibraryScanController } from './library-scan.ts';
-import { getGameThumbnail, searchSteamCovers, fetchSteamCover } from './thumbnails.ts';
+import { getGameThumbnail, searchSteamCovers, fetchSteamCover, searchGogCovers, fetchGogCover } from './thumbnails.ts';
+import { createGogSearchAuthority } from './gog-search-authority.ts';
 import { readThumbnailPreferences, saveThumbnailPreference } from './thumbnail-preferences.ts';
 import { STORE_PROVIDERS, canonicalStoreProductUrl, readStoreLinkFile, readStoreConnections, saveStoreConnection, removeStoreConnection, resolveStoreHandoff,
   type StoreLinkCandidate, type StoreProviderId, type StoreHandoffAction, type StoreConnection } from './store-connections.ts';
@@ -82,6 +83,9 @@ import { createSecurityScanner, fingerprintSecurityTarget, type SecurityScanResu
 import { createSecurityController } from './security-controller.ts';
 import { isTrustedAppSender, safeExternalUrl } from './browser-security.ts';
 import { gameProcessEnvironment } from './process-environment.ts';
+import { readLibraryPreferences, saveLibraryPreferences } from './library-preferences.ts';
+import { scanLaunchTarget } from './security-launch-policy.ts';
+import { createLaunchDiagnostics } from './launch-diagnostics.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // Entry-point app paths differ between `electron .`, `electron packages/desktop`
@@ -105,6 +109,7 @@ let security: ReturnType<typeof createSecurityController>;
 let smokeSecurityVerdict: SecurityScanResult['verdict'] = 'clean';
 let smokeSecurityHold = false;
 let mainWindow: BrowserWindow | undefined;
+const launchDiagnostics = createLaunchDiagnostics((gameId, result) => send('game:launch-diagnostic', { gameId, result }));
 let pendingMutations = 0;
 let updateRestartReserved = false;
 let sessionEnding = false;
@@ -179,6 +184,7 @@ const archiveCandidates = new Map<string, { path: string; inspection: GameArchiv
 const storeLinkCandidates = new Map<string, StoreLinkCandidate>();
 const thumbnailSearchResults = new Map<string, Set<string>>();
 const thumbnailSearchGeneration = new Map<string, number>();
+const gogSearchAuthority = createGogSearchAuthority();
 interface ArchiveTask {
   id: string;
   sequence: number;
@@ -1569,6 +1575,7 @@ async function gameDetailPayload(gameId: string, options: ResolveOptions, detect
     }));
   return {
     profile: withId(profile),
+    launchDiagnostic: launchDiagnostics.get(gameId),
     gameRevision: gameRevisions.get(gameId) ?? 0,
     plans,
     fontRecommendation,
@@ -1958,6 +1965,12 @@ function handleMutation<T>(channel: string, fn: (...args: never[]) => Promise<T>
 
 function register(): void {
   handle('security:current', () => security.current());
+  handleMutation('security:setLaunchScan', async (enabled: unknown) => {
+    if (typeof enabled !== 'boolean') throw new Error('ui.security.actionFailed');
+    const config = await loadConfig();
+    await saveConfig({ ...config, scanOnLaunch: enabled });
+    return loadConfig();
+  });
   handle('security:refresh', () => security.refresh());
   handle('security:scanGame', (gameId: string) => {
     const target = requireGamePath(gameId);
@@ -2002,6 +2015,8 @@ function register(): void {
   }));
 
   handle('config:get', () => loadConfig());
+  handle('library-preferences:read', () => readLibraryPreferences());
+  handleMutation('library-preferences:save', (input: unknown) => saveLibraryPreferences(input));
   handle('stores:list', async () => { await mutationQueue; return storeConnectionsPayload(); });
   handleMutation('stores:pick', async () => {
     const picked = await dialog.showOpenDialog({ properties: ['openFile'], title: t('ui.stores.pickTitle'),
@@ -2213,7 +2228,8 @@ function register(): void {
     const preferences = await readThumbnailPreferences(defaultDataDir()).catch(() => new Map<string, string>());
     const chosen = preferences.get(gameId);
     if (chosen) {
-      const image = await fetchSteamCover(chosen).catch(() => null);
+      const gog = /^gog:([1-9]\d{0,19}):([a-f0-9]{64})$/.exec(chosen);
+      const image = await (gog ? fetchGogCover(gog[2]!, gog[1]!) : fetchSteamCover(chosen)).catch(() => null);
       if (image) return image;
     }
     return getGameThumbnail(gamePath);
@@ -2244,6 +2260,30 @@ function register(): void {
     if (!image) throw new Error('Steam artwork is unavailable.');
     requireGamePath(gameId);
     await saveThumbnailPreference(defaultDataDir(), gameId, appId);
+    return image;
+  });
+
+  // GOG search is user-triggered and its result IDs have authority only for
+  // the game whose latest search returned them. Renderer never supplies URLs.
+  handle('game:thumbnailSearchGog', async (gameId: string) => {
+    const gamePath = requireGamePath(gameId);
+    const generation = gogSearchAuthority.begin(gameId);
+    const index = await loadLibrary();
+    const game = index.games.find((entry) => path.resolve(entry.path).toLowerCase() === gamePath.toLowerCase());
+    if (!game) throw new Error('Game is no longer in the library.');
+    const results = await searchGogCovers((game.title || game.name).slice(0, 120));
+    requireGamePath(gameId);
+    return gogSearchAuthority.complete(gameId, generation, results);
+  });
+  handleMutation('game:thumbnailSelectGog', async (gameId: string, id: unknown) => {
+    requireGamePath(gameId);
+    const authorization = gogSearchAuthority.grant(gameId, id);
+    if (typeof id !== 'string' || !authorization) throw new Error('Select a current GOG search result.');
+    const image = await fetchGogCover(authorization.hash, id);
+    if (!image) throw new Error('GOG artwork is unavailable.');
+    requireGamePath(gameId);
+    if (!gogSearchAuthority.isCurrent(gameId, id, authorization)) throw new Error('Select a current GOG search result.');
+    await saveThumbnailPreference(defaultDataDir(), gameId, `gog:${id}:${authorization.hash}`);
     return image;
   });
 
@@ -2313,10 +2353,26 @@ function register(): void {
     if (!profile?.executable) throw new Error('No launchable executable was detected in this folder.');
     const target = path.join(gamePath, profile.executable);
     if (!target.startsWith(gamePath + path.sep)) throw new Error('Refusing to launch outside the game folder.');
-    await security.scanBeforeUse(target, gameId);
-    const child = spawn(target, { cwd: gamePath, detached: true, stdio: 'ignore', shell: false, env: gameProcessEnvironment() });
-    child.unref();
-    return profile.executable;
+    await scanLaunchTarget((await loadConfig()).scanOnLaunch, () => security.scanBeforeUse(target, gameId));
+    const token = launchDiagnostics.begin(gameId);
+    let failed = false;
+    const recordFailure = () => { if (!failed) { failed = true; launchDiagnostics.failed(gameId, token); } };
+    try {
+      const child = spawn(target, { cwd: gamePath, detached: true, stdio: 'ignore', shell: false, env: gameProcessEnvironment() });
+      child.once('exit', (code) => launchDiagnostics.exited(gameId, token, code));
+      await new Promise<void>((resolve, reject) => {
+        child.once('spawn', resolve);
+        child.once('error', () => {
+          recordFailure();
+          reject(new Error(t('ui.diagnostics.spawnFailed', undefined, 'The game process could not start.')));
+        });
+        child.unref();
+      });
+      return profile.executable;
+    } catch (error) {
+      recordFailure();
+      throw error;
+    }
     });
   });
 
