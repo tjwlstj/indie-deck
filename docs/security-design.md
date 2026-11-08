@@ -269,9 +269,8 @@ short-path case was executed, not skipped. Evidence is
 with `normal.png` and `short-path.png` in that directory. This directly checks
 the previously reproduced portable startup boundary. The hosted workflow now
 uses `node scripts/check-portable-startup.mjs` for the same native short-path case;
-the hosted result remains part of the separate CI checkpoint below.
+the v0.1.11 hosted release also passed that check.
 
-**Exact-commit CI and public release — PENDING.** The release pipeline is
-configured to check runtime inclusion/hashes, installer/portable lifecycle and
-published asset integrity. Those configured steps are not proof that this source
-commit has passed hosted CI or that v0.1.11 is already publicly released.
+**Hosted verification.** The v0.1.11 release and its separate CI checks passed.
+The current development revision needs its own hosted checks; past results do
+not establish the outcome for later commits.
