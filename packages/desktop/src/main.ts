@@ -1053,6 +1053,9 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
       || firstCall.cwd !== path.dirname(firstCall.executable) || firstCall.shell !== false) {
     throw new Error(`MTool handoff did not use the validated single argument/cwd: ${JSON.stringify(mtoolCalls())}`);
   }
+  // Rendering is scheduled after the busy flag clears. Wait for the enabled
+  // control too so a fast test cannot click the previous disabled DOM node.
+  await waitFor(`!!document.querySelector('#detail .mtool-integration .mtool-open:not(:disabled)')`, 'MTool tool-only control ready');
   await evaluate(`document.querySelector('#detail .mtool-integration .mtool-open').click()`);
   await waitFor(`(async () => !(await import('./store.js')).state.mtoolBusy)()`, 'MTool tool-only acknowledgement');
   if (mtoolCalls().length !== 2 || mtoolCalls()[1]!.args.length !== 0) throw new Error('Tool-only fallback passed a game argument.');
