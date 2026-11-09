@@ -15,6 +15,7 @@ function paint(node, thumbnail) {
   if (attribution) attribution.textContent = thumbnail
     ? thumbnail.source === 'steam' ? t('ui.thumbnail.steam', undefined, 'Steam official image')
       : thumbnail.source === 'gog' ? t('ui.thumbnail.gog', undefined, currentLocale().startsWith('ko') ? 'GOG 이미지' : 'GOG image')
+        : thumbnail.source === 'manual' ? t('ui.thumbnail.manual', undefined, 'Selected image')
         : t('ui.thumbnail.local', undefined, 'Game folder image')
     : t('ui.thumbnail.missing', undefined, 'No image');
 }
@@ -58,6 +59,13 @@ export function thumbnailElement(game, detail = false) {
 export function acceptSelectedThumbnail(id, value) {
   const safe = normaliseThumbnail(value);
   if (!safe) return null;
+  loader.prime(id, safe); paintAll(id, safe); return safe;
+}
+
+/** Removing an override may legitimately leave no automatic image. Prime the
+ * negative cache too so old lookups cannot restore the removed override. */
+export function acceptResetThumbnail(id, value) {
+  const safe = normaliseThumbnail(value);
   loader.prime(id, safe); paintAll(id, safe); return safe;
 }
 

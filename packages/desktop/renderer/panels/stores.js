@@ -12,10 +12,14 @@ function message(error) {
 }
 
 function products() { return state.storeConnections?.products ?? []; }
+function games() { return state.storeConnections?.games ?? []; }
 function providers() { return state.storeConnections?.providers ?? []; }
 function providerName(id) { return providers().find((provider) => provider.id === id)?.name || id; }
 function links() { return state.storeConnections?.snapshot?.links ?? []; }
 function writeBlocked() { return mutationBlocked() || Boolean(state.storeReadError) || state.storeReadPending; }
+function defaultStoreTarget() {
+  return games().some((game) => game.id === state.storeTargetGameId) ? `game:${state.storeTargetGameId}` : '';
+}
 
 export async function refreshStoreConnections() {
   const token = beginStoreConnectionsRead(state);
@@ -58,7 +62,27 @@ async function pickStoreLink() {
     if (!applyStoreConnectionsMutation(state, result)) throw new Error(state.storeReadError);
     if (result.candidate) {
       state.storeCandidate = result.candidate;
-      state.storeProductId = '';
+      state.storeProductId = defaultStoreTarget();
+      state.storeCandidateTitle = result.candidate.title || '';
+      setStatus(t('ui.stores.reviewCandidate'));
+    }
+  });
+}
+
+async function importStoreLink(file) {
+  if (writeBlocked()) return;
+  const text = state.storeImportText || '';
+  if (!file && (!text.trim() || new TextEncoder().encode(text).length > 8192)) {
+    setStatus(t('ui.stores.error.importInput'), 'err'); return;
+  }
+  await performStoreAction(async () => {
+    const result = file ? await api.stores.importFile(file) : await api.stores.preview(text);
+    if (!applyStoreConnectionsMutation(state, result)) throw new Error(state.storeReadError);
+    if (result.candidate) {
+      state.storeCandidate = result.candidate;
+      state.storeCandidateTitle = result.candidate.title || '';
+      state.storeProductId = defaultStoreTarget();
+      state.storeImportText = '';
       setStatus(t('ui.stores.reviewCandidate'));
     }
   });
@@ -66,13 +90,17 @@ async function pickStoreLink() {
 
 async function saveStoreLink(candidate) {
   if (state.storeCandidate?.id !== candidate.id ||
-      !storeCandidatePresentation(candidate, products(), state.storeProductId, mutationBlocked(), state.storeReadError || state.storeReadPending).canSave) return;
-  const managedProductId = state.storeProductId || undefined;
+      !storeCandidatePresentation(candidate, products(), state.storeProductId, mutationBlocked(), state.storeReadError || state.storeReadPending, games()).canSave) return;
+  const gameId = state.storeProductId?.startsWith('game:') ? state.storeProductId.slice(5) : undefined;
+  const managedProductId = gameId ? undefined : state.storeProductId || undefined;
+  const title = state.storeCandidateTitle?.trim() || undefined;
   await performStoreAction(async () => {
-    const result = await api.stores.save(candidate.id, managedProductId);
+    const result = await api.stores.save(candidate.id, managedProductId, gameId, title);
     if (!applyStoreConnectionsMutation(state, result)) throw new Error(state.storeReadError);
     state.storeCandidate = null;
     state.storeProductId = '';
+    state.storeCandidateTitle = '';
+    state.storeTargetGameId = null;
     setStatus(t('ui.stores.saved'), 'ok');
   });
 }
@@ -112,29 +140,45 @@ function renderCandidate(body) {
     el('p', 'plan-sub', `${providerName(candidate.provider)} · ${candidate.productId}`),
     el('p', 'store-url', candidate.url),
     el('p', 'store-help', t('ui.stores.metadataOnly')));
+  const titleLabel = el('label', 'store-product-label');
+  const titleInput = el('input');
+  titleInput.id = 'storeLinkTitle'; titleInput.type = 'text'; titleInput.maxLength = 240;
+  titleInput.value = state.storeCandidateTitle ?? candidate.title ?? '';
+  titleInput.disabled = writeBlocked();
+  titleInput.addEventListener('input', () => { state.storeCandidateTitle = titleInput.value; });
+  titleLabel.append(el('span', null, t('ui.stores.editableTitle')), titleInput);
+  card.append(titleLabel);
   const label = el('label', 'store-product-label');
   const select = el('select');
   select.id = 'storeLinkProduct';
-  const unlinked = el('option', null, t('ui.stores.noManagedProduct'));
+  const unlinked = el('option', null, t('ui.stores.noTarget'));
   unlinked.value = '';
   select.append(unlinked);
+  const installed = el('optgroup'); installed.label = t('ui.stores.installedGames');
+  for (const game of games()) {
+    const option = el('option', null, `${game.title || game.name || game.id} — ${game.path || game.id}`);
+    option.value = `game:${game.id}`; installed.append(option);
+  }
+  if (games().length) select.append(installed);
+  const managed = el('optgroup'); managed.label = t('ui.stores.managedProducts');
   for (const product of products()) {
     const option = el('option', null, product.title);
     option.value = product.id;
-    select.append(option);
+    managed.append(option);
   }
+  if (products().length) select.append(managed);
   select.value = state.storeProductId;
   select.disabled = writeBlocked();
   select.addEventListener('change', () => { state.storeProductId = select.value; renderStoreSettings(); });
-  label.append(el('span', null, t('ui.stores.managedProduct')), select);
+  label.append(el('span', null, t('ui.stores.linkTarget')), select);
   card.append(label, el('p', 'store-help', t('ui.stores.ownerUnchanged')));
   const actions = el('div', 'store-actions');
   const save = el('button', 'primary store-save', t('ui.stores.save'));
-  save.disabled = !storeCandidatePresentation(candidate, products(), state.storeProductId, mutationBlocked(), state.storeReadError || state.storeReadPending).canSave;
+  save.disabled = !storeCandidatePresentation(candidate, products(), state.storeProductId, mutationBlocked(), state.storeReadError || state.storeReadPending, games()).canSave;
   save.addEventListener('click', () => void saveStoreLink(candidate));
   const cancel = el('button', 'ghost store-cancel', t('ui.stores.cancel'));
   cancel.disabled = mutationBlocked();
-  cancel.addEventListener('click', () => { state.storeCandidate = null; state.storeProductId = ''; renderStoreSettings(); });
+  cancel.addEventListener('click', () => { state.storeCandidate = null; state.storeProductId = ''; state.storeCandidateTitle = ''; state.storeTargetGameId = null; renderStoreSettings(); });
   actions.append(save, cancel);
   card.append(actions);
   body.append(card);
@@ -145,10 +189,17 @@ function renderCandidate(body) {
 export function renderGameStoreLinks(panel, profile) {
   const connected = storeLinksForGame(state.archiveCatalog, state.archiveRecords,
     state.storeConnections?.snapshot, profile?.id);
-  if (!connected.length) return;
   const card = el('section', 'detail-stores store-game-card');
   card.append(el('h3', null, t('ui.stores.gameTitle')),
     el('p', 'store-help', t('ui.stores.gameDescription')));
+  const connect = el('button', 'ghost store-connect-game', t('ui.stores.connectThisGame'));
+  connect.disabled = mutationBlocked();
+  connect.addEventListener('click', () => {
+    if (mutationBlocked() || !profile?.id) return;
+    state.storeTargetGameId = profile.id; state.storeProductId = `game:${profile.id}`;
+    window.dispatchEvent(new CustomEvent('indiedeck:open-settings', { detail: { section: 'storeSettings' } }));
+  });
+  card.append(connect);
   if (state.storeReadError) {
     const error = el('p', 'store-error', message(state.storeReadError));
     error.setAttribute('role', 'alert');
@@ -237,6 +288,34 @@ export function renderStoreSettings() {
   companionActions.append(openCompanion, pick);
   companion.append(companionActions);
   body.append(companion);
+  const importer = el('section', 'store-import');
+  importer.append(el('h3', null, t('ui.stores.pasteTitle')), el('p', 'store-help', t('ui.stores.pasteHelp')));
+  const inputLabel = el('label', 'store-product-label'), input = el('textarea');
+  input.id = 'storeLinkInput'; input.rows = 3; input.maxLength = 8192;
+  input.value = state.storeImportText || ''; input.disabled = writeBlocked();
+  input.addEventListener('input', () => { state.storeImportText = input.value; });
+  inputLabel.append(el('span', null, t('ui.stores.pasteLabel')), input); importer.append(inputLabel);
+  const preview = el('button', 'ghost store-preview', t('ui.stores.preview'));
+  preview.disabled = writeBlocked() || !api.stores?.preview;
+  preview.addEventListener('click', () => void importStoreLink());
+  importer.append(preview);
+  importer.addEventListener('dragover', (event) => {
+    event.preventDefault();
+    if (writeBlocked()) return;
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+    importer.dataset.dragOver = 'true';
+  });
+  importer.addEventListener('dragleave', () => { delete importer.dataset.dragOver; });
+  importer.addEventListener('drop', (event) => {
+    event.preventDefault(); event.stopPropagation(); delete importer.dataset.dragOver;
+    if (writeBlocked()) return;
+    const files = Array.from(event.dataTransfer?.files || []);
+    if (files.length !== 1 || !/\.json$/i.test(files[0].name) || files[0].size > 8192 || !api.stores?.importFile) {
+      setStatus(t('ui.stores.error.importInput'), 'err'); return;
+    }
+    void importStoreLink(files[0]);
+  });
+  body.append(importer);
   renderCandidate(body);
   body.append(el('h3', null, t('ui.stores.savedLinks')));
   if (!links().length) body.append(el('p', 'store-help', t('ui.stores.empty')));
@@ -248,6 +327,8 @@ export function renderStoreSettings() {
       el('p', 'store-url', link.url));
     const product = products().find((entry) => entry.id === link.managedProductId);
     if (product) card.append(el('p', 'store-help', t('ui.stores.linkedProduct', { title: product.title })));
+    const game = games().find((entry) => entry.id === link.gameId);
+    if (game) card.append(el('p', 'store-help', t('ui.stores.selectedGame', { title: `${game.title || game.name} — ${game.path || game.id}` })));
     card.append(el('span', 'pill store-unverified', t('ui.stores.authUnverified')));
     appendStoreActions(card, link.provider, link.actions, link.id);
     const remove = el('button', 'ghost store-remove', t('ui.stores.remove'));

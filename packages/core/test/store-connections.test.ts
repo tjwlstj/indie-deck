@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
 import {
-  STORE_PROVIDERS, canonicalStoreProductUrl, parseStoreLink, readStoreConnections, readStoreLinkFile,
+  STORE_PROVIDERS, canonicalStoreProductUrl, parseStoreLink, parseStoreLinkText, readStoreConnections, readStoreLinkFile,
   removeStoreConnection, resolveStoreHandoff, saveStoreConnection,
   type StoreLinkCandidate,
 } from '../../desktop/src/store-connections.ts';
@@ -54,7 +54,34 @@ test('browser companion metadata passes desktop validation without carrying quer
     assert.deepEqual(parsed, metadata);
     assert.equal(canonicalStoreProductUrl(parsed), productPageForMetadata(metadata));
     assert.doesNotMatch(serialized, /private-fixture|private-fragment|https?:\/\//);
+    assert.deepEqual(parseStoreLinkText(serialized), metadata);
+    const pasted = parseStoreLinkText(url);
+    assert.deepEqual(pasted, metadataFromProductUrl(url));
+    assert.doesNotMatch(JSON.stringify(pasted), /private-fixture|private-fragment|https?:\/\//);
   }
+});
+
+test('pasted product routes reject spoofed origins, credentials, private pages and hidden JSON commands', () => {
+  for (const value of ['', 'https://store.steampowered.com.evil.test/app/440/', 'https://name:secret@store.steampowered.com/app/440/',
+    'https://store.steampowered.com:443/app/440/', 'https://creator.itch.io/downloads?key=secret', 'https://www.gog.com/xx/game/example_game',
+    'file:///C:/game.exe', 'javascript:alert(1)', JSON.stringify({ ...candidate(), url: 'https://private.invalid/' })]) {
+    assert.throws(() => parseStoreLinkText(value), /invalidLink/);
+  }
+  assert.throws(() => parseStoreLinkText('가'.repeat(3000)), /linkFileTooLarge/);
+});
+
+test('direct installed-game associations persist and remain exclusive of managed-product identity', async () => {
+  const directory = data('installed-game'), gameId = '1234567890abcdef';
+  const first = await saveStoreConnection(directory, candidate('itch', 'creator/example-game', 'Reviewed label'), undefined, gameId);
+  assert.equal(first.links[0]?.gameId, gameId); assert.equal(first.links[0]?.managedProductId, undefined);
+  assert.deepEqual(await readStoreConnections(directory), first);
+  await assert.rejects(saveStoreConnection(directory, candidate(), undefined, '../game'), /invalidManagedProduct/);
+  await assert.rejects(saveStoreConnection(directory, candidate(), crypto.randomUUID(), gameId), /invalidManagedProduct/);
+  const productId = crypto.randomUUID(), second = await saveStoreConnection(directory, candidate('itch', 'creator/example-game'), productId);
+  assert.equal(second.links[0]?.managedProductId, productId); assert.equal(second.links[0]?.gameId, undefined);
+  const file = path.join(directory, 'store-connections.json');
+  fs.writeFileSync(file, JSON.stringify({ ...second, links: [{ ...second.links[0], gameId }] }));
+  await assert.rejects(readStoreConnections(directory), /connectionsCorrupt/);
 });
 
 test('metadata cannot carry credentials, downloads, commands or other unrecognized fields', () => {

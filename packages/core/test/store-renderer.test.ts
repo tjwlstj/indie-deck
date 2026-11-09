@@ -94,3 +94,13 @@ test('game detail store references follow explicit managed product identity and 
   assert.deepEqual(storeLinksForGame(catalog, records, snapshot, 'unknown'), []);
   assert.deepEqual(storeLinksForGame(catalog, records, { links: [] }, 'path-a'), []);
 });
+
+test('installed-game selection stays explicit and is rejected after that game disappears', () => {
+  const candidate = { id: 'issued', provider: 'steam', productId: '440', url: 'https://store.steampowered.com/app/440/' };
+  const games = [{ id: '1234567890abcdef', title: 'Same title' }, { id: 'abcdef1234567890', title: 'Same title' }];
+  assert.equal(storeCandidatePresentation(candidate, [], 'game:1234567890abcdef', false, false, games).canSave, true);
+  assert.equal(storeCandidatePresentation(candidate, [], 'game:1234567890abcdef', false, false, games.slice(1)).canSave, false);
+  const snapshot = { links: [{ id: 'direct', gameId: games[0]!.id }, { id: 'other', gameId: games[1]!.id }] };
+  assert.deepEqual(storeLinksForGame(null, [], snapshot, games[0]!.id).map((link) => link.id), ['direct']);
+  assert.deepEqual(storeLinksForGame(null, [], snapshot, 'unknown'), []);
+});

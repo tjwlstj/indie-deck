@@ -4,8 +4,8 @@ import { managedInstallationForGame } from './archive-model.js';
 export function storeLinksForGame(catalog, records, snapshot, gameId) {
   if (typeof gameId !== 'string' || !gameId) return [];
   const managed = managedInstallationForGame(catalog, records, gameId);
-  if (!managed || !Array.isArray(snapshot?.links)) return [];
-  return snapshot.links.filter((link) => link.managedProductId === managed.product.id);
+  if (!Array.isArray(snapshot?.links)) return [];
+  return snapshot.links.filter((link) => link.gameId === gameId || (managed && link.managedProductId === managed.product.id));
 }
 function validSnapshot(snapshot) {
   return snapshot?.schemaVersion === 1 && Number.isSafeInteger(snapshot.revision) && snapshot.revision >= 0 &&
@@ -70,10 +70,12 @@ export function applyStoreConnectionsMutation(state, payload) {
   return false;
 }
 
-export function storeCandidatePresentation(candidate, products, managedProductId = '', blocked = false, readError = false) {
+export function storeCandidatePresentation(candidate, products, managedProductId = '', blocked = false, readError = false, games = []) {
   const validCandidate = Boolean(candidate && typeof candidate.id === 'string' && candidate.id.length > 0 &&
     typeof candidate.provider === 'string' && typeof candidate.productId === 'string' && typeof candidate.url === 'string');
-  const validProduct = !managedProductId || (Array.isArray(products) && products.some((product) => product.id === managedProductId));
+  const validProduct = !managedProductId || (managedProductId.startsWith('game:')
+    ? Array.isArray(games) && games.some((game) => `game:${game.id}` === managedProductId)
+    : Array.isArray(products) && products.some((product) => product.id === managedProductId));
   return { canSave: validCandidate && validProduct && !blocked && !readError, authenticated: false, ownershipVerified: false };
 }
 

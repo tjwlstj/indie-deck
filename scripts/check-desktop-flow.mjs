@@ -23,6 +23,7 @@ const mtoolExecutable = path.join(mtoolRoot, 'Tool', 'MTool.exe');
 const gameArchive = path.join(temp, 'Delta-v1.0.zip');
 const gameArchiveV2 = path.join(temp, 'Delta-v2.0.zip');
 const storeLink = path.join(temp, 'steam.indiedeck-link.json');
+const manualCover = path.join(temp, 'selected-cover.png');
 const registry = loadRegistry();
 const version = registry.translators.find((t) => t.id === 'xunity-autotranslator').versions[0].version;
 
@@ -80,6 +81,7 @@ function zip(files) {
 }
 
 try {
+  await fs.writeFile(manualCover, Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/a0sAAAAASUVORK5CYII=', 'base64'));
   await fs.writeFile(storeLink, serializeStoreLink(metadataFromProductUrl('https://store.steampowered.com/app/440/Example/?private=drop-me#drop-me', 'Offline store fixture')));
   for (const name of ['Aster Test Game', 'Birch Test Game']) {
     const game = path.join(gamesRoot, name);
@@ -156,6 +158,7 @@ try {
       INDIEDECK_SMOKE_GAME_ARCHIVE: gameArchive,
       INDIEDECK_SMOKE_GAME_ARCHIVE_V2: gameArchiveV2,
       INDIEDECK_SMOKE_STORE_LINK: storeLink,
+      INDIEDECK_SMOKE_COVER: manualCover,
       INDIEDECK_STORES_SCREENSHOT: path.resolve('out', `desktop-stores-${locale}.png`),
       INDIEDECK_SCAN_SMOKE_ROOT: scanContainers,
       INDIEDECK_SCAN_SCREENSHOT: path.resolve('out', `desktop-scan-${locale}.png`),
@@ -189,6 +192,7 @@ try {
     '[smoke] launcher update mock flow',
     '[smoke] bounded scan settings',
     '[smoke] offline Steam artwork search',
+    '[smoke] manual cover picker and native File drop',
     '[smoke] browser companion metadata',
     '[smoke] old/current options',
     '[smoke] mocked security gates',

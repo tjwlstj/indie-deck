@@ -2,10 +2,17 @@
 // boundary. It exposes a fixed list of channels - the renderer can never reach
 // ipcRenderer, require, or the filesystem directly.
 //
-// Note what is NOT here: nothing takes a filesystem path or an executable name.
-// The renderer works in opaque ids and the main process resolves them against
-// its own tables, so a compromised renderer cannot name a target of its own.
-const { contextBridge, ipcRenderer } = require('electron');
+// Game actions use opaque ids. User-selected File objects are resolved only
+// here; their paths are never returned to the web content.
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
+
+function selectedFilePath(file, errorKey) {
+  try {
+    const selected = webUtils.getPathForFile(file);
+    if (selected && selected.length <= 32767) return selected;
+  } catch { /* Reject objects and synthetic Files that have no disk backing. */ }
+  throw new Error(errorKey);
+}
 
 /** Unwraps the {ok, data|error} envelope the main process replies with. */
 async function call(channel, ...args) {
@@ -76,6 +83,9 @@ contextBridge.exposeInMainWorld('indiedeck', {
   },
 
   game: {
+    pickThumbnail: (gameId, fromGameFolder = false) => call('game:pickThumbnail', gameId, fromGameFolder),
+    importThumbnail: async (gameId, file) => call('game:importThumbnail', gameId, selectedFilePath(file, 'ui.thumbnail.importFailed')),
+    clearThumbnail: (gameId) => call('game:clearThumbnail', gameId),
     onLaunchDiagnostic: (fn) => subscribe('game:launch-diagnostic', fn),
     thumbnail: (gameId) => call('game:thumbnail', gameId),
     thumbnailSearch: (gameId) => call('game:thumbnailSearch', gameId),
@@ -111,7 +121,9 @@ contextBridge.exposeInMainWorld('indiedeck', {
   stores: {
     list: () => call('stores:list'),
     pick: () => call('stores:pick'),
-    save: (candidateId, managedProductId) => call('stores:save', candidateId, managedProductId),
+    preview: (text) => call('stores:preview', text),
+    importFile: async (file) => call('stores:importFile', selectedFilePath(file, 'ui.stores.error.linkFileInvalid')),
+    save: (candidateId, managedProductId, gameId, title) => call('stores:save', candidateId, managedProductId, gameId, title),
     remove: (linkId) => call('stores:remove', linkId),
     open: (provider, action, linkId) => call('stores:open', provider, action, linkId),
     openCompanion: () => call('stores:openCompanion'),

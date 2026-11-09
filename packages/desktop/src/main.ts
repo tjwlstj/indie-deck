@@ -74,7 +74,8 @@ import { LibraryScanController } from './library-scan.ts';
 import { getGameThumbnail, searchSteamCovers, fetchSteamCover, searchGogCovers, fetchGogCover } from './thumbnails.ts';
 import { createGogSearchAuthority } from './gog-search-authority.ts';
 import { readThumbnailPreferences, saveThumbnailPreference } from './thumbnail-preferences.ts';
-import { STORE_PROVIDERS, canonicalStoreProductUrl, readStoreLinkFile, readStoreConnections, saveStoreConnection, removeStoreConnection, resolveStoreHandoff,
+import { importManualThumbnail, readManualThumbnail, clearManualThumbnail } from './manual-thumbnails.ts';
+import { STORE_PROVIDERS, canonicalStoreProductUrl, parseStoreLink, parseStoreLinkText, readStoreLinkFile, readStoreConnections, saveStoreConnection, removeStoreConnection, resolveStoreHandoff,
   type StoreLinkCandidate, type StoreProviderId, type StoreHandoffAction, type StoreConnection } from './store-connections.ts';
 import { exportBrowserCompanion } from './browser-companion-export.ts';
 import { buildTranslationConfigComparison, type TranslationConfigComparison } from './translation-config-comparison.ts';
@@ -1372,6 +1373,35 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
   await waitFor(`document.querySelector('.thumbnail-detail img')?.src.startsWith('data:image/png;base64,')`, 'saved artwork restored on reload');
   console.log('[smoke] offline Steam artwork search → explicit choice → saved mapping → renderer reload passed');
 
+  // Native File objects cross the actual isolated preload bridge. All paths
+  // belong to this disposable test; the production bridge never exposes them.
+  const coverGameId = await evaluate<string>(`(async () => (await import('./store.js')).state.games.find(g => g.name === 'Aster Test Game').id)()`);
+  await evaluate(`(() => { const s = document.querySelector('.thumbnail-action-select'); s.value = 'folder'; s.dispatchEvent(new Event('change')); document.querySelector('.thumbnail-manual-apply').click(); })()`);
+  await waitFor(`(async () => (await window.indiedeck.game.thumbnail('${coverGameId}'))?.source === 'manual')()`, 'manual cover picker');
+  if (!(await readManualThumbnail(defaultDataDir(), coverGameId))) throw new Error('Manual image was not stored in launcher data.');
+  await new Promise<void>((resolve) => { window.webContents.once('did-finish-load', () => resolve()); window.webContents.reload(); });
+  await waitFor(`document.body.dataset.libraryState === 'ready'`, 'manual cover library reload');
+  await evaluate(`(() => { [...document.querySelectorAll('#gameList .game')].find(row => row.textContent.includes('Aster Test Game')).click(); })()`);
+  await waitFor(`!!document.querySelector('.thumbnail-action-select')`, 'manual cover controls restored');
+  await waitFor(`(async () => (await window.indiedeck.game.thumbnail('${coverGameId}'))?.source === 'manual')()`, 'manual cover restart persistence');
+  await evaluate(`(() => { const s = document.querySelector('.thumbnail-action-select'); s.value = 'clear'; s.dispatchEvent(new Event('change')); document.querySelector('.thumbnail-manual-apply').click(); })()`);
+  await waitFor(`(async () => (await window.indiedeck.game.thumbnail('${coverGameId}'))?.source === 'steam')()`, 'manual reset provider fallback');
+  await waitFor(`!!document.querySelector('.thumbnail-manual-apply:not(:disabled)')`, 'manual reset controls settled');
+  await evaluate(`(() => { const input = document.createElement('input'); input.type = 'file'; input.id = 'nativeFileFixture'; input.hidden = true; document.body.append(input); })()`);
+  window.webContents.debugger.attach('1.3');
+  try {
+    const document = await window.webContents.debugger.sendCommand('DOM.getDocument');
+    const input = await window.webContents.debugger.sendCommand('DOM.querySelector', { nodeId: document.root.nodeId, selector: '#nativeFileFixture' });
+    await window.webContents.debugger.sendCommand('DOM.setFileInputFiles', { nodeId: input.nodeId, files: [process.env['INDIEDECK_SMOKE_COVER']!] });
+    await evaluate(`(() => { const transfer = new DataTransfer(); transfer.items.add(document.getElementById('nativeFileFixture').files[0]); document.querySelector('.game-cover-section').dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer })); })()`);
+    await waitFor(`(async () => (await window.indiedeck.game.thumbnail('${coverGameId}'))?.source === 'manual')()`, 'native local image drop');
+    await window.webContents.debugger.sendCommand('DOM.setFileInputFiles', { nodeId: input.nodeId, files: [process.env['INDIEDECK_SMOKE_STORE_LINK']!] });
+    const linkedGame = await evaluate<boolean>(`(async () => { const file = document.getElementById('nativeFileFixture').files[0]; const result = await window.indiedeck.stores.importFile(file); const saved = await window.indiedeck.stores.save(result.candidate.id, undefined, '${coverGameId}'); return saved.snapshot.links.some(link => link.gameId === '${coverGameId}'); })()`);
+    if (!linkedGame) throw new Error('Native connection File could not link an ordinary scanned game.');
+  } finally { window.webContents.debugger.detach(); }
+  if (thumbnailShot) await writeFile(thumbnailShot, (await window.webContents.capturePage()).toPNG());
+  console.log('[smoke] manual cover picker and native File drop → launcher-owned persistence/reload → reset fallback → ordinary game product link passed');
+
   // Installed-update IPC/UI contract with a mocked native updater supplied by
   // the disposable bootstrap. This does not prove a public N→N+1 installation.
   const updateCalls = (globalThis as typeof globalThis & {
@@ -1870,14 +1900,24 @@ async function storeConnectionsPayload() {
   // prevents new associations while still allowing fixed official web links.
   const products = await listGameInstallations(defaultDataDir()).then((catalog) =>
     catalog.products.map(({ id, title }) => ({ id, title }))).catch(() => []);
+  const index = await loadLibrary();
+  const games = index.games.filter((game) => withinLibraryRoot(game.path)).map((game) => ({
+    id: idFor(game.path), title: game.title || game.name, name: game.name, path: game.path,
+  }));
   try {
     const snapshot = await readStoreConnections(defaultDataDir());
     return { snapshot: { ...snapshot, links: snapshot.links.map((link) => ({
       ...link, url: canonicalStoreProductUrl(link), actions: storeActions(link.provider, link),
-    })) }, providers, products };
+    })) }, providers, products, games };
   } catch (error) {
-    return { snapshot: null, providers, products, error: localiseTaskError(error) };
+    return { snapshot: null, providers, products, games, error: localiseTaskError(error) };
   }
+}
+
+async function storeCandidatePayload(link: StoreLinkCandidate) {
+  while (storeLinkCandidates.size >= 20) storeLinkCandidates.delete(storeLinkCandidates.keys().next().value!);
+  const id = crypto.randomUUID(); storeLinkCandidates.set(id, link);
+  return { ...await storeConnectionsPayload(), candidate: { ...link, id, url: canonicalStoreProductUrl(link) } };
 }
 
 /** The catalog owns stable product/version ids. Library profiles remain tied
@@ -2023,19 +2063,29 @@ function register(): void {
       filters: [{ name: t('ui.stores.linkFiles'), extensions: ['json'] }] });
     const file = picked.filePaths[0];
     if (picked.canceled || !file) return { ...await storeConnectionsPayload(), candidate: null };
-    const link = await readStoreLinkFile(file);
-    while (storeLinkCandidates.size >= 20) storeLinkCandidates.delete(storeLinkCandidates.keys().next().value!);
-    const id = crypto.randomUUID(); storeLinkCandidates.set(id, link);
-    return { ...await storeConnectionsPayload(), candidate: { ...link, id, url: canonicalStoreProductUrl(link) } };
+    return storeCandidatePayload(await readStoreLinkFile(file));
   });
-  handleMutation('stores:save', async (candidateId: unknown, managedProductId?: unknown) => {
+  handleMutation('stores:preview', async (text: unknown) => storeCandidatePayload(parseStoreLinkText(text)));
+  handleMutation('stores:importFile', async (file: unknown) => {
+    if (typeof file !== 'string' || file.length > 32767) throw new Error('ui.stores.error.linkFileInvalid');
+    return storeCandidatePayload(await readStoreLinkFile(file));
+  });
+  handleMutation('stores:save', async (candidateId: unknown, managedProductId?: unknown, gameId?: unknown, title?: unknown) => {
     if (typeof candidateId !== 'string' || !storeLinkCandidates.has(candidateId)) throw new Error('ui.stores.error.staleCandidate');
+    if (managedProductId !== undefined && gameId !== undefined) throw new Error('ui.stores.error.invalidManagedProduct');
     if (managedProductId !== undefined) {
       if (typeof managedProductId !== 'string' || !(await listGameInstallations(defaultDataDir())).products.some((p) => p.id === managedProductId)) {
         throw new Error('ui.stores.error.invalidManagedProduct');
       }
     }
-    await saveStoreConnection(defaultDataDir(), storeLinkCandidates.get(candidateId)!, managedProductId as string | undefined);
+    if (gameId !== undefined) {
+      requireGamePath(gameId);
+      const index = await loadLibrary();
+      if (!index.games.some((game) => idFor(game.path) === gameId && withinLibraryRoot(game.path))) throw new Error('ui.stores.error.invalidGame');
+    }
+    const candidate = storeLinkCandidates.get(candidateId)!;
+    const chosen = title === undefined ? candidate : parseStoreLink({ ...candidate, title });
+    await saveStoreConnection(defaultDataDir(), chosen, managedProductId as string | undefined, gameId as string | undefined);
     storeLinkCandidates.delete(candidateId);
     return storeConnectionsPayload();
   });
@@ -2225,6 +2275,8 @@ function register(): void {
 
   handle('game:thumbnail', async (gameId: string) => {
     const gamePath = requireGamePath(gameId);
+    const manual = await readManualThumbnail(defaultDataDir(), gameId);
+    if (manual) return manual;
     const preferences = await readThumbnailPreferences(defaultDataDir()).catch(() => new Map<string, string>());
     const chosen = preferences.get(gameId);
     if (chosen) {
@@ -2233,6 +2285,32 @@ function register(): void {
       if (image) return image;
     }
     return getGameThumbnail(gamePath);
+  });
+
+  handleMutation('game:pickThumbnail', async (gameId: string, fromGameFolder: unknown = false) => {
+    const gamePath = requireGamePath(gameId);
+    if (typeof fromGameFolder !== 'boolean') throw new Error('ui.thumbnail.importFailed');
+    const picked = await dialog.showOpenDialog({ properties: ['openFile'],
+      ...(fromGameFolder ? { defaultPath: gamePath } : {}),
+      title: t('ui.thumbnail.pickTitle', undefined, 'Choose a cover image'),
+      filters: [{ name: 'PNG / JPEG / WebP', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] });
+    const source = picked.filePaths[0];
+    if (picked.canceled || !source) return null;
+    requireGamePath(gameId);
+    try { return await importManualThumbnail(defaultDataDir(), gameId, source); }
+    catch { throw new Error('ui.thumbnail.importFailed'); }
+  });
+  handleMutation('game:importThumbnail', async (gameId: string, source: unknown) => {
+    requireGamePath(gameId);
+    if (typeof source !== 'string' || source.length > 32767) throw new Error('ui.thumbnail.importFailed');
+    try { return await importManualThumbnail(defaultDataDir(), gameId, source); }
+    catch { throw new Error('ui.thumbnail.importFailed'); }
+  });
+  handleMutation('game:clearThumbnail', async (gameId: string) => {
+    requireGamePath(gameId);
+    try { await clearManualThumbnail(defaultDataDir(), gameId); }
+    catch { throw new Error('ui.thumbnail.importFailed'); }
+    return null;
   });
 
   // The title is sent to Steam only after the user explicitly presses Search.
@@ -2260,6 +2338,7 @@ function register(): void {
     if (!image) throw new Error('Steam artwork is unavailable.');
     requireGamePath(gameId);
     await saveThumbnailPreference(defaultDataDir(), gameId, appId);
+    await clearManualThumbnail(defaultDataDir(), gameId);
     return image;
   });
 
@@ -2284,6 +2363,7 @@ function register(): void {
     requireGamePath(gameId);
     if (!gogSearchAuthority.isCurrent(gameId, id, authorization)) throw new Error('Select a current GOG search result.');
     await saveThumbnailPreference(defaultDataDir(), gameId, `gog:${id}:${authorization.hash}`);
+    await clearManualThumbnail(defaultDataDir(), gameId);
     return image;
   });
 

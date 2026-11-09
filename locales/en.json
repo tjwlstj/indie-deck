@@ -296,7 +296,14 @@
       "openedBrowser": "Opened in your default browser. Login, ownership and download status remain unverified in IndieDeck.",
       "openedClient": "Sent to the official launcher. Confirm login and installation there; IndieDeck has not verified completion.",
       "companionTitle": "Connect a page from your browser",
-      "companionDescription": "The optional browser extension saves a small product-link file only when you click it. Review that file here before adding the connection.",
+      "companionDescription": "Import copied browser companion metadata, a product URL or a connection file. Review it and link it to an installed game.",
+      "pasteTitle": "Import a product URL or connection",
+      "pasteHelp": "Paste a product URL or copied companion metadata, or drop one connection JSON file here.",
+      "pasteLabel": "Product URL or connection metadata", "preview": "Review imported information",
+      "dropReady": "Drop a connection JSON file", "editableTitle": "Display name",
+      "installedGames": "Installed games", "managedProducts": "Managed products", "selectedGame": "Linked game: {title}",
+      "linkTarget": "Game or managed product to link", "noTarget": "Save the product without linking a game",
+      "connectThisGame": "Connect a product to this game",
       "extensionStep": "Open the extension folder, then load it from your supported browser's extension manager. Follow the included README.",
       "exportStep": "Visit a supported product page and use the extension to save an IndieDeck product-link file.",
       "importStep": "Choose that file here, review the product, and optionally connect it to a managed game.",
@@ -332,6 +339,7 @@
         "downloadClient": "Get official launcher"
       },
       "error": {
+        "importInput": "Choose a supported product URL or one valid connection JSON file.",
         "staleCandidate": "This product-link preview has expired. Select the file again.",
         "clientMissing": "The official launcher is not registered on this computer. Install it or use the website.",
         "companionOpenFailed": "The browser extension folder could not be opened.",
@@ -446,7 +454,15 @@
       "loading": "Finding image", "missing": "No image", "local": "Game folder image", "steam": "Official Steam image",
       "search": "Search Steam artwork", "searchHint": "If the automatic image is for a different game, choose another. The game title is sent to Steam when you search.",
       "searching": "Searching…", "empty": "No results found.", "choose": "Choose image", "selected": "Image applied.",
-      "failed": "Could not load the image.", "retry": "Try again"
+      "failed": "Could not load the image. Check the file format and size, or your connection.", "retry": "Try again",
+      "manual": "Selected image", "gog": "GOG image", "searchGog": "Search GOG images",
+      "gogHint": "GOG search sends the game title to GOG. Its public catalog is unofficial; a chosen image may be fetched again later.",
+      "actionLabel": "Manual image action", "pickFile": "Choose an image file", "pickFolder": "Choose from the game folder",
+      "clearManual": "Remove manual image", "runAction": "Apply",
+      "manualHint": "Choose an image file or drop one onto this cover area. PNG, JPEG and WebP files up to 2 MiB are supported. A copy is stored by the launcher.",
+      "invalidDrop": "Drop one PNG, JPEG or WebP image no larger than 2 MiB.",
+      "cancelled": "Image selection cancelled. The existing image is kept.", "cleared": "Manual image removed. The original artwork was checked again.",
+      "busy": "Finish the active operation before changing the image."
     },
     "mtool": {
       "settingsTitle": "Local MTool integration",

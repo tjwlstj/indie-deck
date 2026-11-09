@@ -76,7 +76,7 @@ class Element {
   async click() { await this.listeners.get('click')?.(); }
 }
 function popupDocument() {
-  const elements = Object.fromEntries(['status', 'preview', 'saveLink', 'productTitle', 'provider', 'productId', 'productPage'].map((key) => [key, new Element()]));
+  const elements = Object.fromEntries(['status', 'preview', 'saveLink', 'copyLink', 'productTitle', 'provider', 'productId', 'productPage'].map((key) => [key, new Element()]));
   return { elements, documentElement: { lang: '' }, getElementById: (id: string) => elements[id], querySelectorAll: () => [] };
 }
 
@@ -97,6 +97,26 @@ test('popup Chrome callback query inspects one active tab and exports only after
   assert.deepEqual(JSON.parse(downloads[0]!.contents), { schemaVersion: 1, kind: 'indiedeck-store-link', provider: 'steam', productId: '12345', title: 'Reviewed title' });
   assert.equal(document.elements.status.textContent, MESSAGES.ko.saved);
   assert.equal(document.elements.saveLink.disabled, false);
+});
+
+test('explicit companion copy exports reviewed metadata only and failed clipboard writes retain file fallback', async () => {
+  const document = popupDocument(), copied: string[] = [];
+  let downloads = 0;
+  await mountPopup({ document, api: { tabs: { query: async () => [{ url: fixtures[3][0], title: 'Original' }] } }, promiseApi: true,
+    writeClipboard: async (contents: string) => { copied.push(contents); }, saveFile: async () => { downloads += 1; } });
+  assert.deepEqual(copied, []);
+  document.elements.productTitle.value = 'Reviewed label';
+  await document.elements.copyLink.click();
+  assert.deepEqual(JSON.parse(copied[0]!), { schemaVersion: 1, kind: 'indiedeck-store-link', provider: 'itch', productId: 'example-studio/example-game', title: 'Reviewed label' });
+  assert.doesNotMatch(copied[0]!, /private|secret|download_id|https/);
+  assert.equal(downloads, 0); assert.equal(document.elements.status.textContent, MESSAGES.ko.copied);
+  const denied = popupDocument();
+  await mountPopup({ document: denied, api: { tabs: { query: async () => [{ url: fixtures[0][0] }] } }, promiseApi: true,
+    writeClipboard: async () => { throw new Error('private clipboard denial'); }, saveFile: async () => { downloads += 1; } });
+  await denied.elements.copyLink.click();
+  assert.equal(denied.elements.status.textContent, MESSAGES.ko.copyFailed);
+  assert.equal(denied.elements.copyLink.disabled, false); assert.equal(denied.elements.saveLink.disabled, false);
+  await denied.elements.saveLink.click(); assert.equal(downloads, 1);
 });
 
 test('Firefox Promise query and unsupported/error pages expose no hidden export action or private error text', async () => {

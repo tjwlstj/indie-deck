@@ -31,7 +31,7 @@ export interface StoreLinkCandidate {
   schemaVersion: 1; kind: 'indiedeck-store-link'; provider: StoreProviderId; productId: string; title?: string;
 }
 export interface StoreConnection {
-  id: string; provider: StoreProviderId; productId: string; title: string; managedProductId?: string; createdAt: string;
+  id: string; provider: StoreProviderId; productId: string; title: string; managedProductId?: string; gameId?: string; createdAt: string;
 }
 export interface StoreConnectionsSnapshot { schemaVersion: 1; revision: number; links: StoreConnection[] }
 export interface StoreHandoff { url: string; kind: 'browser' | 'official-client'; authentication: 'unverified' }
@@ -78,6 +78,46 @@ export function parseStoreLink(input: unknown): StoreLinkCandidate {
   const p = provider(input.provider), id = productId(p.id, input.productId);
   return { schemaVersion: 1, kind: 'indiedeck-store-link', provider: p.id, productId: id,
     ...(typeof input.title === 'string' ? { title: input.title.trim() } : {}) };
+}
+
+/** Explicit paste only. Strip URL query/fragment by returning provider identity,
+ * and accept exactly the same public product routes as the companion. */
+export function parseStoreLinkText(input: unknown): StoreLinkCandidate {
+  if (typeof input !== 'string' || Buffer.byteLength(input, 'utf8') > LINK_LIMIT) fail('linkFileTooLarge');
+  const text = input.trim();
+  if (text.startsWith('{')) {
+    try { return parseStoreLink(JSON.parse(text)); }
+    catch { fail('invalidLink'); }
+  }
+  if (!text || /[\\\u0000-\u0020\u007f]/.test(text)) fail('invalidLink');
+  let url: URL;
+  try { url = new URL(text); } catch { fail('invalidLink'); }
+  const authority = /^https:\/\/([^/?#]*)/i.exec(text)?.[1];
+  if (url.protocol !== 'https:' || !authority || /[:@]/.test(authority) || url.username || url.password || url.port ||
+      /%(?:2f|5c|00|2e)/i.test(url.pathname)) fail('invalidLink');
+  let match: RegExpExecArray | null = null, p: StoreProviderId | undefined, id: string | undefined;
+  if (url.hostname === 'store.steampowered.com') {
+    match = /^\/app\/([1-9][0-9]{0,9})(?:\/[^/]+)?\/?$/.exec(url.pathname); p = 'steam'; id = match?.[1];
+  } else if (url.hostname === 'store.epicgames.com') {
+    match = /^\/(?:([^/]+)\/)?p\/([a-z0-9][a-z0-9_-]{0,159})\/?$/.exec(url.pathname);
+    if (match && (!match[1] || ['en-us', 'ar', 'de', 'es-es', 'es-mx', 'fr', 'it', 'ja', 'ko', 'pl', 'pt-br', 'ru', 'th', 'tr', 'zh-cn', 'zh-hant'].includes(match[1].toLowerCase()))) { p = 'epic'; id = match[2]; }
+  } else if (url.hostname === 'gog.com' || url.hostname === 'www.gog.com') {
+    match = /^\/(?:([^/]+)\/)?game\/([a-z0-9][a-z0-9_-]{0,159})\/?$/.exec(url.pathname);
+    if (match && (!match[1] || ['en', 'de', 'fr', 'pl', 'ru'].includes(match[1].toLowerCase()))) { p = 'gog'; id = match[2]; }
+  } else {
+    const itch = /^([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)\.itch\.io$/.exec(url.hostname);
+    if (itch) {
+      match = /^\/([a-z0-9][a-z0-9_-]{0,159})\/?$/.exec(url.pathname); p = 'itch'; if (match) id = `${itch[1]}/${match[1]}`;
+    } else if (url.hostname === 'booth.pm' || /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.booth\.pm$/.test(url.hostname)) {
+      match = /^\/(?:([a-z]{2})\/)?items\/([1-9][0-9]{0,11})\/?$/.exec(url.pathname);
+      if (match && (!match[1] || ['ja', 'en'].includes(match[1]))) { p = 'booth'; id = match[2]; }
+    } else if (url.hostname === 'www.dlsite.com' || url.hostname === 'dlsite.com') {
+      match = /^\/(home|maniax|pro|soft|books)\/work\/=\/product_id\/((?:RJ|VJ|BJ)[0-9]{6,12})\.html\/?$/.exec(url.pathname);
+      if (match) { p = 'dlsite'; id = `${match[1]}:${match[2]}`; }
+    }
+  }
+  if (!p || !id) fail('invalidLink');
+  return parseStoreLink({ schemaVersion: 1, kind: 'indiedeck-store-link', provider: p, productId: id });
 }
 export function canonicalStoreProductUrl(input: Pick<StoreLinkCandidate, 'provider' | 'productId'>): string {
   const p = provider(input.provider), id = productId(p.id, input.productId);
@@ -172,10 +212,12 @@ function validate(input: unknown): StoreConnectionsSnapshot {
   const ids = new Set<string>(), products = new Set<string>();
   const links: StoreConnection[] = [];
   for (const value of input.links) {
-    if (!object(value) || !keys(value, ['id', 'provider', 'productId', 'title', 'managedProductId', 'createdAt']) ||
+    if (!object(value) || !keys(value, ['id', 'provider', 'productId', 'title', 'managedProductId', 'gameId', 'createdAt']) ||
       typeof value.id !== 'string' || !UUID.test(value.id) || ids.has(value.id) || !displayTitle(value.title) ||
       typeof value.createdAt !== 'string' || !Number.isFinite(Date.parse(value.createdAt)) ||
-      value.managedProductId !== undefined && (typeof value.managedProductId !== 'string' || !UUID.test(value.managedProductId))) fail('connectionsCorrupt');
+      value.managedProductId !== undefined && (typeof value.managedProductId !== 'string' || !UUID.test(value.managedProductId)) ||
+      value.gameId !== undefined && (typeof value.gameId !== 'string' || !/^[0-9a-f]{16}$/.test(value.gameId)) ||
+      value.gameId !== undefined && value.managedProductId !== undefined) fail('connectionsCorrupt');
     let parsed: StoreLinkCandidate;
     try { parsed = parseStoreLink({ schemaVersion: 1, kind: 'indiedeck-store-link', provider: value.provider, productId: value.productId, title: value.title }); }
     catch { fail('connectionsCorrupt'); }
@@ -183,7 +225,8 @@ function validate(input: unknown): StoreConnectionsSnapshot {
     if (products.has(key)) fail('connectionsCorrupt');
     ids.add(value.id); products.add(key);
     links.push({ id: value.id, provider: parsed.provider, productId: parsed.productId, title: parsed.title!, createdAt: value.createdAt,
-      ...(typeof value.managedProductId === 'string' ? { managedProductId: value.managedProductId } : {}) });
+      ...(typeof value.managedProductId === 'string' ? { managedProductId: value.managedProductId } : {}),
+      ...(typeof value.gameId === 'string' ? { gameId: value.gameId } : {}) });
   }
   return { schemaVersion: 1, revision: input.revision as number, links };
 }
@@ -221,18 +264,20 @@ async function save(dataDir: string, snapshot: StoreConnectionsSnapshot): Promis
     return next;
   } finally { await fsp.rm(temporary, { force: true }); }
 }
-export async function saveStoreConnection(dataDir: string, input: StoreLinkCandidate, managedProductId?: string): Promise<StoreConnectionsSnapshot> {
+export async function saveStoreConnection(dataDir: string, input: StoreLinkCandidate, managedProductId?: string, gameId?: string): Promise<StoreConnectionsSnapshot> {
   const candidate = parseStoreLink(input);
   if (managedProductId !== undefined && (typeof managedProductId !== 'string' || !UUID.test(managedProductId))) fail('invalidManagedProduct');
+  if (gameId !== undefined && (typeof gameId !== 'string' || !/^[0-9a-f]{16}$/.test(gameId)) || gameId !== undefined && managedProductId !== undefined) fail('invalidManagedProduct');
   const snapshot = await readStoreConnections(dataDir);
   const existing = snapshot.links.find((link) => link.provider === candidate.provider && link.productId === candidate.productId);
   const title = candidate.title ?? existing?.title ?? candidate.productId;
   if (existing) {
     existing.title = title;
     if (managedProductId) existing.managedProductId = managedProductId; else delete existing.managedProductId;
+    if (gameId) existing.gameId = gameId; else delete existing.gameId;
   } else {
     snapshot.links.push({ id: crypto.randomUUID(), provider: candidate.provider, productId: candidate.productId, title,
-      ...(managedProductId ? { managedProductId } : {}), createdAt: new Date().toISOString() });
+      ...(managedProductId ? { managedProductId } : {}), ...(gameId ? { gameId } : {}), createdAt: new Date().toISOString() });
   }
   return save(dataDir, snapshot);
 }

@@ -296,7 +296,14 @@
       "openedBrowser": "기본 브라우저에서 열었어요. IndieDeck이 로그인·구매·다운로드 상태를 확인한 것은 아니에요.",
       "openedClient": "공식 런처에 전달했어요. 로그인과 설치 결과는 해당 런처에서 확인해 주세요. IndieDeck은 완료 여부를 확인하지 않았어요.",
       "companionTitle": "개인 브라우저의 상품 페이지 연결",
-      "companionDescription": "선택형 브라우저 확장 프로그램은 사용자가 눌렀을 때만 작은 상품 연결 파일을 저장해요. 여기에서 내용을 검토한 뒤 연결을 추가할 수 있어요.",
+      "companionDescription": "브라우저 확장에서 복사한 상품 정보, 상품 URL 또는 연결 파일을 가져와 내용을 검토하고 설치된 게임에 연결할 수 있어요.",
+      "pasteTitle": "상품 URL·연결 정보로 가져오기",
+      "pasteHelp": "상품 URL 또는 확장에서 복사한 연결 정보를 붙여넣거나, 연결 JSON 파일 한 개를 여기로 끌어다 놓으세요.",
+      "pasteLabel": "상품 URL 또는 연결 정보", "preview": "가져온 정보 확인",
+      "dropReady": "연결 JSON 파일을 놓으세요", "editableTitle": "표시 이름",
+      "installedGames": "설치된 게임", "managedProducts": "관리 상품", "selectedGame": "게임 연결: {title}",
+      "linkTarget": "연결할 게임 또는 관리 상품", "noTarget": "게임을 연결하지 않고 상품만 저장",
+      "connectThisGame": "이 게임에 상품 연결",
       "extensionStep": "확장 프로그램 폴더를 열고, 지원 브라우저의 확장 프로그램 관리에서 불러와요. 함께 있는 README 안내를 확인해 주세요.",
       "exportStep": "지원하는 상품 페이지에서 확장 프로그램을 눌러 IndieDeck 상품 연결 파일을 저장해요.",
       "importStep": "여기에서 해당 파일을 선택해 내용을 확인하고, 원하면 관리 중인 게임에 연결해요.",
@@ -332,6 +339,7 @@
         "downloadClient": "공식 런처 받기"
       },
       "error": {
+        "importInput": "지원하는 상품 URL 또는 올바른 연결 JSON 파일 한 개를 선택해 주세요.",
         "staleCandidate": "상품 연결 미리보기가 만료됐어요. 파일을 다시 선택해 주세요.",
         "clientMissing": "이 PC에 공식 런처가 등록되어 있지 않아요. 런처를 설치하거나 웹사이트를 이용해 주세요.",
         "companionOpenFailed": "브라우저 확장 프로그램 폴더를 열지 못했어요.",
@@ -446,7 +454,15 @@
       "loading": "이미지 찾는 중", "missing": "이미지 없음", "local": "게임 폴더 이미지", "steam": "Steam 공식 이미지",
       "search": "Steam 공식 이미지 검색", "searchHint": "자동 연결된 이미지가 다른 게임이라면 직접 바꿀 수 있어요. 검색 시 게임 제목이 Steam에 전송됩니다.",
       "searching": "검색 중…", "empty": "검색 결과가 없습니다.", "choose": "이미지 선택", "selected": "이미지를 적용했습니다.",
-      "failed": "이미지를 가져오지 못했습니다.", "retry": "다시 찾기"
+      "failed": "이미지를 가져오지 못했습니다. 파일 형식과 크기 또는 연결 상태를 확인해 주세요.", "retry": "다시 찾기",
+      "manual": "직접 선택한 이미지", "gog": "GOG 이미지", "searchGog": "GOG 이미지 검색",
+      "gogHint": "GOG 검색을 누르면 게임 제목을 GOG에 보내요. 비공식 공개 카탈로그를 이용하며 선택한 이미지는 나중에 다시 불러올 수 있어요.",
+      "actionLabel": "수동 이미지 작업", "pickFile": "이미지 파일 선택", "pickFolder": "게임 폴더에서 이미지 선택",
+      "clearManual": "수동 이미지 해제", "runAction": "실행",
+      "manualHint": "이미지 파일을 고르거나 이 표지 영역에 한 개를 끌어다 놓으세요. PNG·JPEG·WebP, 2 MiB 이하를 지원해요. 선택한 이미지는 런처에 복사해 보관해요.",
+      "invalidDrop": "PNG·JPEG·WebP 이미지 한 개만 놓아 주세요. 파일 크기는 2 MiB 이하여야 해요.",
+      "cancelled": "이미지 선택을 취소했어요. 기존 이미지를 유지해요.", "cleared": "수동 이미지를 해제하고 기존 표지를 다시 찾았어요.",
+      "busy": "진행 중인 작업을 마친 뒤 이미지를 바꿔 주세요."
     },
     "mtool": {
       "settingsTitle": "로컬 MTool 연결",

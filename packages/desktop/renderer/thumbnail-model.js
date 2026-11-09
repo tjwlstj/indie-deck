@@ -1,6 +1,6 @@
 /** Only main-validated image data may reach an <img>; never accept remote URLs. */
 export function normaliseThumbnail(value) {
-  if (!value || !['local', 'steam', 'gog'].includes(value.source) || typeof value.dataUrl !== 'string' ||
+  if (!value || !['local', 'manual', 'steam', 'gog'].includes(value.source) || typeof value.dataUrl !== 'string' ||
       value.dataUrl.length > 12 * 1024 * 1024 ||
       !/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value.dataUrl)) return null;
   return { source: value.source, dataUrl: value.dataUrl,

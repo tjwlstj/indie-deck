@@ -99,6 +99,9 @@ const originalDialog = electron.dialog.showOpenDialog.bind(electron.dialog);
 let archivePickCount = 0;
 electron.dialog.showOpenDialog = async (...args) => {
   const options = args.at(-1);
+  if (options?.filters?.some((filter) => filter.extensions?.includes('png')) && process.env.INDIEDECK_SMOKE_COVER) {
+    return { canceled: false, filePaths: [process.env.INDIEDECK_SMOKE_COVER] };
+  }
   if (options?.filters?.some((filter) => filter.extensions?.includes('json')) && process.env.INDIEDECK_SMOKE_STORE_LINK) {
     return { canceled: false, filePaths: [process.env.INDIEDECK_SMOKE_STORE_LINK] };
   }

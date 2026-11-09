@@ -3,11 +3,13 @@ import { test } from 'node:test';
 import { createThumbnailLoader, normaliseThumbnail } from '../../desktop/renderer/thumbnail-model.js';
 
 const local = { source: 'local', dataUrl: 'data:image/png;base64,AAAA' };
+const manual = { source: 'manual', dataUrl: 'data:image/png;base64,AAAA' };
 const steam = { source: 'steam', dataUrl: 'data:image/jpeg;base64,AABB', steamAppId: '123' };
 const gog = { source: 'gog', dataUrl: 'data:image/jpeg;base64,AABB', gogProductId: '1234567890' };
 
 test('thumbnail presentation accepts only bounded image data from an expected source', () => {
   assert.deepEqual(normaliseThumbnail(local), local);
+  assert.deepEqual(normaliseThumbnail(manual), manual);
   assert.deepEqual(normaliseThumbnail(steam), steam);
   assert.deepEqual(normaliseThumbnail(gog), gog);
   for (const bad of [null, {}, { source: 'remote', dataUrl: local.dataUrl },

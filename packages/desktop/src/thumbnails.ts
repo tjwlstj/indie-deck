@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 
-export interface Thumbnail { source: 'local' | 'steam' | 'gog'; dataUrl: string; steamAppId?: string; gogProductId?: string }
+export interface Thumbnail { source: 'local' | 'manual' | 'steam' | 'gog'; dataUrl: string; steamAppId?: string; gogProductId?: string }
 export interface SteamCoverCandidate { appId: string; name: string }
 export interface GogCoverCandidate { id: string; name: string; imageHash: string }
 export interface ThumbnailOptions { fetch?: typeof fetch }

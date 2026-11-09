@@ -2,9 +2,19 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
 import { makeBuilderOptions, sanitizedBuilderEnvironment } from '../../../scripts/build-ci-win.mjs';
+
+test('a builder failure remains nonzero through earlier shutdown listeners', () => {
+  const script = new URL('../../../scripts/build-ci-win.mjs', import.meta.url).href;
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e',
+    `import { reportBuildFailure } from ${JSON.stringify(script)}; process.on('exit', () => {process.exitCode = 0}); reportBuildFailure(new Error('synthetic failure'));`],
+    { encoding: 'utf8', windowsHide: true, timeout: 10000 });
+  assert.equal(result.error, undefined);
+  assert.equal(result.status, 1);
+});
 
 const require = createRequire(import.meta.url);
 const version = '43.8.7';

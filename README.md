@@ -156,7 +156,11 @@ The game detail page also offers explicit Steam and experimental GOG title
 searches and a user choice; each search sends the title to its chosen service.
 GOG's public catalog has no verified API stability contract. IDs from a game's `steam_appid.txt` can
 be development placeholders, so the image can still be for the wrong game.
-The image cache is process memory, not an offline download. See
+Manual PNG/JPEG/WebP covers can be selected through a file picker (including one
+starting in the game folder) or dropped onto the detail cover. A validated copy
+is saved in launcher data and persists offline; the original stays untouched.
+Removing the manual image restores the previous automatic/store choice.
+Store images use a process-memory cache. See
 [docs/thumbnail-guide.md](docs/thumbnail-guide.md) for priorities and limits.
 
 **Local MTool handoff.** The Windows launcher can connect an existing MTool
@@ -283,11 +287,13 @@ product IDs. These actions report a handoff, not authenticated ownership or an
 observed completed installation. Browser passwords, cookies and profiles are
 not imported into IndieDeck.
 
-The optional browser companion exports a small product-link JSON file after an
-explicit click on a supported product page. Pick that file in Settings, review
-it and optionally connect it to an existing managed game. The connection does
+The optional browser companion copies or exports product-link JSON after an
+explicit click on a supported product page. Paste its data or an official product
+URL, or pick/drop the JSON file in Settings, then review its title and explicitly
+connect it to an installed game or existing managed product. A game detail shortcut
+preselects that game. The connection does
 not transfer installation ownership or copy game files. Connected pages also
-appear in that managed game's detail view. Loading the extension
+appear in the connected game's detail view. Loading the extension
 in the user's browser is a separate manual step. Native Messaging and direct
 itch.io OAuth/butlerd authentication remain planned; see
 [browser/store integration](docs/browser-store-integration.md) for current

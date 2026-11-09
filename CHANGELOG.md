@@ -5,6 +5,25 @@ Versioning while the project is pre-1.0.
 
 ## [Unreleased]
 
+## [0.1.15] - 2026-11-10
+
+### Added
+
+- Manual cover images through a file picker, a picker starting in the game
+  folder, and native file drag and drop. Validated copies are stored in launcher
+  data, appear immediately in the library and persist across restarts.
+- Manual cover removal restores the previous store selection or automatic image.
+- Browser companion connection-data copy, pasted product URL/JSON preview,
+  connection-file drop, editable display names and explicit links to ordinary
+  installed games. Game detail offers a shortcut with its game preselected.
+
+### Fixed
+
+- Network errors containing signed CDN URLs no longer appear as signature
+  failures solely because a URL contains a signature query parameter. This
+  changes error presentation; it does not resolve a GitHub service outage.
+- Failed Windows CI packaging remains nonzero through builder shutdown handlers.
+
 ## [0.1.14] - 2026-11-08
 
 ### Added

@@ -10,7 +10,10 @@ export const MESSAGES = {
     export: '연결 파일 저장', exporting: '연결 파일 저장을 요청하고 있어요.',
     saved: '저장을 요청했어요. 다운로드 완료 여부는 브라우저에서 확인해 주세요.',
     failed: '연결 파일을 저장하지 못했어요. 확장 버튼을 다시 열고 시도해 주세요.',
-    instructions: '저장한 .indiedeck-link.json 파일을 IndieDeck의 스토어 연결 화면에서 가져오세요.',
+    copy: '연결 정보 복사', copying: '연결 정보를 복사하고 있어요.',
+    copied: '복사했어요. IndieDeck의 스토어 연결 화면에 붙여넣고 설치된 게임을 선택하세요.',
+    copyFailed: '브라우저에서 복사를 허용하지 않았어요. 연결 파일을 저장한 뒤 IndieDeck으로 끌어다 놓으세요.',
+    instructions: '연결 정보를 복사해 IndieDeck에 붙여넣거나, 저장한 .indiedeck-link.json 파일을 스토어 연결 화면에 끌어다 놓으세요.',
     privacy: '로그인·구매 확인은 개인 브라우저에서 진행해요. 파일에는 쿠키·다운로드 주소·게임 파일 경로가 포함되지 않아요.',
     scope: '지원 상품 페이지: Steam · Epic · GOG · itch.io · BOOTH · DLsite',
   },
@@ -23,7 +26,10 @@ export const MESSAGES = {
     export: 'Save connection file', exporting: 'Requesting a connection-file download…',
     saved: 'Save requested. Check download completion in your browser.',
     failed: 'The connection file could not be saved. Reopen this extension and try again.',
-    instructions: 'Import the saved .indiedeck-link.json file from IndieDeck’s store connection screen.',
+    copy: 'Copy connection information', copying: 'Copying connection information…',
+    copied: 'Copied. Paste it into IndieDeck’s store connection screen and choose an installed game.',
+    copyFailed: 'Clipboard access was unavailable. Save the connection file and drop it into IndieDeck instead.',
+    instructions: 'Paste copied connection information into IndieDeck, or drop the saved .indiedeck-link.json file into its store connection screen.',
     privacy: 'Sign-in and purchases stay in your browser. The file contains no cookies, download URLs or game-file paths.',
     scope: 'Product pages: Steam · Epic · GOG · itch.io · BOOTH · DLsite',
   },
@@ -47,12 +53,14 @@ export async function currentTab(api, promiseApi = false) {
 }
 
 /** Mounting inspects metadata only. A download requires a second explicit click. */
-export async function mountPopup({ document, api, promiseApi = false, language = 'ko', saveFile = saveConnectionFile }) {
+export async function mountPopup({ document, api, promiseApi = false, language = 'ko', saveFile = saveConnectionFile, writeClipboard = copyConnectionMetadata }) {
   const locale = language.toLowerCase().startsWith('ko') ? 'ko' : 'en', messages = MESSAGES[locale];
   document.documentElement.lang = locale;
   for (const node of document.querySelectorAll('[data-i18n]')) node.textContent = messages[node.dataset.i18n] ?? '';
   const status = document.getElementById('status'), preview = document.getElementById('preview');
   const button = document.getElementById('saveLink'), title = document.getElementById('productTitle');
+  const copy = document.getElementById('copyLink');
+  if (copy) copy.disabled = true;
   button.disabled = true; preview.hidden = true; status.textContent = messages.loading;
   let metadata;
   try {
@@ -67,20 +75,37 @@ export async function mountPopup({ document, api, promiseApi = false, language =
   const page = document.getElementById('productPage');
   page.textContent = productPageForMetadata(metadata); page.href = productPageForMetadata(metadata);
   title.value = metadata.title ?? ''; preview.hidden = false; button.disabled = false; status.textContent = messages.ready;
+  if (copy) copy.disabled = false;
   let saving = false;
+  const reviewedPayload = () => {
+    const displayTitle = cleanDisplayTitle(title.value);
+    return { schemaVersion: 1, kind: 'indiedeck-store-link', provider: metadata.provider, productId: metadata.productId,
+      ...(displayTitle ? { title: displayTitle } : {}) };
+  };
+  const busy = (value) => { saving = value; button.disabled = value; if (copy) copy.disabled = value; };
   button.addEventListener('click', async () => {
     if (saving) return;
-    saving = true; button.disabled = true; status.textContent = messages.exporting;
+    busy(true); status.textContent = messages.exporting;
     try {
-      const displayTitle = cleanDisplayTitle(title.value);
-      const payload = { schemaVersion: 1, kind: 'indiedeck-store-link', provider: metadata.provider, productId: metadata.productId,
-        ...(displayTitle ? { title: displayTitle } : {}) };
-      await saveFile({ document, filename: LINK_FILENAME, contents: serializeStoreLink(payload) });
+      await saveFile({ document, filename: LINK_FILENAME, contents: serializeStoreLink(reviewedPayload()) });
       status.textContent = messages.saved;
     } catch { status.textContent = messages.failed; }
-    finally { saving = false; button.disabled = false; }
+    finally { busy(false); }
+  });
+  copy?.addEventListener('click', async () => {
+    if (saving) return;
+    busy(true); status.textContent = messages.copying;
+    try { await writeClipboard(serializeStoreLink(reviewedPayload())); status.textContent = messages.copied; }
+    catch { status.textContent = messages.copyFailed; }
+    finally { busy(false); }
   });
   return { supported: true };
+}
+
+/** Explicit write only: no clipboard reads or persistent/background access. */
+export async function copyConnectionMetadata(contents) {
+  if (typeof globalThis.navigator?.clipboard?.writeText !== 'function') throw new Error('Clipboard unavailable');
+  await globalThis.navigator.clipboard.writeText(contents);
 }
 
 export function saveConnectionFile({ document, filename, contents }) {

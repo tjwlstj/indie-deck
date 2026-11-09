@@ -56,6 +56,12 @@ async function main() {
   await build(options);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  main().catch((error) => { console.error(`[ci-build] ${error.message}`); process.exitCode = 1; });
+export function reportBuildFailure(error) {
+  console.error(`[ci-build] ${error instanceof Error ? error.message : String(error)}`);
+  process.exitCode = 1;
+  // Match electron-builder's CLI: retain failure if an earlier exit listener
+  // changes exitCode during library shutdown.
+  process.on('exit', () => { process.exitCode = 1; });
 }
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) main().catch(reportBuildFailure);

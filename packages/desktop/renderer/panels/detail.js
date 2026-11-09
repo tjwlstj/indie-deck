@@ -7,10 +7,11 @@
  */
 
 import { el, setStatus, severityMark, severityTone } from '../dom.js';
-import { currentLocale, retranslate, t } from '../i18n.js';
+import { retranslate, t } from '../i18n.js';
 import { api, mutationBlocked, state } from '../store.js';
 import { fontChoiceKey, selectedFontPlan } from '../font-options.js';
-import { thumbnailElement, acceptSelectedThumbnail, retryThumbnail } from '../thumbnail.js';
+import { thumbnailElement } from '../thumbnail.js';
+import { appendThumbnailControls } from '../thumbnail-controls.js';
 import { renderManagedVersions } from './archives.js';
 import { renderGameStoreLinks } from './stores.js';
 import { openOptionComparisonDialog } from './maintenance.js';
@@ -274,61 +275,8 @@ export function renderHeader(panel, ctx) {
   const coverSection = el('section', 'game-cover-section');
   const cover = thumbnailElement(profile, true);
   coverSection.append(cover);
-  const controls = el('div', 'thumbnail-controls');
-  controls.append(el('p', 'thumbnail-help', t('ui.thumbnail.searchHint', undefined,
-    'Searching sends the game title to Steam. Choose a matching result yourself.')));
-  const actionsRow = el('div', 'thumbnail-actions');
-  const search = el('button', 'ghost', t('ui.thumbnail.search', undefined, 'Search Steam images'));
-  const korean = currentLocale().startsWith('ko');
-  const gogSearch = el('button', 'ghost thumbnail-gog-search', t('ui.thumbnail.searchGog', undefined,
-    korean ? 'GOG 이미지 검색' : 'Search GOG images'));
-  const retry = el('button', 'ghost', t('ui.thumbnail.retry', undefined, 'Find image again'));
-  const status = el('p', 'thumbnail-status'); status.setAttribute('role', 'status');
-  const results = el('div', 'thumbnail-results');
-  controls.append(el('p', 'thumbnail-help', t('ui.thumbnail.gogHint', undefined, korean
-    ? 'GOG 검색을 누르면 게임 제목을 GOG에 보내요. 비공식 공개 카탈로그를 이용하며 선택한 이미지는 나중에 다시 불러올 수 있어요.'
-    : 'GOG search sends the game title to GOG. Its public catalog is unofficial; a chosen image may be fetched again later.')));
-  async function searchCover(provider) {
-    const gog = provider === 'gog';
-    const lookup = gog ? api.game.thumbnailSearchGog : api.game.thumbnailSearch;
-    const select = gog ? api.game.thumbnailSelectGog : api.game.thumbnailSelect;
-    if (typeof lookup !== 'function' || typeof select !== 'function') return;
-    search.disabled = true; gogSearch.disabled = true; results.replaceChildren();
-    status.textContent = t('ui.thumbnail.searching', undefined, 'Searching…');
-    try {
-      const matches = await lookup(profile.id);
-      if (!coverSection.isConnected) return;
-      const safe = Array.isArray(matches) ? matches.filter((item) => typeof item?.name === 'string' &&
-        typeof (gog ? item?.id : item?.appId) === 'string' &&
-        (gog ? /^[1-9]\d{0,19}$/.test(item.id) : /^\d{1,10}$/.test(item.appId))).slice(0, 20) : [];
-      status.textContent = safe.length ? t('ui.thumbnail.choose', undefined, 'Choose an image') : t('ui.thumbnail.empty', undefined, 'No results found.');
-      for (const item of safe) {
-        const id = gog ? item.id : item.appId;
-        const choice = el('button', 'ghost thumbnail-choice', `${item.name} · ${gog ? 'GOG · ' : ''}${id}`);
-        choice.addEventListener('click', async () => {
-          for (const button of results.querySelectorAll('button')) button.disabled = true;
-          try {
-            const image = await select(profile.id, id);
-            if (!acceptSelectedThumbnail(profile.id, image)) throw new Error('No usable image');
-            if (!coverSection.isConnected) return;
-            status.textContent = t('ui.thumbnail.selected', undefined, 'Image applied.'); results.replaceChildren();
-          } catch { if (coverSection.isConnected) status.textContent = t('ui.thumbnail.failed', undefined, 'Could not load the image.'); }
-          finally { for (const button of results.querySelectorAll('button')) button.disabled = false; }
-        });
-        results.append(choice);
-      }
-    } catch { if (coverSection.isConnected) status.textContent = t('ui.thumbnail.failed', undefined, 'Could not load the image.'); }
-    finally { search.disabled = false; gogSearch.disabled = false; }
-  }
-  search.addEventListener('click', () => void searchCover('steam'));
-  gogSearch.addEventListener('click', () => void searchCover('gog'));
-  retry.addEventListener('click', async () => {
-    retry.disabled = true; status.textContent = t('ui.thumbnail.loading', undefined, 'Finding image…');
-    try { await retryThumbnail(cover); if (coverSection.isConnected) status.textContent = ''; }
-    finally { retry.disabled = false; }
-  });
-  actionsRow.append(search, gogSearch, retry); controls.append(actionsRow, status, results);
-  coverSection.append(controls); panel.append(coverSection);
+  appendThumbnailControls(coverSection, profile, cover);
+  panel.append(coverSection);
 }
 
 /* ---------------------------------------------------------------- facts */
