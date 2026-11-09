@@ -76,6 +76,10 @@ jobs:
           path: |
             out/desktop-flow-ko.png
             out/desktop-flow-en.png
+            out/desktop-thumbnail-ko.png
+            out/desktop-thumbnail-en.png
+            out/desktop-stores-ko.png
+            out/desktop-stores-en.png
           retention-days: 1
           if-no-files-found: error
 
