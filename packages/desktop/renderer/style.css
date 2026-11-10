@@ -367,7 +367,7 @@ body.gaming-mode { font-size: 16px; }
 .game-cover-section { border: 1px dashed transparent; border-radius: 8px; transition: border-color .12s, background .12s; }
 .game-cover-section.thumbnail-drop-active { border-color: var(--accent); background: var(--bg-raised); }
 .store-import { margin: 8px 0; padding: 12px; border: 1px dashed var(--line); border-radius: 8px; }
-.store-import textarea { box-sizing: border-box; width: 100%; min-height: 88px; resize: vertical; }
+.store-import textarea { box-sizing: border-box; width: 100%; min-height: 88px; resize: vertical; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; }
 .store-import[data-drag-over="true"] { border-color: var(--accent); background: var(--bg-raised); }
 .store-import textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
@@ -1288,6 +1288,8 @@ select {
 .store-steps li + li { margin-top: 5px; }
 .store-product-label { display: flex; flex-direction: column; gap: 7px; margin: 12px 0; font-size: 12px; }
 .store-product-label select { width: 100%; padding: 7px 9px; }
+.store-product-label input { box-sizing: border-box; width: 100%; padding: 7px 9px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+.store-product-label input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .store-artwork { margin: 14px 0; padding-top: 12px; border-top: 1px solid var(--line); }
 .store-artwork h4 { margin: 0 0 8px; font-size: 12px; }
 .store-artwork-image { display: block; max-width: min(100%, 280px); max-height: 220px; object-fit: contain; border-radius: 6px; margin: 10px 0; }

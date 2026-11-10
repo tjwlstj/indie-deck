@@ -15,6 +15,8 @@ Versioning while the project is pre-1.0.
 - Imported artwork preview and a separate apply action for a selected installed
   game. Validated image bytes persist as a launcher-owned cover copy and update
   the library immediately. Product connection saving remains independent.
+- Match the product title and pasted connection fields to the dark theme so
+  edited text remains readable during artwork review.
 
 ### Security
 
