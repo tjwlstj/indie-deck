@@ -1473,8 +1473,10 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
     __indiedeckGameSmokeChildren: Array<{ emit(event: string, code: number): void }>
   }).__indiedeckGameSmokeChildren;
   await evaluate(`window.indiedeck.game.launch('${coverGameId}')`);
-  for (let n = 0; n < 100 && !window.isMinimized(); n += 1) await new Promise(resolve => setTimeout(resolve, 50));
-  if (gameChildren().length !== 1 || !window.isMinimized()) throw new Error('Owned game spawn did not apply optional launcher minimization: ' + JSON.stringify({
+  for (let n = 0; n < 100 && window.isVisible() && !window.isMinimized(); n += 1) await new Promise(resolve => setTimeout(resolve, 50));
+  // A hosted desktop can already report a fullscreen window as hidden. Such a
+  // window needs no minimize request and must not be shown merely for a test.
+  if (gameChildren().length !== 1 || window.isVisible() && !window.isMinimized()) throw new Error('Owned game spawn left an active launcher window: ' + JSON.stringify({
     children: gameChildren().length, active: gamingSnapshot().activeGameCount, preference: gamingPreferences.minimizeOnLaunch,
     visible: window.isVisible(), fullscreen: window.isFullScreen(), minimizable: window.isMinimizable(), minimized: window.isMinimized(),
   }));
@@ -1486,12 +1488,12 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
   })()`);
   if (!gates) throw new Error('Tracked game did not block duplicate launch and game-file writes.');
   gameChildren()[0]!.emit('exit', 0);
-  if (ownedGames.snapshot().sessions.length || !window.isMinimized()) throw new Error('Child completion did not clear ownership or unexpectedly restored focus.');
-  window.restore();
+  if (ownedGames.snapshot().sessions.length || window.isVisible() && !window.isMinimized()) throw new Error('Child completion did not clear ownership or unexpectedly restored focus.');
+  window.restore(); window.show();
   app.emit('second-instance', {}, ['portable-extraction.exe', '--fullscreen', '--launch-game', coverGameId]);
   for (let n = 0; n < 200 && gameChildren().length < 2; n += 1) await new Promise(resolve => setTimeout(resolve, 50));
   if (gameChildren().length !== 2) throw new Error('Second-instance game shortcut did not use guarded launch.');
-  gameChildren()[1]!.emit('exit', 0); window.restore();
+  gameChildren()[1]!.emit('exit', 0); window.restore(); window.show();
   const beforeInvalidEntry = gameChildren().length;
   app.emit('second-instance', {}, [process.execPath, '--launch-game', '../../untrusted.exe']);
   await new Promise(resolve => setTimeout(resolve, 30));
