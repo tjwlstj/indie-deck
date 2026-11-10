@@ -282,6 +282,24 @@
       }
     },
     "stores": {
+      "artwork": {
+        "title": "Optional product artwork",
+        "source": "Image source",
+        "preview": "Preview image",
+        "previewing": "Checking image…",
+        "previewReady": "Review the preview, then apply it to an installed game.",
+        "previewAlt": "Imported product artwork preview",
+        "apply": "Apply as selected game cover",
+        "applying": "Applying cover…",
+        "applied": "Game cover applied. Save the product connection separately.",
+        "replaceHint": "Applying replaces the launcher cover copy. Files in the game folder stay unchanged.",
+        "chooseGame": "Choose an installed game above to apply its cover.",
+        "invalid": "This product does not have a supported public artwork URL.",
+        "unavailable": "The image could not be checked. Check its format and size, or choose another image.",
+        "stale": "The artwork preview expired. Import the product again and review its preview.",
+        "busy": "An image is being checked. Wait for it to finish before retrying.",
+        "error": { "failed": "The image could not be processed. Preview it again or choose another image." }
+      },
       "title": "Stores and browser integration",
       "description": "Open your game stores and official launchers, and link a product page to a managed game.",
       "externalLogin": "Sign in using your default browser or the official launcher. Your browser keeps its own session; IndieDeck does not import its passwords or cookies.",

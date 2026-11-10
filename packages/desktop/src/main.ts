@@ -74,7 +74,8 @@ import { LibraryScanController } from './library-scan.ts';
 import { getGameThumbnail, searchSteamCovers, fetchSteamCover, searchGogCovers, fetchGogCover } from './thumbnails.ts';
 import { createGogSearchAuthority } from './gog-search-authority.ts';
 import { readThumbnailPreferences, saveThumbnailPreference } from './thumbnail-preferences.ts';
-import { importManualThumbnail, readManualThumbnail, clearManualThumbnail } from './manual-thumbnails.ts';
+import { importManualThumbnail, importManualThumbnailBytes, readManualThumbnail, clearManualThumbnail } from './manual-thumbnails.ts';
+import { createStoreArtworkPreviews } from './store-artwork.ts';
 import { STORE_PROVIDERS, canonicalStoreProductUrl, parseStoreLink, parseStoreLinkText, readStoreLinkFile, readStoreConnections, saveStoreConnection, removeStoreConnection, resolveStoreHandoff,
   type StoreLinkCandidate, type StoreProviderId, type StoreHandoffAction, type StoreConnection } from './store-connections.ts';
 import { exportBrowserCompanion } from './browser-companion-export.ts';
@@ -230,6 +231,7 @@ const lastOptionComparisonsByGame = new Map<string, TranslationConfigHistoryReco
 const securityResultsByGame = new Map<string, SecurityScanResult>();
 const archiveCandidates = new Map<string, { path: string; inspection: GameArchiveInspection }>();
 const storeLinkCandidates = new Map<string, StoreLinkCandidate>();
+const storeArtworkPreviews = createStoreArtworkPreviews();
 const thumbnailSearchResults = new Map<string, Set<string>>();
 const thumbnailSearchGeneration = new Map<string, number>();
 const gogSearchAuthority = createGogSearchAuthority();
@@ -1467,6 +1469,47 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
   if (thumbnailShot) await writeFile(thumbnailShot, (await window.webContents.capturePage()).toPNG());
   console.log('[smoke] manual cover picker and native File drop → launcher-owned persistence/reload → reset fallback → ordinary game product link passed');
 
+  // Importing metadata cannot fetch or apply its artwork. A preview and a
+  // selected ordinary game are separate explicit actions through the real UI.
+  await clearManualThumbnail(defaultDataDir(), coverGameId);
+  await evaluate(`document.getElementById('openSettings').click()`);
+  await waitFor(`!!document.querySelector('.store-preview:not(:disabled)')`, 'product artwork importer');
+  await evaluate(`(() => {
+    const input = document.getElementById('storeLinkInput');
+    input.value = JSON.stringify({ schemaVersion: 2, kind: 'indiedeck-store-link', provider: 'steam', productId: '440',
+      title: 'Offline artwork fixture', artwork: { url: 'https://cdn.cloudflare.steamstatic.com/steam/apps/440/header.jpg?t=123' } });
+    input.dispatchEvent(new Event('input', { bubbles: true })); document.querySelector('.store-preview').click();
+  })()`);
+  await waitFor(`!!document.querySelector('.store-artwork-preview:not(:disabled)')`, 'product artwork candidate');
+  if (await readManualThumbnail(defaultDataDir(), coverGameId)) throw new Error('Importing product metadata applied artwork without confirmation.');
+  await evaluate(`document.querySelector('.store-artwork-preview').click()`);
+  await waitFor(`!!document.querySelector('.store-artwork-image') && !!document.querySelector('.store-artwork-preview:not(:disabled)')`, 'validated product artwork preview');
+  if (await readManualThumbnail(defaultDataDir(), coverGameId)) throw new Error('Previewing product artwork changed the existing cover.');
+  await evaluate(`(() => { const target = document.getElementById('storeLinkProduct'); target.value = 'game:${coverGameId}'; target.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await waitFor(`!!document.querySelector('.store-artwork-apply:not(:disabled)')`, 'explicit installed-game artwork target');
+  const artworkShot = process.env['INDIEDECK_STORE_ARTWORK_SCREENSHOT'];
+  if (artworkShot) {
+    await evaluate(`document.querySelector('.store-artwork').scrollIntoView({ block: 'center' })`);
+    await writeFile(artworkShot, (await window.webContents.capturePage()).toPNG());
+  }
+  const artworkGates = await evaluate<boolean>(`(async () => {
+    const api = window.indiedeck; const { state } = await import('./store.js'); const id = state.storeCandidate.id;
+    const unissued = await api.stores.previewArtwork('unissued').then(() => false, () => true);
+    const noPreview = await api.stores.applyArtwork(id, 'unissued', '${coverGameId}').then(() => false, () => true);
+    const wrongGame = await api.stores.applyArtwork(id, state.storeArtworkPreview.previewId, 'unknown-game').then(() => false, () => true);
+    return unissued && noPreview && wrongGame;
+  })()`);
+  if (!artworkGates) throw new Error('Artwork IPC accepted unissued preview or game identity.');
+  await evaluate(`document.querySelector('.store-artwork-apply').click()`);
+  await waitFor(`(async () => !(await import('./store.js')).state.storeBusy && (await window.indiedeck.game.thumbnail('${coverGameId}'))?.source === 'manual')()`, 'product artwork persistent apply');
+  await evaluate(`document.querySelector('.store-save').click()`);
+  await waitFor(`(async () => !(await import('./store.js')).state.storeBusy && !document.querySelector('.store-candidate'))()`, 'independent product connection save');
+  await evaluate(`document.getElementById('closeSettings').click()`);
+  await new Promise<void>(resolve => { window.webContents.once('did-finish-load', () => resolve()); window.webContents.reload(); });
+  await waitFor(`document.body.dataset.libraryState === 'ready'`, 'product artwork reload');
+  if ((await readManualThumbnail(defaultDataDir(), coverGameId))?.source !== 'manual') throw new Error('Applied product artwork did not persist.');
+  console.log('[smoke] product artwork metadata → explicit preview → installed-game-only apply → independent connection save → persisted reload passed; offline CDN fixture only');
+
   await evaluate(`document.getElementById('toggleGamingMode').click()`);
   await waitFor(`document.body.dataset.gamingMode === 'true'`, 'native fullscreen gaming mode');
   const oneClick = await evaluate<boolean>(`(() => {
@@ -2054,7 +2097,10 @@ async function storeConnectionsPayload() {
 }
 
 async function storeCandidatePayload(link: StoreLinkCandidate) {
-  while (storeLinkCandidates.size >= 20) storeLinkCandidates.delete(storeLinkCandidates.keys().next().value!);
+  while (storeLinkCandidates.size >= 20) {
+    const oldest = storeLinkCandidates.keys().next().value!;
+    storeArtworkPreviews.revoke(oldest); storeLinkCandidates.delete(oldest);
+  }
   const id = crypto.randomUUID(); storeLinkCandidates.set(id, link);
   return { ...await storeConnectionsPayload(), candidate: { ...link, id, url: canonicalStoreProductUrl(link) } };
 }
@@ -2287,6 +2333,22 @@ function register(): void {
     if (typeof file !== 'string' || file.length > 32767) throw new Error('ui.stores.error.linkFileInvalid');
     return storeCandidatePayload(await readStoreLinkFile(file));
   });
+  handleMutation('stores:previewArtwork', async (candidateId: unknown) => {
+    if (typeof candidateId !== 'string' || !storeLinkCandidates.has(candidateId)) throw new Error('ui.stores.artwork.stale');
+    const candidate = storeLinkCandidates.get(candidateId)!;
+    if (!candidate.artwork) throw new Error('ui.stores.artwork.invalid');
+    return storeArtworkPreviews.preview(candidateId, candidate.provider, candidate.productId, candidate.artwork.url);
+  });
+  handleMutation('stores:applyArtwork', async (candidateId: unknown, previewId: unknown, gameId: string) => {
+    if (typeof candidateId !== 'string' || !storeLinkCandidates.get(candidateId)?.artwork) throw new Error('ui.stores.artwork.stale');
+    requireGamePath(gameId);
+    const index = await loadLibrary();
+    if (!index.games.some(game => idFor(game.path) === gameId && withinLibraryRoot(game.path))) throw new Error('ui.stores.error.invalidGame');
+    const bytes = storeArtworkPreviews.get(candidateId, previewId);
+    // Apply exactly what was previewed. Never refetch a mutable URL here.
+    const thumbnail = await importManualThumbnailBytes(defaultDataDir(), gameId, bytes);
+    return { gameId, thumbnail };
+  });
   handleMutation('stores:save', async (candidateId: unknown, managedProductId?: unknown, gameId?: unknown, title?: unknown) => {
     if (typeof candidateId !== 'string' || !storeLinkCandidates.has(candidateId)) throw new Error('ui.stores.error.staleCandidate');
     if (managedProductId !== undefined && gameId !== undefined) throw new Error('ui.stores.error.invalidManagedProduct');
@@ -2303,6 +2365,7 @@ function register(): void {
     const candidate = storeLinkCandidates.get(candidateId)!;
     const chosen = title === undefined ? candidate : parseStoreLink({ ...candidate, title });
     await saveStoreConnection(defaultDataDir(), chosen, managedProductId as string | undefined, gameId as string | undefined);
+    storeArtworkPreviews.revoke(candidateId);
     storeLinkCandidates.delete(candidateId);
     return storeConnectionsPayload();
   });

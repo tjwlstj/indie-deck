@@ -133,6 +133,8 @@ contextBridge.exposeInMainWorld('indiedeck', {
     list: () => call('stores:list'),
     pick: () => call('stores:pick'),
     preview: (text) => call('stores:preview', text),
+    previewArtwork: (candidateId) => call('stores:previewArtwork', candidateId),
+    applyArtwork: (candidateId, previewId, gameId) => call('stores:applyArtwork', candidateId, previewId, gameId),
     importFile: async (file) => call('stores:importFile', selectedFilePath(file, 'ui.stores.error.linkFileInvalid')),
     save: (candidateId, managedProductId, gameId, title) => call('stores:save', candidateId, managedProductId, gameId, title),
     remove: (linkId) => call('stores:remove', linkId),

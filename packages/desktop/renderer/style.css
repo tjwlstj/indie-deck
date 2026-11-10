@@ -1288,6 +1288,9 @@ select {
 .store-steps li + li { margin-top: 5px; }
 .store-product-label { display: flex; flex-direction: column; gap: 7px; margin: 12px 0; font-size: 12px; }
 .store-product-label select { width: 100%; padding: 7px 9px; }
+.store-artwork { margin: 14px 0; padding-top: 12px; border-top: 1px solid var(--line); }
+.store-artwork h4 { margin: 0 0 8px; font-size: 12px; }
+.store-artwork-image { display: block; max-width: min(100%, 280px); max-height: 220px; object-fit: contain; border-radius: 6px; margin: 10px 0; }
 .store-game-card { margin-bottom: 18px; }
 .store-game-link + .store-game-link { padding-top: 12px; border-top: 1px solid var(--line); }
 .store-game-link strong { overflow-wrap: anywhere; }

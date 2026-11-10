@@ -1,6 +1,8 @@
 import { $, el, setStatus } from '../dom.js';
 import { currentLocale, t } from '../i18n.js';
 import { api, emit, mutationBlocked, state } from '../store.js';
+import { normaliseThumbnail } from '../thumbnail-model.js';
+import { acceptSelectedThumbnail } from '../thumbnail.js';
 import {
   acceptStoreConnectionsRead, applyStoreConnectionsMutation, beginStoreConnectionsRead,
   failStoreConnectionsRead, storeCandidatePresentation, storeHandoffMessageKey, storeLinksForGame,
@@ -19,6 +21,92 @@ function links() { return state.storeConnections?.snapshot?.links ?? []; }
 function writeBlocked() { return mutationBlocked() || Boolean(state.storeReadError) || state.storeReadPending; }
 function defaultStoreTarget() {
   return games().some((game) => game.id === state.storeTargetGameId) ? `game:${state.storeTargetGameId}` : '';
+}
+
+function artworkText(key, ko, en) {
+  return t(`ui.stores.artwork.${key}`, undefined, currentLocale().startsWith('ko') ? ko : en);
+}
+
+function clearArtworkPreview() {
+  state.storeArtworkRequestToken += 1;
+  state.storeArtworkPreview = null;
+  state.storeArtworkAction = null;
+}
+
+function artworkError(error) {
+  const fallback = artworkText('error.failed', '이미지를 처리하지 못했어요. 다시 미리보기를 확인해 주세요.', 'Could not process this image. Preview it again and retry.');
+  const key = typeof error === 'string' ? error : error?.message;
+  return typeof key === 'string' && /^ui\.stores\.artwork\.[a-zA-Z.]+$/.test(key) ? t(key, undefined, fallback) : fallback;
+}
+
+function artworkRequestCurrent(token, candidateId) {
+  return token === state.storeArtworkRequestToken && state.storeCandidate?.id === candidateId;
+}
+
+function installedArtworkTarget() {
+  const target = state.storeProductId;
+  if (typeof target !== 'string' || !target.startsWith('game:')) return null;
+  const id = target.slice(5);
+  return games().some((game) => game.id === id) ? id : null;
+}
+
+function candidateArtworkPreview(candidate) {
+  const preview = state.storeArtworkPreview;
+  const thumbnail = normaliseThumbnail(preview?.thumbnail);
+  return preview?.candidateId === candidate.id && typeof preview.previewId === 'string' &&
+    preview.previewId.length > 0 && preview.previewId.length <= 128 && thumbnail?.source === 'manual'
+    ? { ...preview, thumbnail } : null;
+}
+
+async function previewStoreArtwork(candidate) {
+  if (writeBlocked() || state.storeCandidate?.id !== candidate.id || !candidate.artwork?.url) return;
+  clearArtworkPreview();
+  const token = state.storeArtworkRequestToken;
+  state.storeArtworkAction = 'preview';
+  await performStoreAction(async () => {
+    try {
+      if (typeof api.stores?.previewArtwork !== 'function') throw new Error('ui.stores.artwork.unavailable');
+      const result = await api.stores.previewArtwork(candidate.id);
+      if (!artworkRequestCurrent(token, candidate.id)) return;
+      const thumbnail = normaliseThumbnail(result?.thumbnail);
+      if (result?.candidateId !== candidate.id || typeof result.previewId !== 'string' || !result.previewId ||
+          result.previewId.length > 128 || thumbnail?.source !== 'manual') throw new Error('ui.stores.artwork.invalid');
+      // Preview bytes belong to the candidate, so choosing a target afterwards
+      // does not refetch the image or grant permission to apply it.
+      state.storeArtworkPreview = { candidateId: candidate.id, previewId: result.previewId, thumbnail };
+      setStatus(artworkText('previewReady', '미리보기를 확인한 뒤 설치된 게임에 적용해 주세요.', 'Review the preview, then apply it to an installed game.'));
+    } catch (error) {
+      if (artworkRequestCurrent(token, candidate.id)) setStatus(artworkError(error), 'err');
+    } finally {
+      if (token === state.storeArtworkRequestToken) state.storeArtworkAction = null;
+    }
+  });
+}
+
+async function applyStoreArtwork(candidate) {
+  const preview = candidateArtworkPreview(candidate);
+  const gameId = installedArtworkTarget();
+  if (writeBlocked() || state.storeCandidate?.id !== candidate.id || !preview || !gameId) return;
+  const token = ++state.storeArtworkRequestToken;
+  state.storeArtworkAction = 'apply';
+  await performStoreAction(async () => {
+    try {
+      if (typeof api.stores?.applyArtwork !== 'function') throw new Error('ui.stores.artwork.unavailable');
+      const result = await api.stores.applyArtwork(candidate.id, preview.previewId, gameId);
+      const thumbnail = normaliseThumbnail(result?.thumbnail);
+      if (result?.gameId !== gameId || thumbnail?.source !== 'manual') throw new Error('ui.stores.artwork.invalid');
+      // Main has already saved this captured game's cover. Prime that game's
+      // cache even if the selection changed while IPC was pending.
+      acceptSelectedThumbnail(gameId, thumbnail);
+      if (artworkRequestCurrent(token, candidate.id) && installedArtworkTarget() === gameId) {
+        setStatus(artworkText('applied', '게임 표지에 적용했어요. 상품 연결은 별도로 저장해 주세요.', 'Game cover applied. Save the product connection separately.'), 'ok');
+      }
+    } catch (error) {
+      if (artworkRequestCurrent(token, candidate.id) && installedArtworkTarget() === gameId) setStatus(artworkError(error), 'err');
+    } finally {
+      if (token === state.storeArtworkRequestToken) state.storeArtworkAction = null;
+    }
+  });
 }
 
 export async function refreshStoreConnections() {
@@ -61,6 +149,7 @@ async function pickStoreLink() {
     const result = await api.stores.pick();
     if (!applyStoreConnectionsMutation(state, result)) throw new Error(state.storeReadError);
     if (result.candidate) {
+      clearArtworkPreview();
       state.storeCandidate = result.candidate;
       state.storeProductId = defaultStoreTarget();
       state.storeCandidateTitle = result.candidate.title || '';
@@ -79,6 +168,7 @@ async function importStoreLink(file) {
     const result = file ? await api.stores.importFile(file) : await api.stores.preview(text);
     if (!applyStoreConnectionsMutation(state, result)) throw new Error(state.storeReadError);
     if (result.candidate) {
+      clearArtworkPreview();
       state.storeCandidate = result.candidate;
       state.storeCandidateTitle = result.candidate.title || '';
       state.storeProductId = defaultStoreTarget();
@@ -97,6 +187,7 @@ async function saveStoreLink(candidate) {
   await performStoreAction(async () => {
     const result = await api.stores.save(candidate.id, managedProductId, gameId, title);
     if (!applyStoreConnectionsMutation(state, result)) throw new Error(state.storeReadError);
+    clearArtworkPreview();
     state.storeCandidate = null;
     state.storeProductId = '';
     state.storeCandidateTitle = '';
@@ -130,6 +221,38 @@ function appendStoreActions(container, provider, actions, linkId) {
     row.append(button);
   }
   container.append(row);
+}
+
+function renderCandidateArtwork(card, candidate) {
+  if (typeof candidate.artwork?.url !== 'string' || !candidate.artwork.url) return;
+  const section = el('section', 'store-artwork');
+  section.append(el('h4', null, artworkText('title', '상품 이미지 선택 적용', 'Optional product artwork')),
+    el('p', 'store-help', artworkText('source', '이미지 출처', 'Image source')),
+    el('p', 'store-url store-artwork-source', candidate.artwork.url),
+    el('p', 'store-help', artworkText('replaceHint', '적용하면 런처의 표지 사본만 교체해요. 게임 폴더의 파일은 변경하지 않아요.', 'Applying replaces only the launcher cover copy. Files in the game folder stay unchanged.')));
+  const preview = candidateArtworkPreview(candidate);
+  if (preview) {
+    const image = el('img', 'store-artwork-image');
+    image.alt = artworkText('previewAlt', '가져온 상품 이미지 미리보기', 'Imported product artwork preview');
+    image.src = preview.thumbnail.dataUrl;
+    section.append(image);
+  }
+  const actions = el('div', 'store-actions');
+  const previewButton = el('button', 'ghost store-artwork-preview', state.storeArtworkAction === 'preview'
+    ? artworkText('previewing', '이미지 확인 중…', 'Checking image…')
+    : artworkText('preview', '이미지 미리보기', 'Preview image'));
+  previewButton.disabled = writeBlocked();
+  previewButton.addEventListener('click', () => void previewStoreArtwork(candidate));
+  const apply = el('button', 'ghost store-artwork-apply', state.storeArtworkAction === 'apply'
+    ? artworkText('applying', '표지 적용 중…', 'Applying cover…')
+    : artworkText('apply', '선택한 게임 표지로 적용', 'Apply as selected game cover'));
+  apply.disabled = writeBlocked() || !preview || !installedArtworkTarget();
+  apply.addEventListener('click', () => void applyStoreArtwork(candidate));
+  actions.append(previewButton, apply);
+  section.append(actions);
+  if (!installedArtworkTarget()) section.append(el('p', 'store-help',
+    artworkText('chooseGame', '표지를 적용하려면 위에서 설치된 게임을 선택해 주세요.', 'Choose an installed game above to apply its cover.')));
+  card.append(section);
 }
 
 function renderCandidate(body) {
@@ -172,13 +295,14 @@ function renderCandidate(body) {
   select.addEventListener('change', () => { state.storeProductId = select.value; renderStoreSettings(); });
   label.append(el('span', null, t('ui.stores.linkTarget')), select);
   card.append(label, el('p', 'store-help', t('ui.stores.ownerUnchanged')));
+  renderCandidateArtwork(card, candidate);
   const actions = el('div', 'store-actions');
   const save = el('button', 'primary store-save', t('ui.stores.save'));
   save.disabled = !storeCandidatePresentation(candidate, products(), state.storeProductId, mutationBlocked(), state.storeReadError || state.storeReadPending, games()).canSave;
   save.addEventListener('click', () => void saveStoreLink(candidate));
   const cancel = el('button', 'ghost store-cancel', t('ui.stores.cancel'));
   cancel.disabled = mutationBlocked();
-  cancel.addEventListener('click', () => { state.storeCandidate = null; state.storeProductId = ''; state.storeCandidateTitle = ''; state.storeTargetGameId = null; renderStoreSettings(); });
+  cancel.addEventListener('click', () => { clearArtworkPreview(); state.storeCandidate = null; state.storeProductId = ''; state.storeCandidateTitle = ''; state.storeTargetGameId = null; renderStoreSettings(); });
   actions.append(save, cancel);
   card.append(actions);
   body.append(card);

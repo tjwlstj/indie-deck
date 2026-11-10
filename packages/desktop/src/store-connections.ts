@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import { normalizeArtworkUrl } from './store-artwork.ts';
 
 export type StoreProviderId = 'steam' | 'epic' | 'gog' | 'itch' | 'booth' | 'dlsite' | 'dmm' | 'fanza';
 export type StoreHandoffAction = 'site' | 'library' | 'login' | 'client' | 'downloadClient';
@@ -28,7 +29,8 @@ export const STORE_PROVIDERS: readonly StoreProvider[] = Object.freeze([
 ]);
 
 export interface StoreLinkCandidate {
-  schemaVersion: 1; kind: 'indiedeck-store-link'; provider: StoreProviderId; productId: string; title?: string;
+  schemaVersion: 1 | 2; kind: 'indiedeck-store-link'; provider: StoreProviderId; productId: string; title?: string;
+  artwork?: { url: string };
 }
 export interface StoreConnection {
   id: string; provider: StoreProviderId; productId: string; title: string; managedProductId?: string; gameId?: string; createdAt: string;
@@ -71,12 +73,21 @@ function productId(providerId: StoreProviderId, value: unknown): string {
 /** Declarative page identity only. Reject extra fields rather than accidentally
  * accepting download URLs, auth data, executable paths or installation plans. */
 export function parseStoreLink(input: unknown): StoreLinkCandidate {
-  if (!object(input) || !keys(input, ['schemaVersion', 'kind', 'provider', 'productId', 'title']) ||
+  if (!object(input) || !keys(input, ['schemaVersion', 'kind', 'provider', 'productId', 'title', 'artwork']) ||
     !['schemaVersion', 'kind', 'provider', 'productId'].every((key) => Object.hasOwn(input, key)) ||
-    input.schemaVersion !== 1 || input.kind !== 'indiedeck-store-link' ||
+    ![1, 2].includes(input.schemaVersion as number) || input.kind !== 'indiedeck-store-link' ||
     input.title !== undefined && !displayTitle(input.title)) fail('invalidLink');
   const p = provider(input.provider), id = productId(p.id, input.productId);
-  return { schemaVersion: 1, kind: 'indiedeck-store-link', provider: p.id, productId: id,
+  let artwork: { url: string } | undefined;
+  if (input.schemaVersion === 1 && Object.hasOwn(input, 'artwork')) fail('invalidLink');
+  if (input.schemaVersion === 2) {
+    if (!object(input.artwork) || !keys(input.artwork, ['url']) || !Object.hasOwn(input.artwork, 'url')) fail('invalidLink');
+    const url = normalizeArtworkUrl(p.id, id, input.artwork.url);
+    if (!url) fail('invalidLink');
+    artwork = { url };
+  }
+  return { schemaVersion: input.schemaVersion as 1 | 2, kind: 'indiedeck-store-link', provider: p.id, productId: id,
+    ...(artwork ? { artwork } : {}),
     ...(typeof input.title === 'string' ? { title: input.title.trim() } : {}) };
 }
 

@@ -87,9 +87,21 @@ function serial<T>(target: string, task: () => Promise<T>): Promise<T> {
 /** Copy validated image bytes to a fixed launcher-owned filename. No selected
  * source path or original filename is retained, and game files are never edited. */
 export function importManualThumbnail(dataDir: string, gameId: string, sourcePath: string): Promise<Thumbnail> {
+  return storeManualThumbnail(dataDir, gameId, () => readImage(sourcePath));
+}
+
+/** Remote artwork has already been previewed and bounded by main. Store an
+ * immutable copy through the same ordinary-file writer as a picked image. */
+export function importManualThumbnailBytes(dataDir: string, gameId: string, input: Buffer): Promise<Thumbnail> {
+  if (!Buffer.isBuffer(input) || !input.length || input.length > MAX_IMAGE_BYTES || !imageMime(input)) throw new Error('Unsupported manual thumbnail image.');
+  const bytes = Buffer.from(input);
+  return storeManualThumbnail(dataDir, gameId, async () => bytes);
+}
+
+function storeManualThumbnail(dataDir: string, gameId: string, readSource: () => Promise<Buffer>): Promise<Thumbnail> {
   const { directory, target } = locations(dataDir, gameId);
   return serial(target, async () => {
-    const bytes = await readImage(sourcePath), thumbnail = result(bytes);
+    const bytes = await readSource(), thumbnail = result(bytes);
     const parent = await ordinaryDirectory(directory, true);
     await ordinaryTarget(target);
     const temporary = path.join(directory, `.${gameId}.${crypto.randomUUID()}.tmp`);

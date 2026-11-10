@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 
-const COMMON = ['store-link.js', 'popup-controller.js', 'popup.js', 'popup.html', 'popup.css'];
+const COMMON = ['store-link.js', 'artwork.js', 'popup-controller.js', 'popup.js', 'popup.html', 'popup.css'];
 const SOURCE = ['manifest.json', 'manifest.firefox.json', ...COMMON, 'README.md'];
 const MARKER = '.indiedeck-companion.json';
 function fail(): never { throw new Error('ui.stores.error.companionExportFailed'); }
@@ -47,7 +47,7 @@ export async function exportBrowserCompanion(appPath: string, dataDir: string, v
     for (const name of ['manifest.json', 'manifest.firefox.json']) {
       const manifest = JSON.parse(source.get(name)!.toString('utf8'));
       if (manifest.version !== version || manifest.manifest_version !== 3 ||
-        JSON.stringify(manifest.permissions) !== JSON.stringify(['activeTab']) || manifest.host_permissions?.length) fail();
+        JSON.stringify(manifest.permissions) !== JSON.stringify(['activeTab', 'scripting']) || manifest.host_permissions?.length) fail();
     }
     const files = new Map<string, Buffer>([['README.md', source.get('README.md')!]]);
     for (const browser of ['chromium', 'firefox']) {

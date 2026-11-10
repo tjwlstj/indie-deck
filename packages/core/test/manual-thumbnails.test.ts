@@ -4,7 +4,7 @@ import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
-import { importManualThumbnail, readManualThumbnail, clearManualThumbnail } from '../../desktop/src/manual-thumbnails.ts';
+import { importManualThumbnail, importManualThumbnailBytes, readManualThumbnail, clearManualThumbnail } from '../../desktop/src/manual-thumbnails.ts';
 
 const parent = path.resolve(os.tmpdir()), fixture = fs.mkdtempSync(path.join(parent, 'indiedeck-manual-cover-'));
 after(() => {
@@ -15,6 +15,18 @@ after(() => {
 const game = '0123456789abcdef', other = 'fedcba9876543210';
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/aV8AAAAASUVORK5CYII=', 'base64');
 function directory(name: string) { const file = path.join(fixture, name); fs.mkdirSync(file, { recursive: true }); return file; }
+
+test('previewed artwork bytes use the same persistent store and invalid replacement preserves the prior cover', async () => {
+  const data = path.join(fixture, 'web-artwork'), bytes = Buffer.from(png);
+  const pending = importManualThumbnailBytes(data, game, bytes); bytes.fill(0);
+  const saved = await pending;
+  assert.deepEqual(await readManualThumbnail(data, game), saved);
+  assert.equal(saved.dataUrl, `data:image/png;base64,${png.toString('base64')}`);
+  for (const invalid of [Buffer.alloc(0), Buffer.from('<svg/>'), Buffer.alloc(2 * 1024 * 1024 + 1)]) {
+    assert.throws(() => importManualThumbnailBytes(data, game, invalid));
+    assert.deepEqual(await readManualThumbnail(data, game), saved);
+  }
+});
 
 test('manual image persists as a private launcher-owned copy and source edits/deletion cannot change it', async () => {
   const sourceDir = directory('game'), data = path.join(fixture, 'data'), source = path.join(sourceDir, 'arbitrary filename.png');

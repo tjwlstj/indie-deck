@@ -16,7 +16,9 @@ test('bundled companion exports both browser manifests, verifies repeats and pre
   assert.equal(exported, path.join(data, 'browser-companion', version));
   const chromium = JSON.parse(fs.readFileSync(path.join(exported, 'chromium', 'manifest.json'), 'utf8'));
   const firefox = JSON.parse(fs.readFileSync(path.join(exported, 'firefox', 'manifest.json'), 'utf8'));
-  assert.deepEqual(chromium.permissions, ['activeTab']); assert.deepEqual(firefox.permissions, ['activeTab']);
+  assert.deepEqual(chromium.permissions, ['activeTab', 'scripting']); assert.deepEqual(firefox.permissions, ['activeTab', 'scripting']);
+  assert.equal(fs.existsSync(path.join(exported, 'chromium', 'artwork.js')), true);
+  assert.equal(fs.existsSync(path.join(exported, 'firefox', 'artwork.js')), true);
   assert.equal(await exportBrowserCompanion(project, data, version), exported);
   const modified = path.join(exported, 'chromium', 'popup.js');
   fs.writeFileSync(modified, 'user local edit');

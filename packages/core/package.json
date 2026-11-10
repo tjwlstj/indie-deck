@@ -1,6 +1,6 @@
 {
   "name": "@indiedeck/core",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "description": "Engine detection, translator/mod-loader compatibility resolution and installation for IndieDeck.",
   "license": "MIT",
   "type": "module",

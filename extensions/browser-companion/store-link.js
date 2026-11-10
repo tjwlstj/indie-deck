@@ -1,4 +1,5 @@
 /** Shared by the extension popup and its offline tests. No browser or network access. */
+import { normalizeArtworkUrl } from './artwork.js';
 export const LINK_FILENAME = 'indiedeck-store-link.indiedeck-link.json';
 const SLUG = /^[a-z0-9][a-z0-9_-]{0,159}$/;
 const CREATOR = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
@@ -76,15 +77,24 @@ export function metadataFromProductUrl(input, title) {
 /** Validate the same narrow schema before export; unknown fields cannot become hidden payloads. */
 export function validateStoreLink(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value) ||
-      !Object.keys(value).every((key) => ['schemaVersion', 'kind', 'provider', 'productId', 'title'].includes(key)) ||
+      !Object.keys(value).every((key) => ['schemaVersion', 'kind', 'provider', 'productId', 'title', 'artwork'].includes(key)) ||
       !['schemaVersion', 'kind', 'provider', 'productId'].every((key) => Object.hasOwn(value, key)) ||
-      value.schemaVersion !== 1 || value.kind !== 'indiedeck-store-link' || !PROVIDERS.has(value.provider) ||
+      ![1, 2].includes(value.schemaVersion) || value.kind !== 'indiedeck-store-link' || !PROVIDERS.has(value.provider) ||
       !validProductId(value.provider, value.productId) ||
       value.title !== undefined && (typeof value.title !== 'string' || !value.title.length || value.title.length > 240 || /[\u0000-\u001f\u007f-\u009f]/.test(value.title))) {
     throw new Error('Unsupported store-link metadata');
   }
-  return { schemaVersion: 1, kind: 'indiedeck-store-link', provider: value.provider, productId: value.productId,
-    ...(value.title !== undefined ? { title: value.title } : {}) };
+  let artwork;
+  if (value.schemaVersion === 1 && Object.hasOwn(value, 'artwork')) throw new Error('Unsupported store-link metadata');
+  if (value.schemaVersion === 2) {
+    if (!Object.hasOwn(value, 'artwork') || !value.artwork || typeof value.artwork !== 'object' || Array.isArray(value.artwork) ||
+        Object.keys(value.artwork).length !== 1 || !Object.hasOwn(value.artwork, 'url')) throw new Error('Unsupported store-link metadata');
+    const url = normalizeArtworkUrl(value.provider, value.productId, value.artwork.url);
+    if (!url) throw new Error('Unsupported store-link metadata');
+    artwork = { url };
+  }
+  return { schemaVersion: value.schemaVersion, kind: 'indiedeck-store-link', provider: value.provider, productId: value.productId,
+    ...(value.title !== undefined ? { title: value.title } : {}), ...(artwork ? { artwork } : {}) };
 }
 
 export function serializeStoreLink(value) { return `${JSON.stringify(validateStoreLink(value), null, 2)}\n`; }

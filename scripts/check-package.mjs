@@ -37,6 +37,7 @@ const required = [
   '\\packages\\desktop\\dist\\game-archives.js',
   '\\packages\\desktop\\dist\\game-installations.js',
   '\\packages\\desktop\\dist\\store-connections.js',
+  '\\packages\\desktop\\dist\\store-artwork.js',
   '\\packages\\desktop\\dist\\browser-companion-export.js',
   '\\packages\\desktop\\dist\\launcher-updates.js',
   '\\packages\\desktop\\dist\\library-roots.js',
@@ -85,7 +86,7 @@ const required = [
   '\\registry\\configs\\xunity-autotranslator.json',
   '\\locales\\en.json',
   '\\locales\\ko.json',
-  ...['manifest.json', 'manifest.firefox.json', 'store-link.js', 'popup-controller.js', 'popup.js', 'popup.html', 'popup.css', 'README.md']
+  ...['manifest.json', 'manifest.firefox.json', 'store-link.js', 'artwork.js', 'popup-controller.js', 'popup.js', 'popup.html', 'popup.css', 'README.md']
     .map((name) => `\\extensions\\browser-companion\\${name}`),
 ];
 
@@ -126,6 +127,7 @@ const currentRuntime = [
   ['packages/desktop/dist/game-archives.js', 'packages/desktop/dist/game-archives.js'],
   ['packages/desktop/dist/game-installations.js', 'packages/desktop/dist/game-installations.js'],
   ['packages/desktop/dist/store-connections.js', 'packages/desktop/dist/store-connections.js'],
+  ['packages/desktop/dist/store-artwork.js', 'packages/desktop/dist/store-artwork.js'],
   ['packages/desktop/dist/browser-companion-export.js', 'packages/desktop/dist/browser-companion-export.js'],
   ['packages/desktop/dist/launcher-updates.js', 'packages/desktop/dist/launcher-updates.js'],
   ['packages/desktop/dist/library-roots.js', 'packages/desktop/dist/library-roots.js'],

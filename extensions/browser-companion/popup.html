@@ -20,6 +20,13 @@
       <input id="productTitle" type="text" maxlength="240" autocomplete="off">
       <p class="page-label" data-i18n="page"></p>
       <a id="productPage" target="_blank" rel="noopener noreferrer"></a>
+      <section class="artwork-controls" aria-label="Product artwork">
+        <button id="findArtwork" type="button" disabled data-i18n="findArtwork"></button>
+        <p id="artworkStatus" role="status" aria-live="polite" data-i18n="artworkHint"></p>
+        <label for="artworkChoice" data-i18n="artworkChoice"></label>
+        <select id="artworkChoice" disabled></select>
+        <label class="checkbox-label"><input id="includeArtwork" type="checkbox" disabled><span data-i18n="includeArtwork"></span></label>
+      </section>
       <button id="copyLink" type="button" disabled data-i18n="copy"></button>
       <button id="saveLink" type="button" disabled data-i18n="export"></button>
       <p class="instructions" data-i18n="instructions"></p>

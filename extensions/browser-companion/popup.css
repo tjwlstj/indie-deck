@@ -10,6 +10,11 @@ dl { display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; font-size: 1
 dd { margin: 0; overflow-wrap: anywhere; }
 label, .page-label { display: block; margin: 12px 0 7px; font-size: 12px; }
 input { width: 100%; padding: 10px; background: #10131d; color: inherit; border: 1px solid #4c566e; border-radius: 6px; }
+select { width: 100%; padding: 9px; background: #10131d; color: inherit; border: 1px solid #4c566e; border-radius: 6px; }
+.artwork-controls { border: 1px solid #3a4052; border-radius: 7px; padding: 12px; margin-top: 14px; }
+.artwork-controls button { margin-top: 0; background: #27354e; }
+.checkbox-label { display: flex; align-items: flex-start; gap: 8px; line-height: 1.5; }
+.checkbox-label input { width: auto; margin: 3px 0 0; }
 a { display: block; color: #b0c5ff; font-size: 11px; line-height: 1.7; overflow-wrap: anywhere; }
 button { width: 100%; min-height: 42px; margin-top: 18px; padding: 10px; border: 1px solid #a1bbff; border-radius: 7px; background: #3c59a3; color: white; font-size: 13px; font-weight: 600; cursor: pointer; }
 button:disabled { opacity: .5; cursor: default; }

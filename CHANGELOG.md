@@ -5,6 +5,27 @@ Versioning while the project is pre-1.0.
 
 ## [Unreleased]
 
+## [0.1.18] - 2026-11-10
+
+### Added
+
+- Optional browser companion artwork capture from the selected official product
+  page's Open Graph/Twitter image metadata. Capture is explicit and bounded to
+  the active main frame; product-only exports retain the legacy format.
+- Imported artwork preview and a separate apply action for a selected installed
+  game. Validated image bytes persist as a launcher-owned cover copy and update
+  the library immediately. Product connection saving remains independent.
+
+### Security
+
+- Independently validate public provider CDN URLs before preview requests; reject
+  arbitrary hosts, signed query parameters, redirects, active image formats and
+  oversized responses. No cookies, referrers or account headers are transferred.
+- Applying uses the same short-lived preview bytes without a second download,
+  requires main-issued candidate/preview IDs and an existing installed game.
+- The extension adds `scripting` alongside `activeTab` for one-shot metadata
+  capture. It does not request host/background privileges or download images.
+
 ## [0.1.17] - 2026-11-10
 
 ### Added
