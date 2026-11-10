@@ -11,7 +11,7 @@ import { renderGameList, renderSidebar } from './panels/library.js';
 import { SECTIONS } from './panels/index.js';
 import { resetConfigPanel } from './panels/config.js';
 import { operationCard } from './panels/detail.js';
-import { refreshMToolStatus } from './panels/mtool.js';
+import { refreshMToolStatus, syncMToolIntegrationControls } from './panels/mtool.js';
 import { archiveProgressLabel, bindArchiveEvents, recoverArchiveProgress, refreshArchiveRecords } from './panels/archives.js';
 import { releaseThumbnails } from './thumbnail.js';
 import { bindGamingMode } from './gaming-mode.js';
@@ -165,6 +165,7 @@ function renderOperationChrome() {
 
   $('scan').disabled = libraryBusy || mutationBlocked();
   setSettingsMutationDisabled();
+  syncMToolIntegrationControls();
   renderScanChrome();
 }
 

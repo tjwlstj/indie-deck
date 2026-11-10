@@ -130,6 +130,25 @@ export function renderMToolSettings() {
   body.append(actions);
 }
 
+/** Security status events can arrive after the handoff reply. Update only the
+ * existing controls so a late scan completion releases its UI gate without
+ * rebuilding a focused detail form or keeping a stale disabled button. */
+export function syncMToolIntegrationControls() {
+  const context = state.detail;
+  for (const card of document.querySelectorAll('#detail .mtool-integration')) {
+    const current = card.dataset.mtoolGameId === state.selected && context?.profile?.id === state.selected
+      && context?.mtoolIntegration?.supported === true;
+    const blocked = !current || mutationBlocked() || state.mtoolStatusLoading;
+    const presentation = mtoolPresentation(current ? context.mtoolIntegration : null, blocked);
+    const launch = card.querySelector('.mtool-launch');
+    const open = card.querySelector('.mtool-open');
+    const refresh = card.querySelector('.mtool-refresh');
+    if (launch) launch.disabled = !presentation.canLaunch;
+    if (open) open.disabled = !presentation.canOpen;
+    if (refresh) refresh.disabled = blocked;
+  }
+}
+
 /** The card keeps game identity captured; post-refresh state merges by revision. */
 export function renderMToolIntegration(panel, ctx) {
   const integration = ctx.mtoolIntegration;
@@ -138,6 +157,7 @@ export function renderMToolIntegration(panel, ctx) {
   const presentation = mtoolPresentation(integration, mutationBlocked() || state.mtoolStatusLoading);
   panel.append(el('h3', null, t('ui.mtool.title', undefined, 'Game translation · local MTool')));
   const card = el('section', `mtool-integration ${presentation.status}`);
+  card.dataset.mtoolGameId = gameId;
   const head = el('div', 'mtool-head');
   head.append(el('strong', null, t('ui.mtool.recommended', undefined, 'Use your local MTool')), statusLabel(integration));
   card.append(head);

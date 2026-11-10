@@ -113,12 +113,12 @@ The user asked for ongoing functional, security, convenience and autonomy
 improvements, Xbox/Big Picture registration feasibility and resource-efficiency
 review. Completion requires all of these evidence categories:
 
-| Requirement | Source evidence | Required runtime evidence |
+| Requirement | Source and unit evidence | Native runtime evidence required before release |
 | --- | --- | --- |
-| Fullscreen, keyboard and controller navigation | gaming-mode.js; injected controller tests | Native fullscreen transition, single activation, modal boundary, Korean/English captures |
+| Fullscreen, keyboard and controller navigation | gaming-mode.js; injected standard-controller and modal tests | Native fullscreen transition, renderer keyboard single activation and dialog boundary, Korean/English captures; physical controller testing remains separate |
 | Xbox/Steam registration path | Official sources above; strict gaming-entry parser | Native Windows shortcut roundtrip, existing-file preservation, installed/portable entry arguments |
 | Shared guarded launch | launch-target-guard + owned-game-sessions | Normal and second-instance launch use one guard, duplicate/write rejection, failure cleanup |
-| Resource efficiency and autonomy | Visibility queue tests, session policy, persistent preferences | Hidden work pauses/resumes; minimize after successful synthetic spawn; no automatic focus restore by default |
+| Resource efficiency and autonomy | Thumbnail queue pause/resume and startup-update deferral unit tests; document visibility bindings; session policy and persistent preferences | Hidden/minimized state after successful synthetic spawn; no automatic focus restore by default. Thumbnail network scheduling and update deferral have unit/source evidence, not an independent native performance measurement |
 | Existing functions remain available | Existing full regression suite | Windows/Linux verification, desktop flows, package/runtime/hash/portable/installer checks |
 
 Source tests and synthetic runtime results do not establish physical-controller

@@ -66,6 +66,13 @@ async function main() {
     child.stdout.on('data', chunk => { stdout = (stdout + chunk).slice(-LOG_LIMIT); });
     child.stderr.on('data', chunk => { stderr = (stderr + chunk).slice(-LOG_LIMIT); });
     let timedOut = false;
+    let finish;
+    const completion = new Promise(resolve => {
+      let settled = false;
+      finish = value => { if (!settled) { settled = true; resolve(value); } };
+      child.once('error', error => finish({ code: null, signal: null, error: error.message }));
+      child.once('close', (code, signal) => finish({ code, signal }));
+    });
     const timer = setTimeout(() => {
       timedOut = true;
       // Only this probe's own child tree can be terminated. No process search.
@@ -74,14 +81,17 @@ async function main() {
           windowsHide: true, timeout: 10000, stdio: 'ignore',
         });
       }
+      // taskkill failure must not turn a bounded smoke check into an endless
+      // wait. Leave a failed result even if the owned child never emits close.
+      finish({ code: null, signal: null, error: 'Owned startup child exceeded the time limit.' });
     }, 90000);
     let outcome;
     try {
-      outcome = await new Promise(resolve => {
-        child.once('error', error => resolve({ code: null, signal: null, error: error.message }));
-        child.once('close', (code, signal) => resolve({ code, signal }));
-      });
-    } finally { clearTimeout(timer); }
+      outcome = await completion;
+    } finally {
+      clearTimeout(timer);
+      if (timedOut) { child.stdout.destroy(); child.stderr.destroy(); child.unref(); }
+    }
     stdout = sanitizedLog(stdout); stderr = sanitizedLog(stderr);
     await fs.writeFile(path.join(evidence, 'stdout.log'), stdout);
     await fs.writeFile(path.join(evidence, 'stderr.log'), stderr);

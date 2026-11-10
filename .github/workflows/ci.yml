@@ -64,10 +64,6 @@ jobs:
           INDIEDECK_HOME: ${{ runner.temp }}/indiedeck-ci
         run: npx electron packages/desktop
 
-      - name: Offline Korean and English desktop flows
-        if: runner.os == 'Windows' && matrix.node == '24.x'
-        run: npm run desktop:flow
-
       - name: Build unpacked runtime for gaming startup
         if: runner.os == 'Windows' && matrix.node == '24.x'
         run: node scripts/build-ci-win.mjs --runtime-only
@@ -81,6 +77,10 @@ jobs:
       - name: Verify unpacked runtime hashes
         if: runner.os == 'Windows' && matrix.node == '24.x'
         run: node scripts/check-package.mjs --runtime-only
+
+      - name: Offline Korean and English desktop flows
+        if: runner.os == 'Windows' && matrix.node == '24.x'
+        run: npm run desktop:flow
 
       - name: Save packaged gaming startup evidence
         if: always() && runner.os == 'Windows' && matrix.node == '24.x'

@@ -1476,6 +1476,21 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
     return clicks === 1;
   })()`);
   if (!oneClick) throw new Error('Gaming-mode Enter did not activate one row.');
+  const modalBoundary = await evaluate<boolean>(`(() => {
+    const row = document.querySelector('#gameList .game'); let backgroundClicks = 0, modalClicks = 0;
+    const onBackground = () => { backgroundClicks += 1; };
+    row.addEventListener('click', onBackground);
+    const dialog = document.createElement('dialog'), button = document.createElement('button');
+    button.type = 'button'; button.textContent = 'Offline modal fixture';
+    button.addEventListener('click', () => { modalClicks += 1; });
+    dialog.append(button); document.body.append(dialog); dialog.showModal(); button.focus();
+    button.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    button.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    const passed = modalClicks === 1 && backgroundClicks === 0 && !dialog.open && document.body.dataset.gamingMode === 'true';
+    dialog.remove(); row.removeEventListener('click', onBackground); row.focus();
+    return passed;
+  })()`);
+  if (!modalBoundary) throw new Error('Gaming-mode modal boundary activated the background or failed to close.');
   if (process.env['INDIEDECK_GAMING_SCREENSHOT']) await writeFile(process.env['INDIEDECK_GAMING_SCREENSHOT'], (await window.webContents.capturePage()).toPNG());
   const gameChildren = () => (globalThis as typeof globalThis & {
     __indiedeckGameSmokeChildren: Array<{ emit(event: string, code: number): void }>
@@ -1518,7 +1533,7 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
   if (!storeCalls().some(call => call.url === 'ms-settings:gaming-fullscreen')) throw new Error('Xbox settings action did not use the official fixed URI.');
   await evaluate(`window.indiedeck.gaming.setFullscreen(false)`);
   await waitFor(`document.body.dataset.gamingMode !== 'true'`, 'native fullscreen exit');
-  console.log('[smoke] gaming mode and guarded owned-game lifecycle → single keyboard activation → duplicate/write gates → opaque second-instance shortcut → native lnk verified; synthetic children only, no Xbox/Steam registration or process priority change');
+  console.log('[smoke] gaming mode and guarded owned-game lifecycle → single keyboard activation and modal boundary → duplicate/write gates → opaque second-instance shortcut → native lnk verified; synthetic children only, no Xbox/Steam registration or process priority change');
 
   // Installed-update IPC/UI contract with a mocked native updater supplied by
   // the disposable bootstrap. This does not prove a public N→N+1 installation.

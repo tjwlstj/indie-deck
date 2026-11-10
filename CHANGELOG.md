@@ -31,6 +31,8 @@ Versioning while the project is pre-1.0.
 - Apply fullscreen startup intent when creating the native window and verify
   packaged startup before publishing. The unpublished v0.1.16 validation tag
   failed its packaged fullscreen startup gate and is superseded.
+- Refresh existing MTool action buttons when delayed security status changes
+  arrive after a handoff, preserving focused forms and unsaved options.
 
 ## [0.1.15] - 2026-11-10
 
