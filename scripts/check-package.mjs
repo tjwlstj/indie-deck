@@ -187,7 +187,7 @@ const currentRuntime = [
   ['node_modules/@indiedeck/core/dist/library/index.js', 'packages/core/dist/library/index.js'],
   ['locales/en.json', 'locales/en.json'],
   ['locales/ko.json', 'locales/ko.json'],
-  ...['manifest.json', 'manifest.firefox.json', 'store-link.js', 'popup-controller.js', 'popup.js', 'popup.html', 'popup.css', 'README.md']
+  ...['manifest.json', 'manifest.firefox.json', 'store-link.js', 'artwork.js', 'popup-controller.js', 'popup.js', 'popup.html', 'popup.css', 'README.md']
     .map((name) => [`extensions/browser-companion/${name}`, `extensions/browser-companion/${name}`]),
 ];
 for (const [packagedPath, sourcePath] of currentRuntime) {
