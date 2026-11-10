@@ -5,7 +5,7 @@ Versioning while the project is pre-1.0.
 
 ## [Unreleased]
 
-## [0.1.16] - 2026-11-10
+## [0.1.17] - 2026-11-10
 
 ### Added
 
@@ -25,6 +25,12 @@ Versioning while the project is pre-1.0.
 - Reject game-file maintenance/config/mod writes for tracked games and version
   activation while owned games are active. No game priority, affinity, power-plan
   or unrelated-process changes are introduced.
+
+### Fixed
+
+- Apply fullscreen startup intent when creating the native window and verify
+  packaged startup before publishing. The unpublished v0.1.16 validation tag
+  failed its packaged fullscreen startup gate and is superseded.
 
 ## [0.1.15] - 2026-11-10
 

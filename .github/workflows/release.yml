@@ -143,24 +143,18 @@ jobs:
         run: node scripts/check-security-flow.mjs ko --packaged
 
       - name: Smoke test packaged application
-        shell: pwsh
-        run: |
-          $smokeHome = Join-Path $env:RUNNER_TEMP 'indiedeck-packaged-smoke'
-          $screenshot = Join-Path $env:RUNNER_TEMP 'indiedeck-packaged-smoke.png'
-          New-Item -ItemType Directory -Force -Path $smokeHome | Out-Null
+        env:
+          INDIEDECK_GAMING_STARTUP_CI: '1'
+        run: node scripts/check-gaming-startup.mjs
 
-          $env:INDIEDECK_SMOKE = '1'
-          $env:INDIEDECK_HOME = $smokeHome
-          $env:INDIEDECK_SCREENSHOT = $screenshot
-          $env:INDIEDECK_DISABLE_UPDATES = '1'
-
-          $process = Start-Process -FilePath (Join-Path $PWD 'release\win-unpacked\IndieDeck.exe') -ArgumentList '--fullscreen','--updated' -PassThru -Wait -WindowStyle Hidden
-          if ($process.ExitCode -ne 0) {
-            throw "Packaged smoke test exited with $($process.ExitCode)"
-          }
-          if (-not (Test-Path -LiteralPath $screenshot)) {
-            throw 'Packaged smoke test did not render a screenshot'
-          }
+      - name: Save packaged gaming startup evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-gaming-startup
+          path: out/gaming-packaged-startup/
+          retention-days: 1
+          if-no-files-found: ignore
 
       - name: Smoke test portable executable
         run: node scripts/check-portable-startup.mjs

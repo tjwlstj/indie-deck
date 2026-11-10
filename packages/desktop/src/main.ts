@@ -380,6 +380,7 @@ function createWindow(): void {
     backgroundColor: '#12131a',
     title: 'IndieDeck',
     show: false,
+    fullscreen: queuedEntry?.fullscreen === true,
     webPreferences: {
       preload: path.join(here, '..', 'preload.cjs'),
       contextIsolation: true,
@@ -476,6 +477,7 @@ function createWindow(): void {
 
 async function runSmokeTest(window: BrowserWindow): Promise<void> {
   const deadline = Date.now() + 20_000;
+  let lastState: { ready: boolean; gamingMode: boolean; engines: number } | undefined;
   await new Promise<void>((resolve) => window.webContents.once('did-finish-load', () => resolve()));
 
   while (Date.now() < deadline) {
@@ -489,6 +491,7 @@ async function runSmokeTest(window: BrowserWindow): Promise<void> {
         gamingMode: document.body.dataset.gamingMode === 'true',
       })`,
     )) as { ready: boolean; games: number; engines: number; status: string; counts: string; gamingMode: boolean };
+    lastState = { ready: report.ready, gamingMode: report.gamingMode, engines: report.engines };
 
     // Waits on a data attribute, not on English prose - the launcher is
     // translated, so the status line is not a stable signal.
@@ -500,6 +503,8 @@ async function runSmokeTest(window: BrowserWindow): Promise<void> {
         return;
       }
       console.log(`[smoke] rendered ${report.games} game rows, ${report.engines} engine filters - ${report.counts || report.status}`);
+      console.log('[smoke] startup verified ' + JSON.stringify({ fullscreenRequested: process.argv.includes('--fullscreen'),
+        nativeFullscreen: window.isFullScreen(), rendererGamingMode: report.gamingMode }));
       const detail = (await window.webContents.executeJavaScript(
         `(async () => {
           const first = document.querySelector('#gameList .game');
@@ -556,7 +561,10 @@ async function runSmokeTest(window: BrowserWindow): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
 
-  console.error('[smoke] renderer did not finish loading within 20s');
+  console.error('[smoke] renderer did not finish loading within 20s; startup=' + JSON.stringify({
+    entryValid: entryArguments(process.argv).valid, fullscreenRequested: process.argv.includes('--fullscreen'),
+    nativeFullscreen: window.isFullScreen(), visible: window.isVisible(), rendererReady, ownsInstance, renderer: lastState,
+  }));
   app.exit(1);
 }
 

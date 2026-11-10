@@ -5,7 +5,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
-import { makeBuilderOptions, sanitizedBuilderEnvironment } from '../../../scripts/build-ci-win.mjs';
+import { makeBuilderOptions, parseBuilderArgs, sanitizedBuilderEnvironment } from '../../../scripts/build-ci-win.mjs';
 
 test('a builder failure remains nonzero through earlier shutdown listeners', () => {
   const script = new URL('../../../scripts/build-ci-win.mjs', import.meta.url).href;
@@ -50,6 +50,25 @@ test('unsafe TLS and inherited Electron download mirrors cannot affect the CI ch
     ELECTRON_MIRROR: 'https://not-used.invalid', npm_config_electron_customdir: 'other',
     NPM_CONFIG_ELECTRON_BUILDER_BINARIES_MIRROR: 'https://not-used.invalid', ELECTRON_BUILDER_BINARIES_ALLOW_HTTP: 'true' });
   assert.deepEqual(safe, { PATH: 'preserve', GITHUB_ACTIONS: 'true' });
+});
+
+test('runtime-only CI mode creates only a Windows directory target with identical pinned hashes', () => {
+  assert.deepEqual(parseBuilderArgs([]), { runtimeOnly: false });
+  assert.deepEqual(parseBuilderArgs(['--runtime-only']), { runtimeOnly: true });
+  for (const args of [['--publish', 'always'], ['--runtime-only', '--runtime-only'], ['--runtime-only=1'], ['dir'], [null]]) {
+    assert.throws(() => parseBuilderArgs(args));
+  }
+  const options = makeBuilderOptions({ ...input(), runtimeOnly: true });
+  assert.deepEqual(options.win, []); assert.equal(options.dir, true);
+  assert.equal(options.publish, 'never');
+  assert.deepEqual(options.config.electronDownload.checksums, input().checksums);
+  const { normalizeOptions } = require('electron-builder/out/builder.js');
+  const normalized = normalizeOptions(options);
+  assert.equal(normalized.targets.size, 1);
+  const arches = [...normalized.targets.values()][0] as Map<unknown, string[]>;
+  assert.equal(arches.size, 1);
+  assert.deepEqual([...arches.values()], [['dir']]);
+  assert.throws(() => makeBuilderOptions({ ...input(), runtimeOnly: '--runtime-only' }));
 });
 
 test('real builder configuration preserves YAML and accepts the checksum option', async () => {

@@ -68,6 +68,29 @@ jobs:
         if: runner.os == 'Windows' && matrix.node == '24.x'
         run: npm run desktop:flow
 
+      - name: Build unpacked runtime for gaming startup
+        if: runner.os == 'Windows' && matrix.node == '24.x'
+        run: node scripts/build-ci-win.mjs --runtime-only
+
+      - name: Verify packaged fullscreen startup
+        if: runner.os == 'Windows' && matrix.node == '24.x'
+        env:
+          INDIEDECK_GAMING_STARTUP_CI: '1'
+        run: node scripts/check-gaming-startup.mjs
+
+      - name: Verify unpacked runtime hashes
+        if: runner.os == 'Windows' && matrix.node == '24.x'
+        run: node scripts/check-package.mjs --runtime-only
+
+      - name: Save packaged gaming startup evidence
+        if: always() && runner.os == 'Windows' && matrix.node == '24.x'
+        uses: actions/upload-artifact@v4
+        with:
+          name: packaged-gaming-startup
+          path: out/gaming-packaged-startup/
+          retention-days: 1
+          if-no-files-found: ignore
+
       - name: Save synthetic desktop screenshots
         if: runner.os == 'Windows' && matrix.node == '24.x'
         uses: actions/upload-artifact@v4

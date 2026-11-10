@@ -5,6 +5,12 @@ import { pathToFileURL } from 'node:url';
 
 const require = createRequire(import.meta.url);
 
+export function parseBuilderArgs(args) {
+  if (!Array.isArray(args) || args.some(value => typeof value !== 'string') ||
+      args.length > 1 || args.length === 1 && args[0] !== '--runtime-only') throw new Error('Unsupported CI build arguments.');
+  return { runtimeOnly: args.length === 1 };
+}
+
 /** CI overrides may not redirect Electron or disable TLS. Values stay local to
  * this child process and no credential or environment value is logged. */
 export function sanitizedBuilderEnvironment(environment) {
@@ -18,7 +24,7 @@ export function sanitizedBuilderEnvironment(environment) {
 
 /** Keep the regular YAML config and narrow the CI-only change to the pinned
  * Electron checksums. The builder must still perform its own hash validation. */
-export function makeBuilderOptions({ environment, platform, arch, rootManifest, lockfile, electronManifest, checksums, yamlConfig }) {
+export function makeBuilderOptions({ environment, platform, arch, rootManifest, lockfile, electronManifest, checksums, yamlConfig, runtimeOnly = false }) {
   if (environment?.GITHUB_ACTIONS !== 'true' || platform !== 'win32' || arch !== 'x64') throw new Error('Windows release wrapper is restricted to GitHub Actions on x64 Windows.');
   const version = rootManifest?.devDependencies?.electron;
   if (typeof version !== 'string' || !/^\d+\.\d+\.\d+$/.test(version) || electronManifest?.version !== version ||
@@ -31,17 +37,19 @@ export function makeBuilderOptions({ environment, platform, arch, rootManifest, 
     throw new Error('Unexpected Electron builder configuration; review CI checksum wiring.');
   }
   const filename = `electron-v${version}-win32-x64.zip`;
+  if (typeof runtimeOnly !== 'boolean') throw new Error('Invalid CI build target mode.');
   if (!checksums || typeof checksums !== 'object' || Array.isArray(checksums) ||
       typeof checksums[filename] !== 'string' || !/^[0-9a-f]{64}$/.test(checksums[filename])) {
     throw new Error('Pinned Electron checksum is missing.');
   }
-  return { win: ['nsis', 'portable'], x64: true, publish: 'never',
+  return { win: runtimeOnly ? [] : ['nsis', 'portable'], ...(runtimeOnly ? { dir: true } : {}), x64: true, publish: 'never',
     config: { electronDownload: { force: false, checksums } } };
 }
 
 async function main() {
   // Fail before loading build tools or issuing any network request locally.
   if (process.env.GITHUB_ACTIONS !== 'true' || process.platform !== 'win32' || process.arch !== 'x64') throw new Error('Windows release wrapper is restricted to GitHub Actions on x64 Windows.');
+  const { runtimeOnly } = parseBuilderArgs(process.argv.slice(2));
   const clean = sanitizedBuilderEnvironment(process.env);
   for (const key of Object.keys(process.env)) if (!(key in clean)) delete process.env[key];
   const electronDir = path.dirname(require.resolve('electron'));
@@ -51,7 +59,7 @@ async function main() {
   const checksums = JSON.parse(await fs.readFile(path.join(electronDir, 'checksums.json'), 'utf8'));
   const yamlConfig = require('js-yaml').load(await fs.readFile(path.resolve('electron-builder.yml'), 'utf8'));
   const options = makeBuilderOptions({ environment: process.env, platform: process.platform, arch: process.arch,
-    rootManifest, lockfile, electronManifest, checksums, yamlConfig });
+    rootManifest, lockfile, electronManifest, checksums, yamlConfig, runtimeOnly });
   const { build } = require('electron-builder');
   await build(options);
 }
