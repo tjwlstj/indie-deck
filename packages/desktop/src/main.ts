@@ -1474,7 +1474,10 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
   }).__indiedeckGameSmokeChildren;
   await evaluate(`window.indiedeck.game.launch('${coverGameId}')`);
   for (let n = 0; n < 100 && !window.isMinimized(); n += 1) await new Promise(resolve => setTimeout(resolve, 50));
-  if (gameChildren().length !== 1 || !window.isMinimized()) throw new Error('Owned game spawn did not apply optional launcher minimization.');
+  if (gameChildren().length !== 1 || !window.isMinimized()) throw new Error('Owned game spawn did not apply optional launcher minimization: ' + JSON.stringify({
+    children: gameChildren().length, active: gamingSnapshot().activeGameCount, preference: gamingPreferences.minimizeOnLaunch,
+    visible: window.isVisible(), fullscreen: window.isFullScreen(), minimizable: window.isMinimizable(), minimized: window.isMinimized(),
+  }));
   const gates = await evaluate<boolean>(`(async () => {
     const api = window.indiedeck;
     const duplicate = await api.game.launch('${coverGameId}').then(() => false, () => true);
