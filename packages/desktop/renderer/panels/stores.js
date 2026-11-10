@@ -3,6 +3,7 @@ import { currentLocale, t } from '../i18n.js';
 import { api, emit, mutationBlocked, state } from '../store.js';
 import { normaliseThumbnail } from '../thumbnail-model.js';
 import { acceptSelectedThumbnail } from '../thumbnail.js';
+import { bindThumbnailPreview, releaseThumbnailPreviews } from '../thumbnail-preview.js';
 import {
   acceptStoreConnectionsRead, applyStoreConnectionsMutation, beginStoreConnectionsRead,
   failStoreConnectionsRead, storeCandidatePresentation, storeHandoffMessageKey, storeLinksForGame,
@@ -236,6 +237,11 @@ function renderCandidateArtwork(card, candidate) {
     image.alt = artworkText('previewAlt', '가져온 상품 이미지 미리보기', 'Imported product artwork preview');
     image.src = preview.thumbnail.dataUrl;
     section.append(image);
+    const enlarge = el('button', 'ghost store-artwork-enlarge', t('ui.thumbnail.preview', undefined, 'Image preview'));
+    bindThumbnailPreview(image, { getThumbnail: async () => preview.thumbnail, label: image.alt,
+      mode: () => state.libraryPreferences.previewMode, toggleButton: enlarge });
+    enlarge.type = 'button';
+    section.append(enlarge);
   }
   const actions = el('div', 'store-actions');
   const previewButton = el('button', 'ghost store-artwork-preview', state.storeArtworkAction === 'preview'
@@ -342,6 +348,7 @@ export function renderGameStoreLinks(panel, profile) {
 export function renderStoreSettings() {
   const body = $('storeSettingsBody');
   if (!body) return;
+  releaseThumbnailPreviews(body);
   body.replaceChildren();
   body.append(el('p', 'settings-hint', t('ui.stores.description')),
     el('p', 'store-help', t('ui.stores.externalLogin')));

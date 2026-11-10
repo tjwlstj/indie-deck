@@ -1,7 +1,10 @@
 import { el } from './dom.js';
 import { currentLocale, t } from './i18n.js';
-import { api } from './store.js';
+import { api, state } from './store.js';
 import { createThumbnailLoader, normaliseThumbnail } from './thumbnail-model.js';
+import { bindThumbnailPreview, invalidateThumbnailPreview, releaseThumbnailPreviews } from './thumbnail-preview.js';
+
+const painted = new WeakMap();
 
 const loader = createThumbnailLoader((id) => typeof api.game.thumbnail === 'function' ? api.game.thumbnail(id) : null,
   { canStart: () => document.hidden !== true });
@@ -11,6 +14,8 @@ function paint(node, thumbnail) {
   const picture = node.querySelector('img'), placeholder = node.querySelector('.thumbnail-placeholder');
   const attribution = node.querySelector('.thumbnail-attribution');
   if (!picture || !placeholder) return;
+  if (painted.get(node)?.dataUrl !== thumbnail?.dataUrl) invalidateThumbnailPreview(node);
+  painted.set(node, thumbnail);
   picture.hidden = !thumbnail; placeholder.hidden = Boolean(thumbnail);
   if (thumbnail) picture.src = thumbnail.dataUrl;
   else picture.removeAttribute('src');
@@ -52,6 +57,13 @@ export function thumbnailElement(game, detail = false) {
   placeholder.setAttribute('aria-hidden', 'true');
   image.addEventListener('error', () => paint(box, null));
   box.append(image, placeholder);
+  const preview = el('button', 'thumbnail-preview-toggle', '⌕'); preview.type = 'button';
+  const previewLabel = t('ui.thumbnail.preview', undefined, 'Image preview');
+  preview.title = previewLabel; preview.setAttribute('aria-label', `${previewLabel}: ${game.title || game.name || ''}`);
+  box.append(preview);
+  bindThumbnailPreview(box, { getThumbnail: () => painted.get(box) ?? null,
+    label: game.title || game.name || previewLabel, toggleButton: preview,
+    mode: () => state.libraryPreferences?.previewMode ?? 'hover' });
   if (detail) box.append(el('span', 'thumbnail-attribution', t('ui.thumbnail.loading', undefined, 'Finding image…')));
   if (observer) observer.observe(box); else queueMicrotask(() => { if (box.isConnected) void loadFor(box); });
   return box;
@@ -75,6 +87,7 @@ export function retryThumbnail(box) { return loadFor(box, true); }
 
 /** A virtualised/re-rendered list must release observers for detached rows. */
 export function releaseThumbnails(container) {
+  releaseThumbnailPreviews(container);
   if (!observer || !container) return;
   for (const node of container.querySelectorAll('[data-thumbnail-game-id]')) observer.unobserve(node);
 }

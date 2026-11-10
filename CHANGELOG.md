@@ -5,6 +5,26 @@ Versioning while the project is pre-1.0.
 
 ## [Unreleased]
 
+## [0.1.19] - 2026-11-10
+
+### Added
+
+- Read-only image previews with an explicit toggle and selectable delayed hover
+  or right-click activation for library/detail artwork and Steam/GOG candidates.
+- Per-game list thumbnail hiding, explicit adult/general/unclassified labels,
+  multiple purchase-site labels, list badges and combined persistent filters.
+- Connected product sites appear separately from user-declared purchase sites.
+  Neither purchase ownership nor age classification is inferred from links.
+
+### Security
+
+- Search previews accept only the current game's issued search result IDs, do
+  not change cover selections and cap concurrent preview requests at two.
+- Hidden list images create no image nodes or hover bindings. List artwork waits
+  for preferences to load, and remains suppressed on preference read/write error.
+- Legacy library preferences retain their values without an automatic rewrite;
+  bounded, validated new metadata uses the existing link-safe atomic storage.
+
 ## [0.1.18] - 2026-11-10
 
 ### Added

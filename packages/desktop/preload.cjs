@@ -100,6 +100,7 @@ contextBridge.exposeInMainWorld('indiedeck', {
     onLaunchDiagnostic: (fn) => subscribe('game:launch-diagnostic', fn),
     thumbnail: (gameId) => call('game:thumbnail', gameId),
     thumbnailSearch: (gameId) => call('game:thumbnailSearch', gameId),
+    thumbnailPreview: (gameId, provider, resultId) => call('game:thumbnailPreview', gameId, provider, resultId),
     thumbnailSelect: (gameId, appId) => call('game:thumbnailSelect', gameId, appId),
     thumbnailSearchGog: (gameId) => call('game:thumbnailSearchGog', gameId),
     thumbnailSelectGog: (gameId, id) => call('game:thumbnailSelectGog', gameId, id),

@@ -103,6 +103,8 @@ jobs:
             out/desktop-thumbnail-en.png
             out/desktop-store-artwork-ko.png
             out/desktop-store-artwork-en.png
+            out/desktop-library-classification-ko.png
+            out/desktop-library-classification-en.png
             out/desktop-stores-ko.png
             out/desktop-stores-en.png
             out/desktop-gaming-ko.png

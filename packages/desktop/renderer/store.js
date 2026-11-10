@@ -12,7 +12,7 @@ import { isOperationActive, mergeLibraryPayload } from './state-model.js';
 import { isArchiveActive } from './archive-model.js';
 import { launcherUpdateInstallPending } from './update-model.js';
 import { isScanActive } from './scan-model.js';
-import { duplicateNameCounts, sortedLibraryGames } from './library-preferences.js';
+import { defaultLibraryPreferences, duplicateNameCounts, filterLibraryGames, sortedLibraryGames } from './library-preferences.js';
 
 export const api = window.indiedeck;
 
@@ -65,7 +65,7 @@ export const state = {
   registry: null,
   engineFilter: 'all',
   statusFilter: 'all',
-  libraryPreferences: { sort: 'name-asc', favoritesOnly: false, duplicatesOnly: false, favorites: [] },
+  libraryPreferences: defaultLibraryPreferences(),
   libraryPreferencesLoaded: false,
   libraryPreferencesError: false,
   query: '',
@@ -101,7 +101,7 @@ export function visibleGames() {
   const preferences = state.libraryPreferences;
   const favorites = new Set(preferences.favorites);
   const duplicates = duplicateNameCounts(state.games);
-  const games = state.games.filter((game) => {
+  const games = filterLibraryGames(state.games, preferences).filter((game) => {
     if (state.engineFilter !== 'all' && game.engineId !== state.engineFilter) return false;
     if (preferences.favoritesOnly && !favorites.has(game.id)) return false;
     if (preferences.duplicatesOnly && !duplicates.has(game.id)) return false;

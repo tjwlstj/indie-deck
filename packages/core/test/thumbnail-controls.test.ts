@@ -94,3 +94,26 @@ test('clear invalidates manual artwork then reloads the automatic cover, and bus
   busy.section.fire('drop', drop([{ name: 'cover.png', type: 'image/png', size: 10 }])); await flush();
   assert.equal(invoked, false);
 });
+
+test('search results expose an independent read-only preview toggle before the existing apply action', async () => {
+  const calls: unknown[] = [], previews: { target: Element; options: any }[] = [];
+  const view = fixture('preview-game', {
+    thumbnailSearch: async () => [{ appId: '440', name: 'Preview candidate' }],
+    thumbnailPreview: async (...args: unknown[]) => { calls.push(['preview', ...args]); return manual; },
+    thumbnailSelect: async (...args: unknown[]) => { calls.push(['select', ...args]); return manual; },
+  }, { bindPreview: (target: Element, options: any) => {
+    previews.push({ target, options }); options.toggleButton.addEventListener('click', () => { void options.getThumbnail(); });
+  } });
+  const find = (node: Element, className: string): Element | undefined => node.className.split(' ').includes(className)
+    ? node : node.children.map(child => find(child, className)).find(Boolean);
+  find(view.controls, 'thumbnail-steam-search')!.fire('click'); await flush();
+  assert.deepEqual(calls, []); assert.equal(previews.length, 1);
+  const preview = find(view.controls, 'thumbnail-preview-toggle')!;
+  assert.match(preview.attributes['aria-label'], /Preview candidate/);
+  preview.fire('click'); await flush();
+  assert.deepEqual(calls, [['preview', 'preview-game', 'steam', '440']]);
+  assert.deepEqual(view.accepted, []);
+  find(view.controls, 'thumbnail-choice')!.fire('click'); await flush();
+  assert.deepEqual(calls[1], ['select', 'preview-game', '440']);
+  assert.deepEqual(view.accepted, [['preview-game', manual]]);
+});

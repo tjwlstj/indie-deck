@@ -98,6 +98,23 @@
           </select>
           <button id="libraryFavoritesOnly" class="ghost" aria-pressed="false" data-i18n="ui.library.favoritesOnly">Favorites only</button>
           <button id="libraryDuplicatesOnly" class="ghost" aria-pressed="false" data-i18n="ui.library.duplicatesOnly">Same-name candidates</button>
+          <div class="library-extra-controls">
+            <label for="libraryPreviewMode" data-i18n="ui.library.previewMode">Image previews</label>
+            <select id="libraryPreviewMode">
+              <option value="off" data-i18n="ui.library.previewModeOff">Buttons only</option>
+              <option value="hover" data-i18n="ui.library.previewModeHover">Hover</option>
+              <option value="context" data-i18n="ui.library.previewModeContext">Right-click</option>
+            </select>
+            <label for="libraryAdultFilter" data-i18n="ui.library.adultFilter">Adult label</label>
+            <select id="libraryAdultFilter">
+              <option value="all" data-i18n="ui.library.adultAll">All labels</option>
+              <option value="exclude" data-i18n="ui.library.adultExclude">Exclude adult-labeled</option>
+              <option value="only" data-i18n="ui.library.adultOnly">Adult-labeled only</option>
+              <option value="unclassified" data-i18n="ui.library.adultUnclassified">Unclassified</option>
+            </select>
+            <label for="libraryPurchaseFilter" data-i18n="ui.library.purchaseFilter">Purchase site</label>
+            <select id="libraryPurchaseFilter"></select>
+          </div>
           <span id="libraryPreferencesStatus" class="library-preferences-status" role="status"></span>
         </div>
         <div id="gameList" class="game-list"></div>

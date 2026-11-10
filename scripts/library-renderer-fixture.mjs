@@ -1,7 +1,7 @@
 // Isolated renderer interaction fixture, run only by the CI test harness.
 // This deliberately uses synthetic game metadata and a disposable dataDir.
 import assert from 'node:assert/strict';
-import { readLibraryPreferences, saveLibraryPreferences } from '../packages/desktop/src/library-preferences.ts';
+import { readLibraryPreferences, saveLibraryPreferences, defaultLibraryPreferences } from '../packages/desktop/src/library-preferences.ts';
 
 const [dataDir, phase] = process.argv.slice(2);
 assert.ok(dataDir && ['write', 'reload'].includes(phase));
@@ -25,7 +25,8 @@ class Element {
   }
   querySelectorAll() { return []; }
 }
-const ids = ['gameList', 'counts', 'librarySort', 'libraryFavoritesOnly', 'libraryDuplicatesOnly', 'libraryPreferencesStatus'];
+const ids = ['gameList', 'counts', 'librarySort', 'libraryFavoritesOnly', 'libraryDuplicatesOnly', 'libraryPreferencesStatus',
+  'libraryPreviewMode', 'libraryAdultFilter', 'libraryPurchaseFilter'];
 const nodes = new Map(ids.map((id) => [id, new Element()]));
 globalThis.document = { getElementById: (id) => nodes.get(id), createElement: (tag) => new Element(tag), querySelectorAll: () => [] };
 const pending = [];
@@ -59,6 +60,8 @@ const findClass = (node, className) => {
 };
 const rows = () => nodes.get('gameList').children.filter((node) => node.className === 'game');
 const rowName = (row) => findClass(row, 'name')?.textContent.trim();
+const expectedPreferences = { ...defaultLibraryPreferences(), sort: 'duplicates', favoritesOnly: false, duplicatesOnly: true,
+  favorites: [idC], previewMode: 'context', adultFilter: 'exclude', purchaseFilter: 'unassigned' };
 render();
 await waitFor(() => state.libraryPreferencesLoaded);
 assert.equal(state.libraryPreferencesError, false);
@@ -79,11 +82,18 @@ if (phase === 'write') {
   assert.equal(rows().length, 2);
   assert.ok(rows().every((row) => findClass(row, 'pill')?.textContent.includes('2')));
   assert.ok(rows().every((row) => findClass(row, 'duplicate-path')?.textContent.startsWith('C:/fixture/')));
-  await waitFor(() => pending.length === 6);
+  for (const [id, value] of [['libraryPreviewMode', 'context'], ['libraryAdultFilter', 'exclude'], ['libraryPurchaseFilter', 'unassigned']]) {
+    const control = nodes.get(id); control.value = value; control.onchange();
+  }
+  assert.equal(rows().length, 2, 'unclassified games stay visible when excluding only explicit adult labels');
+  await waitFor(() => pending.length === 9);
   await Promise.all(pending);
-  assert.deepEqual(await readLibraryPreferences(dataDir), { sort: 'duplicates', favoritesOnly: false, duplicatesOnly: true, favorites: [idC] });
+  assert.deepEqual(await readLibraryPreferences(dataDir), expectedPreferences);
 } else {
-  assert.deepEqual(state.libraryPreferences, { sort: 'duplicates', favoritesOnly: false, duplicatesOnly: true, favorites: [idC] });
+  assert.deepEqual(state.libraryPreferences, expectedPreferences);
+  assert.equal(nodes.get('libraryPreviewMode').value, 'context');
+  assert.equal(nodes.get('libraryAdultFilter').value, 'exclude');
+  assert.equal(nodes.get('libraryPurchaseFilter').value, 'unassigned');
   assert.equal(rows().length, 2, 'the same-name filter survives a fresh renderer process');
   nodes.get('libraryDuplicatesOnly').click();
   assert.equal(rows().length, 3);

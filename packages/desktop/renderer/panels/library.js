@@ -1,32 +1,107 @@
 /** Sidebar filters and the game list. */
 
 import { $, clear, el } from '../dom.js';
-import { t } from '../i18n.js';
+import { currentLocale, t } from '../i18n.js';
 import { api, emit, mutationBlocked, state, visibleGames } from '../store.js';
 import { archiveRecordForGame, managedInstallationForGame } from '../archive-model.js';
 import { releaseThumbnails, thumbnailElement } from '../thumbnail.js';
-import { duplicateNameCounts } from '../library-preferences.js';
+import { storeLinksForGame } from '../store-model.js';
+import { duplicateNameCounts, gameLibrarySettings, LIBRARY_PURCHASE_STORES, normaliseLibraryPreferences } from '../library-preferences.js';
+
+const STORE_NAMES = { steam: 'Steam', epic: 'Epic Games Store', gog: 'GOG', itch: 'itch.io', booth: 'BOOTH', dlsite: 'DLsite', dmm: 'DMM GAMES', fanza: 'FANZA' };
+function libraryText(key, ko, en, params) {
+  return t(`ui.library.${key}`, params, currentLocale().startsWith('ko') ? ko : en);
+}
+function purchaseName(id) {
+  return STORE_NAMES[id] ?? libraryText('purchaseOther', '기타 구매처', 'Other purchase site');
+}
 
 let preferencesStarted = false;
 let preferencesWrites = Promise.resolve();
 function loadPreferences() {
-  if (preferencesStarted) return;
+  if (preferencesStarted || state.libraryPreferencesLoaded) return;
   preferencesStarted = true;
   Promise.resolve().then(() => api.libraryPreferences.read()).then((value) => {
-    state.libraryPreferences = value;
+    state.libraryPreferences = normaliseLibraryPreferences(value);
   }).catch(() => { state.libraryPreferencesError = true; }).finally(() => {
     state.libraryPreferencesLoaded = true;
     emit('library');
   });
 }
 function updatePreferences(change) {
-  if (!state.libraryPreferencesLoaded || state.libraryPreferencesError) return;
+  if (!state.libraryPreferencesLoaded || state.libraryPreferencesError || mutationBlocked()) return Promise.resolve(false);
   state.libraryPreferences = { ...state.libraryPreferences, ...change };
   const snapshot = structuredClone(state.libraryPreferences);
   emit('library');
-  preferencesWrites = preferencesWrites.then(async () => {
-    if (!state.libraryPreferencesError) await api.libraryPreferences.save(snapshot);
-  }).catch(() => { state.libraryPreferencesError = true; emit('library'); });
+  const pending = preferencesWrites.then(async () => {
+    if (state.libraryPreferencesError) return false;
+    await api.libraryPreferences.save(snapshot);
+    return true;
+  }).catch(() => { state.libraryPreferencesError = true; emit('library'); return false; });
+  preferencesWrites = pending.then(() => {});
+  return pending;
+}
+
+/** Explicit per-copy display labels. A product link never proves purchase or
+ * age classification, and these settings never alter a game's payload. */
+export function openGameLibraryOptions(game) {
+  if (!state.libraryPreferencesLoaded || state.libraryPreferencesError || mutationBlocked() ||
+    !state.games.some(entry => entry.id === game?.id)) return null;
+  const previous = $('gameLibraryOptions');
+  if (previous) { previous.close(); previous.remove(); }
+  const dialog = el('dialog', 'library-options-dialog');
+  dialog.id = 'gameLibraryOptions'; dialog.dataset.gameId = game.id;
+  dialog.setAttribute('aria-labelledby', 'gameLibraryOptionsTitle');
+  const heading = el('h2', 'library-options-title', libraryText('optionsTitle', '라이브러리 표시·분류: {name}', 'Library display and labels: {name}', { name: game.title || game.name }));
+  heading.id = 'gameLibraryOptionsTitle';
+  const settings = gameLibrarySettings(state.libraryPreferences, game.id);
+  const hideLabel = el('label', 'library-options-field'), hide = el('input');
+  hide.id = 'gameHideListThumbnail'; hide.type = 'checkbox'; hide.checked = settings.hideThumbnail;
+  hideLabel.append(hide, el('span', null, libraryText('hideListThumbnail', '이 게임의 목록 섬네일 숨기기', 'Hide this game’s list thumbnail')));
+  const adultLabel = el('label', 'library-options-field'), adult = el('select');
+  adult.id = 'gameAdultClassification';
+  for (const [value, key, ko, en] of [
+    ['unclassified', 'adultUnclassified', '미분류', 'Unclassified'],
+    ['general', 'adultGeneral', '일반으로 표시', 'Label as general'],
+    ['adult', 'adultMarked', '성인용으로 표시', 'Label as adult'],
+  ]) { const option = el('option', null, libraryText(key, ko, en)); option.value = value; adult.append(option); }
+  adult.value = settings.adult;
+  adultLabel.append(el('span', null, libraryText('adultClassification', '성인용 분류 (직접 지정)', 'Adult classification (manual)')), adult);
+  const stores = el('fieldset', 'library-purchase-options');
+  stores.append(el('legend', null, libraryText('purchaseSites', '구매처 (직접 지정, 여러 곳 선택 가능)', 'Purchase sites (manual, multiple allowed)')));
+  const purchaseInputs = [];
+  for (const provider of LIBRARY_PURCHASE_STORES) {
+    const label = el('label', 'library-purchase-choice'), input = el('input');
+    input.type = 'checkbox'; input.name = 'gamePurchaseStore'; input.value = provider; input.checked = settings.purchaseStores.includes(provider);
+    label.append(input, el('span', null, purchaseName(provider))); stores.append(label); purchaseInputs.push(input);
+  }
+  const hint = el('p', 'library-options-hint', libraryText('manualLabelsHint', '사용자가 직접 지정하는 표시예요. 상품 연결이나 폴더 이름으로 구매·연령 등급을 판단하지 않아요.', 'These are your own labels. Product links and folder names do not establish purchase or an age rating.'));
+  const status = el('p', 'library-options-status'); status.setAttribute('role', 'status');
+  const actions = el('div', 'library-options-actions');
+  const save = el('button', 'primary', libraryText('optionsSave', '저장', 'Save'));
+  save.id = 'saveGameLibraryOptions'; save.type = 'button';
+  const cancel = el('button', 'ghost', libraryText('optionsCancel', '취소', 'Cancel'));
+  cancel.id = 'cancelGameLibraryOptions'; cancel.type = 'button';
+  let saving = false;
+  save.addEventListener('click', () => { void (async () => {
+    if (saving || mutationBlocked() || state.libraryPreferencesError || !state.games.some(entry => entry.id === game.id)) return;
+    saving = true; save.disabled = true; cancel.disabled = true;
+    const next = { hideThumbnail: hide.checked, adult: adult.value, purchaseStores: purchaseInputs.filter(input => input.checked).map(input => input.value) };
+    const saved = await updatePreferences({ gameSettings: { ...state.libraryPreferences.gameSettings, [game.id]: next } });
+    if (saved) dialog.close();
+    else status.textContent = libraryText('preferencesUnavailable', '라이브러리 설정을 읽거나 저장하지 못했어요. 기존 데이터는 유지했어요.', 'Could not load or save library preferences. Existing data was kept.');
+    saving = false; save.disabled = state.libraryPreferencesError; cancel.disabled = false;
+  })(); });
+  cancel.addEventListener('click', () => { if (!saving) dialog.close(); });
+  dialog.addEventListener('cancel', event => { if (saving) event.preventDefault(); });
+  dialog.addEventListener('close', () => {
+    dialog.remove();
+    document.querySelector?.(`[data-game-id="${game.id}"] .library-options`)?.focus();
+  });
+  actions.append(save, cancel);
+  dialog.append(heading, hideLabel, adultLabel, stores, hint, status, actions);
+  document.body.append(dialog); dialog.showModal();
+  return dialog;
 }
 function renderLibraryControls() {
   loadPreferences();
@@ -56,6 +131,21 @@ function renderLibraryControls() {
   duplicate.setAttribute('aria-pressed', String(preferences.duplicatesOnly));
   favorite.onclick = () => updatePreferences({ favoritesOnly: !state.libraryPreferences.favoritesOnly });
   duplicate.onclick = () => updatePreferences({ duplicatesOnly: !state.libraryPreferences.duplicatesOnly });
+  for (const [id, key] of [['libraryPreviewMode', 'previewMode'], ['libraryAdultFilter', 'adultFilter']]) {
+    const control = $(id);
+    if (control) { control.disabled = disabled; control.value = preferences[key]; control.onchange = () => { void updatePreferences({ [key]: control.value }); }; }
+  }
+  const purchase = $('libraryPurchaseFilter');
+  if (purchase) {
+    purchase.replaceChildren();
+    for (const value of ['all', 'unassigned', ...LIBRARY_PURCHASE_STORES]) {
+      const name = value === 'all' ? libraryText('purchaseAll', '모든 구매처', 'All purchase sites')
+        : value === 'unassigned' ? libraryText('purchaseUnassigned', '구매처 미지정', 'No purchase site set') : purchaseName(value);
+      const option = el('option', null, name); option.value = value; purchase.append(option);
+    }
+    purchase.disabled = disabled; purchase.value = preferences.purchaseFilter;
+    purchase.onchange = () => { void updatePreferences({ purchaseFilter: purchase.value }); };
+  }
   $('libraryPreferencesStatus').textContent = state.libraryPreferencesError
     ? t('ui.library.preferencesUnavailable', undefined, 'Could not load or save library preferences. Existing data was kept.') : '';
 }
@@ -164,7 +254,15 @@ export function renderGameList(onSelectGame) {
     });
     row.classList.toggle('selected', state.selected === game.id);
 
-    row.append(thumbnailElement(game));
+    const display = gameLibrarySettings(state.libraryPreferences, game.id);
+    if (state.libraryPreferencesLoaded && !state.libraryPreferencesError && !display.hideThumbnail) row.append(thumbnailElement(game));
+    else {
+      // Do not create an image or register an observer while preferences are
+      // unknown/failed or the game explicitly hides its list artwork.
+      const hidden = el('span', 'thumbnail thumbnail-list thumbnail-list-hidden', '▧');
+      hidden.setAttribute('aria-label', libraryText('listThumbnailHidden', '목록 섬네일 숨김', 'List thumbnail hidden'));
+      row.append(hidden);
+    }
 
     row.append(el('div', 'name', game.title && game.title !== game.name ? `${game.name} — ${game.title}` : game.name));
     row.append(el('span', `dot ${healthDot(game)}`));
@@ -181,9 +279,24 @@ export function renderGameList(onSelectGame) {
       updatePreferences({ favorites: existing.includes(game.id) ? existing.filter((id) => id !== game.id) : [...existing, game.id] });
     });
     row.append(favoriteButton);
+    const options = el('button', 'library-options', '⋯'); options.type = 'button';
+    options.title = libraryText('options', '표시·분류 설정', 'Display and labels');
+    options.setAttribute('aria-label', `${options.title}: ${game.title || game.name}`);
+    options.disabled = !state.libraryPreferencesLoaded || state.libraryPreferencesError || mutationBlocked();
+    options.addEventListener('click', event => { event.stopPropagation(); openGameLibraryOptions(game); });
+    row.append(options);
 
     const meta = el('div', 'meta');
     meta.append(el('span', `badge engine-${game.engineId}`, game.engineName));
+    if (display.adult === 'adult') meta.append(el('span', 'pill warn library-adult-badge', libraryText('adultBadge', '성인용 (직접 지정)', 'Adult (manual label)')));
+    for (const provider of display.purchaseStores) meta.append(el('span', 'pill library-purchase-badge', libraryText('purchaseBadge', '구매처: {site}', 'Purchased at: {site}', { site: purchaseName(provider) })));
+    const connected = new Set(storeLinksForGame(state.archiveCatalog, state.archiveRecords, state.storeConnections?.snapshot, game.id)
+      .map(link => link.provider).filter(provider => Object.hasOwn(STORE_NAMES, provider)));
+    for (const provider of connected) {
+      const badge = el('span', 'pill library-linked-store-badge', libraryText('linkedStoreBadge', '연결: {site}', 'Linked: {site}', { site: purchaseName(provider) }));
+      badge.title = libraryText('linkedStoreHint', '상품 페이지 연결이에요. 구매 여부를 확인한 것은 아니에요.', 'A linked product page; purchase ownership has not been verified.');
+      meta.append(badge);
+    }
     if (duplicates.has(game.id)) {
       const badge = el('span', 'pill warn', t('ui.library.duplicateCount', { count: duplicates.get(game.id) }, 'Same-name candidates: {count}'));
       badge.title = t('ui.library.duplicateHint', undefined, 'Names match; these may be different games or versions. No files are changed.');

@@ -1,7 +1,8 @@
 import { el } from './dom.js';
 import { t } from './i18n.js';
-import { api, mutationBlocked } from './store.js';
+import { api, mutationBlocked, state } from './store.js';
 import { acceptResetThumbnail, acceptSelectedThumbnail, retryThumbnail } from './thumbnail.js';
+import { bindThumbnailPreview, releaseThumbnailPreviews } from './thumbnail-preview.js';
 
 // A detail view can be rebuilt while its file picker is open. Keep one image
 // action per game across those views, and refresh the replacement controls too.
@@ -21,6 +22,7 @@ export function appendThumbnailControls(section, profile, cover, dependencies = 
   const accept = dependencies.accept ?? acceptSelectedThumbnail;
   const reset = dependencies.reset ?? acceptResetThumbnail;
   const retryImage = dependencies.retry ?? retryThumbnail;
+  const bindPreview = dependencies.bindPreview ?? bindThumbnailPreview;
   const controls = el('div', 'thumbnail-controls');
   controls.dataset.thumbnailControlsId = profile.id;
   const status = el('p', 'thumbnail-status'); status.setAttribute('role', 'status');
@@ -58,7 +60,7 @@ export function appendThumbnailControls(section, profile, cover, dependencies = 
   }
   const selected = (image) => {
     if (!accept(profile.id, image)) throw new Error('No usable image');
-    if (section.isConnected) { status.textContent = t('ui.thumbnail.selected'); results.replaceChildren(); }
+    if (section.isConnected) { status.textContent = t('ui.thumbnail.selected'); releaseThumbnailPreviews(results); results.replaceChildren(); }
   };
   async function searchCover(provider) {
     const gog = provider === 'gog';
@@ -66,6 +68,7 @@ export function appendThumbnailControls(section, profile, cover, dependencies = 
     const choose = gog ? gameApi.thumbnailSelectGog : gameApi.thumbnailSelect;
     if (typeof lookup !== 'function' || typeof choose !== 'function') return;
     await run(async () => {
+      releaseThumbnailPreviews(results);
       results.replaceChildren();
       const matches = await lookup(profile.id);
       if (!section.isConnected) return;
@@ -75,9 +78,16 @@ export function appendThumbnailControls(section, profile, cover, dependencies = 
       status.textContent = safe.length ? t('ui.thumbnail.choose') : t('ui.thumbnail.empty');
       for (const item of safe) {
         const id = gog ? item.id : item.appId;
+        const row = el('div', 'thumbnail-result-row');
         const choice = el('button', 'ghost thumbnail-choice', `${item.name} · ${gog ? 'GOG · ' : ''}${id}`);
+        choice.type = 'button';
         choice.addEventListener('click', () => void run(async () => selected(await choose(profile.id, id))));
-        results.append(choice);
+        const preview = el('button', 'ghost thumbnail-preview-toggle', t('ui.thumbnail.preview', undefined, 'Image preview'));
+        preview.type = 'button'; preview.setAttribute('aria-label', `${t('ui.thumbnail.preview', undefined, 'Image preview')}: ${item.name}`);
+        bindPreview(choice, { toggleButton: preview, label: item.name,
+          mode: () => state.libraryPreferences?.previewMode ?? 'hover',
+          getThumbnail: async () => typeof gameApi.thumbnailPreview === 'function' ? gameApi.thumbnailPreview(profile.id, provider, id) : null });
+        row.append(choice, preview); results.append(row);
       }
     }, 'searching');
   }
@@ -91,7 +101,7 @@ export function appendThumbnailControls(section, profile, cover, dependencies = 
       const image = await gameApi.clearThumbnail(profile.id);
       reset(profile.id, image);
       if (image == null) await retryImage(cover);
-      if (section.isConnected) { status.textContent = t('ui.thumbnail.cleared'); results.replaceChildren(); }
+      if (section.isConnected) { status.textContent = t('ui.thumbnail.cleared'); releaseThumbnailPreviews(results); results.replaceChildren(); }
       return;
     }
     if (!['file', 'folder'].includes(action.value)) return;

@@ -71,7 +71,7 @@ import { installGameArchiveVersion, listGameInstallations, setActiveGameInstalla
 import { createLauncherUpdateController, LAUNCHER_RELEASE_URL } from './launcher-updates.ts';
 import { withinLibraryRoots } from './library-roots.ts';
 import { LibraryScanController } from './library-scan.ts';
-import { getGameThumbnail, searchSteamCovers, fetchSteamCover, searchGogCovers, fetchGogCover } from './thumbnails.ts';
+import { getGameThumbnail, searchSteamCovers, fetchSteamCover, searchGogCovers, fetchGogCover, type Thumbnail } from './thumbnails.ts';
 import { createGogSearchAuthority } from './gog-search-authority.ts';
 import { readThumbnailPreferences, saveThumbnailPreference } from './thumbnail-preferences.ts';
 import { importManualThumbnail, importManualThumbnailBytes, readManualThumbnail, clearManualThumbnail } from './manual-thumbnails.ts';
@@ -235,6 +235,7 @@ const storeArtworkPreviews = createStoreArtworkPreviews();
 const thumbnailSearchResults = new Map<string, Set<string>>();
 const thumbnailSearchGeneration = new Map<string, number>();
 const gogSearchAuthority = createGogSearchAuthority();
+const thumbnailPreviewRequests = new Map<string, Promise<Thumbnail | null>>();
 interface ArchiveTask {
   id: string;
   sequence: number;
@@ -1416,11 +1417,23 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
   await waitFor(`!!document.querySelector('.thumbnail-controls .thumbnail-actions button')`, 'thumbnail search controls');
   await evaluate(`document.querySelector('.thumbnail-controls .thumbnail-actions button').click()`);
   await waitFor(`document.querySelector('.thumbnail-choice')?.textContent.includes('Aster Steam Fixture')`, 'explicit Steam search fixture');
+  const beforePreview = JSON.stringify([...await readThumbnailPreferences(defaultDataDir())]);
+  await evaluate(`document.querySelector('.thumbnail-controls .thumbnail-preview-toggle').click()`);
+  await waitFor(`!!document.querySelector('.thumbnail-preview-popover .thumbnail-preview-image')`, 'read-only candidate preview');
+  if (JSON.stringify([...await readThumbnailPreferences(defaultDataDir())]) !== beforePreview) throw new Error('Previewing a search candidate saved a thumbnail selection.');
+  await evaluate(`document.querySelector('.thumbnail-preview-close').click()`);
+  await waitFor(`!document.querySelector('.thumbnail-preview-popover')`, 'candidate preview dismissal');
   const deniesCrossGame = await evaluate<boolean>(`(async () => {
     const { api, state } = await import('./store.js');
     const other = state.games.find((game) => game.name === 'Birch Test Game');
     if (!other) throw new Error('Missing other fixture game');
-    try { await api.game.thumbnailSelect(other.id, '440'); return false; } catch { return true; }
+    for (const request of [() => api.game.thumbnailSelect(other.id, '440'),
+      () => api.game.thumbnailPreview(other.id, 'steam', '440'),
+      () => api.game.thumbnailPreview(state.selected, 'steam', '999999'),
+      () => api.game.thumbnailPreview(state.selected, 'unknown', '440')]) {
+      try { await request(); return false; } catch { /* expected */ }
+    }
+    return true;
   })()`);
   if (!deniesCrossGame) throw new Error('A different game accepted another game’s search result.');
   await evaluate(`document.querySelector('.thumbnail-choice').click()`);
@@ -1490,6 +1503,7 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
   const artworkShot = process.env['INDIEDECK_STORE_ARTWORK_SCREENSHOT'];
   if (artworkShot) {
     await evaluate(`document.querySelector('.store-artwork').scrollIntoView({ block: 'center' })`);
+    await evaluate(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
     await writeFile(artworkShot, (await window.webContents.capturePage()).toPNG());
   }
   const artworkGates = await evaluate<boolean>(`(async () => {
@@ -1509,6 +1523,45 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
   await waitFor(`document.body.dataset.libraryState === 'ready'`, 'product artwork reload');
   if ((await readManualThumbnail(defaultDataDir(), coverGameId))?.source !== 'manual') throw new Error('Applied product artwork did not persist.');
   console.log('[smoke] product artwork metadata → explicit preview → installed-game-only apply → independent connection save → persisted reload passed; offline CDN fixture only');
+
+  await waitFor(`!!document.querySelector('[data-game-id="${coverGameId}"] .library-options:not(:disabled)')`, 'per-game library options');
+  await evaluate(`document.querySelector('[data-game-id="${coverGameId}"] .library-options').click()`);
+  await waitFor(`document.getElementById('gameLibraryOptions')?.open`, 'library classification dialog');
+  await evaluate(`(() => {
+    document.getElementById('gameHideListThumbnail').checked = true;
+    document.getElementById('gameAdultClassification').value = 'adult';
+    for (const node of document.querySelectorAll('input[name="gamePurchaseStore"]')) node.checked = ['dlsite', 'itch'].includes(node.value);
+    document.getElementById('saveGameLibraryOptions').click();
+  })()`);
+  await waitFor(`(async () => {
+    const prefs = await window.indiedeck.libraryPreferences.read(); const value = prefs.gameSettings['${coverGameId}'];
+    return value?.hideThumbnail === true && value.adult === 'adult' && value.purchaseStores.includes('dlsite') && value.purchaseStores.includes('itch')
+      && !document.getElementById('gameLibraryOptions')?.open;
+  })()`, 'persistent game classification and purchase stores');
+  const hiddenListImage = await evaluate<boolean>(`(() => {
+    const row = document.querySelector('[data-game-id="${coverGameId}"]');
+    return !!row?.querySelector('.thumbnail-list-hidden') && !row.querySelector('img') && !row.querySelector('[data-thumbnail-game-id]')
+      && !!row.querySelector('.library-adult-badge') && row.querySelectorAll('.library-purchase-badge').length === 2;
+  })()`);
+  if (!hiddenListImage) throw new Error('A hidden list thumbnail still created an image or lost explicit labels.');
+  await evaluate(`(() => { const select = document.getElementById('libraryAdultFilter'); select.value = 'only'; select.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await waitFor(`document.querySelectorAll('#gameList .game').length === 1 && !!document.querySelector('[data-game-id="${coverGameId}"]')`, 'adult-only library filter');
+  await evaluate(`(() => { const select = document.getElementById('libraryAdultFilter'); select.value = 'exclude'; select.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await waitFor(`!document.querySelector('[data-game-id="${coverGameId}"]') && document.querySelectorAll('#gameList .game').length > 0`, 'explicit adult exclusion filter');
+  await evaluate(`(() => {
+    const adult = document.getElementById('libraryAdultFilter'); adult.value = 'all'; adult.dispatchEvent(new Event('change', { bubbles: true }));
+    const purchase = document.getElementById('libraryPurchaseFilter'); purchase.value = 'dlsite'; purchase.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await waitFor(`document.querySelectorAll('#gameList .game').length === 1 && !!document.querySelector('[data-game-id="${coverGameId}"]')`, 'purchase-site filter');
+  const classificationShot = process.env['INDIEDECK_LIBRARY_CLASSIFICATION_SCREENSHOT'];
+  if (classificationShot) {
+    await evaluate(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
+    await writeFile(classificationShot, (await window.webContents.capturePage()).toPNG());
+  }
+  await evaluate(`(() => { const select = document.getElementById('libraryPurchaseFilter'); select.value = 'all'; select.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await new Promise<void>(resolve => { window.webContents.once('did-finish-load', () => resolve()); window.webContents.reload(); });
+  await waitFor(`document.body.dataset.libraryState === 'ready' && !!document.querySelector('[data-game-id="${coverGameId}"] .thumbnail-list-hidden')`, 'library metadata after renderer reload');
+  console.log('[smoke] read-only candidate preview → hidden list image without image nodes → explicit adult and purchase labels → combined filters → persisted renderer reload passed');
 
   await evaluate(`document.getElementById('toggleGamingMode').click()`);
   await waitFor(`document.body.dataset.gamingMode === 'true'`, 'native fullscreen gaming mode');
@@ -2620,13 +2673,42 @@ function register(): void {
 
   handleMutation('game:thumbnailSelect', async (gameId: string, appId: unknown) => {
     requireGamePath(gameId);
-    if (typeof appId !== 'string' || !thumbnailSearchResults.get(gameId)?.has(appId)) throw new Error('Select a current Steam search result.');
+    const results = thumbnailSearchResults.get(gameId), generation = thumbnailSearchGeneration.get(gameId);
+    if (typeof appId !== 'string' || !results?.has(appId)) throw new Error('Select a current Steam search result.');
     const image = await fetchSteamCover(appId);
     if (!image) throw new Error('Steam artwork is unavailable.');
     requireGamePath(gameId);
+    if (thumbnailSearchGeneration.get(gameId) !== generation || thumbnailSearchResults.get(gameId) !== results || !results.has(appId)) throw new Error('Select a current Steam search result.');
     await saveThumbnailPreference(defaultDataDir(), gameId, appId);
     await clearManualThumbnail(defaultDataDir(), gameId);
     return image;
+  });
+
+  // A preview can read only a current result from this game's explicit search.
+  // It never saves the selection or removes an existing manual image.
+  handle('game:thumbnailPreview', async (gameId: string, provider: unknown, id: unknown) => {
+    requireGamePath(gameId);
+    if (typeof id !== 'string' || provider !== 'steam' && provider !== 'gog') throw new Error('ui.thumbnail.previewUnavailable');
+    const steamGeneration = thumbnailSearchGeneration.get(gameId);
+    const steamResults = thumbnailSearchResults.get(gameId);
+    const gogGrant = provider === 'gog' ? gogSearchAuthority.grant(gameId, id) : undefined;
+    if (provider === 'steam' ? !steamResults?.has(id) : !gogGrant) throw new Error('ui.thumbnail.previewUnavailable');
+    const key = `${gameId}:${provider}:${id}:${provider === 'steam' ? steamGeneration : gogGrant!.generation}`;
+    const pending = thumbnailPreviewRequests.get(key);
+    if (pending) return pending;
+    // Hovering across candidates cannot accumulate a background download queue.
+    if (thumbnailPreviewRequests.size >= 2) return null;
+    const work = (async () => {
+      const image = await (provider === 'steam' ? fetchSteamCover(id) : fetchGogCover(gogGrant!.hash, id)).catch(() => null);
+      requireGamePath(gameId);
+      const current = provider === 'steam'
+        ? thumbnailSearchGeneration.get(gameId) === steamGeneration && thumbnailSearchResults.get(gameId) === steamResults && steamResults?.has(id)
+        : gogSearchAuthority.isCurrent(gameId, id, gogGrant!);
+      return current ? image : null;
+    })();
+    thumbnailPreviewRequests.set(key, work);
+    try { return await work; }
+    finally { if (thumbnailPreviewRequests.get(key) === work) thumbnailPreviewRequests.delete(key); }
   });
 
   // GOG search is user-triggered and its result IDs have authority only for
