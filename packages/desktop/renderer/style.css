@@ -1304,6 +1304,7 @@ select {
 .thumbnail-preview-image { display: block; width: 100%; max-height: min(46vh, 380px); object-fit: contain; }
 .thumbnail-preview-status { color: var(--text-dim); font-size: 12px; }
 .library-extra-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; width: 100%; }
+.library-extra-control { display: flex; align-items: center; gap: 6px; max-width: 100%; }
 .library-extra-controls label { color: var(--text-dim); font-size: 11px; }
 .library-extra-controls select { max-width: 100%; min-width: 100px; padding: 5px 7px; }
 .library-options { padding: 2px 6px; min-width: 26px; font-size: 16px; }
