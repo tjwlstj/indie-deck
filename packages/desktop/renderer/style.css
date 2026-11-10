@@ -300,6 +300,36 @@ button.ghost {
   border-color: var(--line);
 }
 
+/* Directional navigation uses the same strong focus cue as keyboard input. */
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible,
+.game:focus-visible, a:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.gaming-navigation-hint { margin: 0; padding: 8px 20px; color: var(--text-dim); background: var(--bg-raised); border-bottom: 1px solid var(--line); font-size: 14px; }
+.gaming-engine-control { display: none; }
+.gaming-mode .gaming-engine-control { display: inline-block; }
+body.gaming-mode { font-size: 16px; }
+.gaming-mode button, .gaming-mode select, .gaming-mode input { min-height: 42px; }
+.gaming-mode .topbar { padding: 14px 22px; flex-wrap: wrap; }
+.gaming-mode .search { max-width: 520px; }
+.gaming-mode .shell { grid-template-columns: minmax(350px, .95fr) minmax(420px, 1.1fr); }
+.gaming-mode .sidebar { display: none; }
+.gaming-mode .game-list { padding: 14px; gap: 10px; }
+.gaming-mode .game { grid-template-columns: 112px minmax(0, 1fr) auto auto; gap: 5px 15px; padding: 14px; min-height: 108px; }
+.gaming-mode .thumbnail-list { width: 112px; height: 78px; }
+.gaming-mode .game .name { font-size: 18px; white-space: normal; }
+.gaming-mode .game .meta, .gaming-mode .settings-hint, .gaming-mode .store-help, .gaming-mode .plan-sub { font-size: 14px; }
+.gaming-mode .detail { padding: 20px; }
+.gaming-mode .detail-sticky h1 { font-size: 26px; }
+.gaming-mode .list-toolbar { padding: 14px; gap: 10px; }
+.gaming-mode .favorite-toggle { min-width: 42px; font-size: 26px; }
+.gaming-mode .settings-body { max-width: 1080px; }
+@media (max-width: 1050px) {
+  .gaming-mode .shell { grid-template-columns: minmax(310px, .85fr) minmax(350px, 1fr); }
+  .gaming-mode .game { grid-template-columns: 80px minmax(0, 1fr) auto auto; padding: 10px; }
+  .gaming-mode .thumbnail-list { width: 80px; height: 60px; }
+  .gaming-mode .topbar { gap: 10px; padding: 10px 14px; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0s !important; animation-duration: 0s !important; } }
+
 .game .name {
   font-weight: 600;
   overflow: hidden;

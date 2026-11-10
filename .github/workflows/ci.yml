@@ -80,6 +80,8 @@ jobs:
             out/desktop-thumbnail-en.png
             out/desktop-stores-ko.png
             out/desktop-stores-en.png
+            out/desktop-gaming-ko.png
+            out/desktop-gaming-en.png
           retention-days: 1
           if-no-files-found: error
 

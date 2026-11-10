@@ -34,6 +34,7 @@
       </div>
 
       <div class="topbar-actions">
+        <button id="toggleGamingMode" class="ghost" type="button" aria-pressed="false" data-i18n="ui.gaming.enterMode">Gaming mode</button>
         <!-- Active or retained task indicator; hidden when there is no task. -->
         <button
           id="taskStatus"
@@ -49,6 +50,8 @@
         <button id="openSettings" class="ghost" data-i18n="ui.app.settings">Settings</button>
       </div>
     </header>
+
+    <p id="gamingNavigationHint" class="gaming-navigation-hint" role="status" hidden></p>
 
     <main class="shell" id="libraryView">
       <nav class="sidebar">
@@ -74,6 +77,15 @@
 
       <section class="list">
         <div class="list-toolbar">
+          <label class="gaming-engine-control" for="gamingEngineFilter" data-i18n="ui.gaming.engineFilter">Engine</label>
+          <select class="gaming-engine-control" id="gamingEngineFilter" aria-label="Engine filter"></select>
+          <label class="gaming-engine-control" for="gamingStatusFilter" data-i18n="ui.gaming.statusFilter">Status</label>
+          <select class="gaming-engine-control" id="gamingStatusFilter" aria-label="Status filter">
+            <option value="all" data-i18n="ui.sidebar.allGames">All games</option>
+            <option value="untranslated" data-i18n="ui.sidebar.untranslated">No translator</option>
+            <option value="translated" data-i18n="ui.sidebar.translated">Has translator</option>
+            <option value="issues" data-i18n="ui.sidebar.issues">Needs attention</option>
+          </select>
           <button id="importArchive" class="ghost" data-i18n="ui.archive.toolbar">Import game archive</button>
           <label for="librarySort" data-i18n="ui.library.sort">Sort</label>
           <select id="librarySort">
@@ -117,6 +129,11 @@
         <section id="launcherUpdates" class="settings-section">
           <h2 data-i18n="ui.update.title">Launcher updates</h2>
           <div id="launcherUpdatesBody"></div>
+        </section>
+
+        <section id="gamingSettings" class="settings-section">
+          <h2 data-i18n="ui.gaming.settingsTitle">Gaming mode and launcher integration</h2>
+          <div id="gamingSettingsBody"></div>
         </section>
 
         <section class="settings-section">

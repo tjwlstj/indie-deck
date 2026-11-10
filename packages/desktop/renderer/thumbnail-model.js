@@ -10,7 +10,7 @@ export function normaliseThumbnail(value) {
 
 /** Bounded parallel lookups and LRU, including negative results. A manual choice
  * advances the generation so an older asynchronous lookup cannot replace it. */
-export function createThumbnailLoader(fetchOne, { concurrency = 3, limit = 24 } = {}) {
+export function createThumbnailLoader(fetchOne, { concurrency = 3, limit = 24, canStart = () => true } = {}) {
   const cache = new Map(), pending = new Map(), generation = new Map(), queue = [];
   let active = 0;
   const remember = (id, value) => {
@@ -18,13 +18,24 @@ export function createThumbnailLoader(fetchOne, { concurrency = 3, limit = 24 } 
     while (cache.size > limit) cache.delete(cache.keys().next().value);
   };
   const pump = () => {
-    while (active < concurrency && queue.length) {
+    while (active < concurrency && queue.length && canStart()) {
       const task = queue.shift(); active += 1;
-      Promise.resolve().then(() => fetchOne(task.id)).then(normaliseThumbnail, () => null).then((value) => {
+      void (async () => {
+        await Promise.resolve();
+        // Visibility may change after queue admission but before the IPC call.
+        if (!canStart()) { active -= 1; queue.unshift(task); return; }
+        if (generation.get(task.id) !== task.generation) {
+          task.resolve({ current: false, value: null }); active -= 1;
+          if (pending.get(task.id) === task.promise) pending.delete(task.id);
+          pump(); return;
+        }
+        let value;
+        try { value = normaliseThumbnail(await fetchOne(task.id)); } catch { value = null; }
         const current = generation.get(task.id) === task.generation;
         if (current) remember(task.id, value);
         task.resolve({ current, value });
-      }).finally(() => { active -= 1; if (pending.get(task.id) === task.promise) pending.delete(task.id); pump(); });
+        active -= 1; if (pending.get(task.id) === task.promise) pending.delete(task.id); pump();
+      })();
     }
   };
   const load = (id, refresh = false) => {
@@ -44,5 +55,5 @@ export function createThumbnailLoader(fetchOne, { concurrency = 3, limit = 24 } 
     pending.delete(id);
     const safe = normaliseThumbnail(value); remember(id, safe); return safe;
   };
-  return { load, prime };
+  return { load, prime, resume: pump };
 }

@@ -5,6 +5,27 @@ Versioning while the project is pre-1.0.
 
 ## [Unreleased]
 
+## [0.1.16] - 2026-11-10
+
+### Added
+
+- Fullscreen library mode with keyboard and standard gamepad navigation,
+  repeat-safe activation, modal boundaries and visible focus states.
+- Xbox/Steam registration details, user-selected Windows shortcut export and
+  strict `--fullscreen` / opaque `--launch-game` entry options for both startup
+  and an already running launcher. Official Windows gaming settings actions.
+- Owned game session tracking, duplicate-launch prevention, configurable
+  minimize-on-launch and optional restore, with quiet background image/controller
+  work and a deferred startup update check.
+
+### Security
+
+- Launch directory/executable and identity checks remain required when the
+  optional launch antivirus scan is off. Revalidate after scanning before spawn.
+- Reject game-file maintenance/config/mod writes for tracked games and version
+  activation while owned games are active. No game priority, affinity, power-plan
+  or unrelated-process changes are introduced.
+
 ## [0.1.15] - 2026-11-10
 
 ### Added

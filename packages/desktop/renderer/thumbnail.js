@@ -3,7 +3,9 @@ import { currentLocale, t } from './i18n.js';
 import { api } from './store.js';
 import { createThumbnailLoader, normaliseThumbnail } from './thumbnail-model.js';
 
-const loader = createThumbnailLoader((id) => typeof api.game.thumbnail === 'function' ? api.game.thumbnail(id) : null);
+const loader = createThumbnailLoader((id) => typeof api.game.thumbnail === 'function' ? api.game.thumbnail(id) : null,
+  { canStart: () => document.hidden !== true });
+document.addEventListener?.('visibilitychange', () => { if (document.hidden !== true) loader.resume(); });
 
 function paint(node, thumbnail) {
   const picture = node.querySelector('img'), placeholder = node.querySelector('.thumbnail-placeholder');

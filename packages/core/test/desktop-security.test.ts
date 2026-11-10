@@ -131,7 +131,11 @@ test('startup only checks for updates and download or install require explicit c
     assert.match(launcherUpdates, new RegExp(`updater\\.${flag} = false`));
   }
   assert.match(launcherUpdates, /updater\.autoRunAppAfterInstall = true/);
-  assert.match(main, /if \(mode === 'installed'\) \{\s+const timer = setTimeout\(\(\) => \{[\s\S]*?if \(launcherUpdates\.snapshot\(\)\.status !== 'idle'\) return;\s+void launcherUpdates\.check\(\)\.catch/);
+  const startup = main.slice(main.indexOf("if (mode === 'installed')"), main.indexOf('/* ------------------------------------------------------------- config */'));
+  assert.match(startup, /if \(launcherUpdates\.snapshot\(\)\.status !== 'idle'\) return;/);
+  assert.match(startup, /shouldDeferBackgroundWork\(ownedGames\.snapshot\(\)/);
+  assert.match(startup, /const timer = setTimeout\(checkWhenQuiet, 8_000\)/);
+  assert.match(startup, /void launcherUpdates\.check\(\)\.catch/);
   assert.doesNotMatch(main, /autoDownload\s*=\s*true|autoInstallOnAppQuit\s*=\s*true|autoUpdater\.downloadUpdate\(|autoUpdater\.quitAndInstall\(/);
   const check = launcherUpdates.slice(launcherUpdates.indexOf('  const check ='), launcherUpdates.indexOf('  const download ='));
   assert.match(check, /updater\.checkForUpdates\(\)/);
@@ -160,7 +164,7 @@ test('maintenance keeps opaque targets, rejects concurrent writes and revalidate
   assert.match(main, /requirePlan\(request\.gameId, request\.planId\)/);
   assert.match(main, /planFingerprint\(candidate\) === planFingerprint\(plan\)/);
   assert.match(main, /if \(operations\.isActive\(\)\) throw/);
-  assert.match(main, /if \(pendingMutations > 0\) throw/);
+  assert.match(main, /if \(pendingMutations > 0 \|\| operations\.isActive\(\)\) throw/);
   assert.match(main, /app\.requestSingleInstanceLock\(\)/);
   assert.match(main, /r\.storageId !== `\$\{r\.kind\}-\$\{r\.componentId\}\.json`/);
   const removalStart = main.indexOf('const receipts = await readSafeRemovalReceipts(');

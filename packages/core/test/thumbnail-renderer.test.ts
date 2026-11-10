@@ -51,3 +51,26 @@ test('an explicit choice wins over a stale outstanding automatic lookup', async 
   assert.equal((await old).current, false);
   assert.deepEqual((await loader.load('game')).value, steam);
 });
+
+test('hidden launcher defers new and queued automatic image work until visibility returns', async () => {
+  let visible = true, calls = 0, finish: (value: unknown) => void = () => {};
+  const loader = createThumbnailLoader(() => { calls += 1; return new Promise(resolve => { finish = resolve; }); },
+    { concurrency: 1, canStart: () => visible });
+  const first = loader.load('first'), second = loader.load('second');
+  visible = false;
+  await Promise.resolve(); assert.equal(calls, 0, 'hide between admission and IPC must defer the call');
+  visible = true; loader.resume(); await Promise.resolve(); assert.equal(calls, 1);
+  visible = false; finish(local); await first; await Promise.resolve(); assert.equal(calls, 1, 'finishing one request cannot start the hidden queued request');
+  assert.deepEqual((await loader.load('first')).value, local, 'existing image remains available while hidden');
+  visible = true; loader.resume(); await Promise.resolve(); assert.equal(calls, 2);
+  finish(steam); await second;
+});
+
+test('a manual image selected while hidden cancels obsolete queued automatic work', async () => {
+  let visible = false, calls = 0;
+  const loader = createThumbnailLoader(() => { calls += 1; return local; }, { canStart: () => visible });
+  const queued = loader.load('selected'); loader.prime('selected', manual);
+  visible = true; loader.resume();
+  assert.equal((await queued).current, false); assert.equal(calls, 0);
+  assert.deepEqual((await loader.load('selected')).value, manual);
+});

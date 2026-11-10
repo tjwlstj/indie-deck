@@ -154,7 +154,7 @@ jobs:
           $env:INDIEDECK_SCREENSHOT = $screenshot
           $env:INDIEDECK_DISABLE_UPDATES = '1'
 
-          $process = Start-Process -FilePath (Join-Path $PWD 'release\win-unpacked\IndieDeck.exe') -PassThru -Wait -WindowStyle Hidden
+          $process = Start-Process -FilePath (Join-Path $PWD 'release\win-unpacked\IndieDeck.exe') -ArgumentList '--fullscreen','--updated' -PassThru -Wait -WindowStyle Hidden
           if ($process.ExitCode -ne 0) {
             throw "Packaged smoke test exited with $($process.ExitCode)"
           }

@@ -14,6 +14,8 @@ import { operationCard } from './panels/detail.js';
 import { refreshMToolStatus } from './panels/mtool.js';
 import { archiveProgressLabel, bindArchiveEvents, recoverArchiveProgress, refreshArchiveRecords } from './panels/archives.js';
 import { releaseThumbnails } from './thumbnail.js';
+import { bindGamingMode } from './gaming-mode.js';
+import { bindGamingSettingsEvents, refreshGamingSettings, renderGamingSettings } from './panels/gaming.js';
 import { isArchiveActive } from './archive-model.js';
 import { canCancelScan, isScanActive, reduceScanStatus, scanPresentation, validScanDepth } from './scan-model.js';
 import { bindLauncherUpdateEvents, refreshLauncherUpdateStatus, renderLauncherUpdates } from './panels/updates.js';
@@ -54,6 +56,7 @@ let savingDefaults = false;
 let savingScanSettings = false;
 let scanRequestToken = 0;
 let detailLoadingGameId = null;
+let gamingMode = null;
 const handledOutcomes = new Map();
 
 /* --------------------------------------------------------------- render */
@@ -581,6 +584,8 @@ async function changeLocale(locale) {
   state.config = await api.config.set({ ...state.config, locale });
   await loadLocale();
   applyStaticTranslations();
+  gamingMode?.render();
+  renderGamingSettings();
   populateLocaleSelect();
   populateScanSettings();
   await refreshLibraryView(false);
@@ -596,6 +601,8 @@ function openSettings() {
   populateDefaultsForm(state.registry.translators.find((x) => x.id === 'xunity-autotranslator')?.endpoints ?? []);
   renderView();
   renderOperationChrome();
+  renderGamingSettings();
+  void refreshGamingSettings();
   void refreshMToolStatus().catch((err) => setStatus(err.message, 'err'));
   void refreshArchiveRecords().catch((err) => setStatus(err.message, 'err'));
   void refreshStoreConnections();
@@ -674,6 +681,12 @@ async function boot() {
   bindArchiveEvents();
   bindLauncherUpdateEvents();
   bindSecurityEvents();
+  bindGamingSettingsEvents();
+  api.gaming?.onEntryError?.((value) => {
+    const key = value?.errorKey;
+    if (key === 'ui.gaming.error.invalidArguments') setStatus(t(key, undefined, 'The launcher entry options were invalid. Open a game from the library or recreate its shortcut.'), 'err');
+    else if (key === 'ui.gaming.error.launchFailed') setStatus(t(key, undefined, 'The game could not start. Review its library entry and security status.'), 'err');
+  });
   bindScanEvents();
   const scanRecovery = recoverScanStatus().catch((err) => setStatus(err.message, 'err'));
   const updateRecovery = refreshLauncherUpdateStatus();
@@ -707,6 +720,15 @@ async function boot() {
   renderAbout();
   populateLocaleSelect();
 
+  gamingMode = bindGamingMode({ api: api.gaming, onError: () => setStatus(t('ui.gaming.failed', undefined, 'Could not change gaming mode.'), 'err'),
+    onBack: (exitMode) => {
+      if (state.view === 'settings') { closeSettings(); return; }
+      if (document.activeElement?.closest?.('#detail')) {
+        document.querySelector('.game.selected')?.focus(); return;
+      }
+      exitMode();
+    } });
+
   $('openSettings').addEventListener('click', openSettings);
   $('closeSettings').addEventListener('click', closeSettings);
   $('taskStatus').addEventListener('click', () => {
@@ -734,7 +756,7 @@ async function boot() {
   window.addEventListener('indiedeck:open-settings', (event) => {
     openSettings();
     const section = event.detail?.section;
-    if (['mtoolSettings', 'archiveSettings', 'launcherUpdates', 'librarySettings', 'storeSettings'].includes(section)) $(section)?.scrollIntoView({ block: 'nearest' });
+    if (['mtoolSettings', 'archiveSettings', 'launcherUpdates', 'librarySettings', 'storeSettings', 'gamingSettings'].includes(section)) $(section)?.scrollIntoView({ block: 'nearest' });
   });
   $('importArchive').addEventListener('click', () => {
     openSettings();

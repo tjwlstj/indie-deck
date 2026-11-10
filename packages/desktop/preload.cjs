@@ -32,6 +32,17 @@ contextBridge.exposeInMainWorld('indiedeck', {
     info: () => call('app:info'),
   },
 
+  gaming: {
+    current: () => call('gaming:current'),
+    setFullscreen: (enabled) => call('gaming:setFullscreen', enabled),
+    configure: (preferences) => call('gaming:configure', preferences),
+    registration: (gameId) => call('gaming:registration', gameId),
+    exportShortcut: (gameId) => call('gaming:exportShortcut', gameId),
+    openSettings: (action) => call('gaming:openSettings', action),
+    onState: (fn) => subscribe('gaming:state', fn),
+    onEntryError: (fn) => subscribe('gaming:entry-error', fn),
+  },
+
   updates: {
     current: () => call('updates:current'),
     check: () => call('updates:check'),

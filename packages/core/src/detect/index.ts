@@ -38,6 +38,8 @@ export interface DetectOptions {
   measureSize?: boolean;
   /** Optional per-engine listing cap for bulk scans; direct detection is unchanged. */
   probeDirectoryLimit?: number;
+  /** Refuse linked marker files and directories during sensitive direct probes. */
+  rejectLinks?: boolean;
   onProbeLimit?: (engineId: string) => void;
 }
 
@@ -214,7 +216,7 @@ export function detectGame(reg: Registry, gamePath: string, options: DetectOptio
   }
   if (!stats.isDirectory()) return undefined;
 
-  const probe = new FsProbe(abs, { rejectLinks: options.probeDirectoryLimit !== undefined });
+  const probe = new FsProbe(abs, { rejectLinks: options.rejectLinks === true || options.probeDirectoryLimit !== undefined });
   const folderName = path.basename(abs);
   const exes = listExecutables(probe);
   const ranked = rankEngines(probe, reg.engines, exes, {

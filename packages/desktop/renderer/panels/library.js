@@ -30,6 +30,21 @@ function updatePreferences(change) {
 }
 function renderLibraryControls() {
   loadPreferences();
+  const gamingEngineFilter = $('gamingEngineFilter');
+  if (gamingEngineFilter) {
+    gamingEngineFilter.replaceChildren();
+    for (const entry of [{ id: 'all', title: t('ui.sidebar.allEngines', undefined, 'All engines') },
+      ...(state.stats?.byEngine ?? []).map(value => ({ id: value.engineId, title: value.engineName }))]) {
+      const option = el('option', null, entry.title); option.value = entry.id; gamingEngineFilter.append(option);
+    }
+    gamingEngineFilter.value = state.engineFilter;
+    gamingEngineFilter.onchange = () => { state.engineFilter = gamingEngineFilter.value; emit('library'); };
+  }
+  const gamingStatusFilter = $('gamingStatusFilter');
+  if (gamingStatusFilter) {
+    gamingStatusFilter.value = state.statusFilter;
+    gamingStatusFilter.onchange = () => { state.statusFilter = gamingStatusFilter.value; emit('library'); };
+  }
   const preferences = state.libraryPreferences;
   const disabled = !state.libraryPreferencesLoaded || state.libraryPreferencesError || mutationBlocked();
   const select = $('librarySort');
@@ -138,6 +153,15 @@ export function renderGameList(onSelectGame) {
   if (games.length === 0) container.append(el('p', 'empty-library', t('ui.library.noMatches', undefined, 'No games match these filters.')));
   for (const game of games) {
     const row = el('div', 'game');
+    row.tabIndex = 0;
+    row.setAttribute('role', 'button');
+    row.setAttribute('aria-label', game.title || game.name);
+    row.dataset.gameId = game.id;
+    row.addEventListener('keydown', (event) => {
+      if (event.target !== row || !['Enter', ' '].includes(event.key)) return;
+      event.preventDefault();
+      if (!event.repeat) onSelectGame(game.id);
+    });
     row.classList.toggle('selected', state.selected === game.id);
 
     row.append(thumbnailElement(game));

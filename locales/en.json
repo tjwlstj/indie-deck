@@ -19,8 +19,7 @@
         "fix": "Keep the one the translator actually uses; ReiPatcher in particular is documented as incompatible with other plugin managers."
       },
       "translator-payload-orphaned": {
-        "message": "{translator} files for the \"{variant}\" variant are installed, but no loader providing \"{capability}\" is present - nothing will load them.",
-        "fix": "Install the matching loader, or remove the stray files and install the variant that fits the loader you have."
+        "evidence-message": "{translator} payload files are present, but no loader able to run them is installed."
       },
       "translator-outdated": {
         "message": "{translator} {installed} installed; {latest} is the newest known release.",
@@ -36,9 +35,6 @@
       },
       "engine-version-unknown": {
         "message": "Unity version could not be read, so version-gated compatibility checks are advisory only for this game."
-      },
-      "translator-payload-orphaned": {
-        "evidence-message": "{translator} payload files are present, but no loader able to run them is installed."
       },
       "translator-duplicate-install": {
         "message": "{translator} payloads from several loader families are present ({variants}); only one can load.",
@@ -299,10 +295,15 @@
       "companionDescription": "Import copied browser companion metadata, a product URL or a connection file. Review it and link it to an installed game.",
       "pasteTitle": "Import a product URL or connection",
       "pasteHelp": "Paste a product URL or copied companion metadata, or drop one connection JSON file here.",
-      "pasteLabel": "Product URL or connection metadata", "preview": "Review imported information",
-      "dropReady": "Drop a connection JSON file", "editableTitle": "Display name",
-      "installedGames": "Installed games", "managedProducts": "Managed products", "selectedGame": "Linked game: {title}",
-      "linkTarget": "Game or managed product to link", "noTarget": "Save the product without linking a game",
+      "pasteLabel": "Product URL or connection metadata",
+      "preview": "Review imported information",
+      "dropReady": "Drop a connection JSON file",
+      "editableTitle": "Display name",
+      "installedGames": "Installed games",
+      "managedProducts": "Managed products",
+      "selectedGame": "Linked game: {title}",
+      "linkTarget": "Game or managed product to link",
+      "noTarget": "Save the product without linking a game",
       "connectThisGame": "Connect a product to this game",
       "extensionStep": "Open the extension folder, then load it from your supported browser's extension manager. Follow the included README.",
       "exportStep": "Visit a supported product page and use the extension to save an IndieDeck product-link file.",
@@ -451,17 +452,31 @@
       }
     },
     "thumbnail": {
-      "loading": "Finding image", "missing": "No image", "local": "Game folder image", "steam": "Official Steam image",
-      "search": "Search Steam artwork", "searchHint": "If the automatic image is for a different game, choose another. The game title is sent to Steam when you search.",
-      "searching": "Searching…", "empty": "No results found.", "choose": "Choose image", "selected": "Image applied.",
-      "failed": "Could not load the image. Check the file format and size, or your connection.", "retry": "Try again",
-      "manual": "Selected image", "gog": "GOG image", "searchGog": "Search GOG images",
+      "loading": "Finding image",
+      "missing": "No image",
+      "local": "Game folder image",
+      "steam": "Official Steam image",
+      "search": "Search Steam artwork",
+      "searchHint": "If the automatic image is for a different game, choose another. The game title is sent to Steam when you search.",
+      "searching": "Searching…",
+      "empty": "No results found.",
+      "choose": "Choose image",
+      "selected": "Image applied.",
+      "failed": "Could not load the image. Check the file format and size, or your connection.",
+      "retry": "Try again",
+      "manual": "Selected image",
+      "gog": "GOG image",
+      "searchGog": "Search GOG images",
       "gogHint": "GOG search sends the game title to GOG. Its public catalog is unofficial; a chosen image may be fetched again later.",
-      "actionLabel": "Manual image action", "pickFile": "Choose an image file", "pickFolder": "Choose from the game folder",
-      "clearManual": "Remove manual image", "runAction": "Apply",
+      "actionLabel": "Manual image action",
+      "pickFile": "Choose an image file",
+      "pickFolder": "Choose from the game folder",
+      "clearManual": "Remove manual image",
+      "runAction": "Apply",
       "manualHint": "Choose an image file or drop one onto this cover area. PNG, JPEG and WebP files up to 2 MiB are supported. A copy is stored by the launcher.",
       "invalidDrop": "Drop one PNG, JPEG or WebP image no larger than 2 MiB.",
-      "cancelled": "Image selection cancelled. The existing image is kept.", "cleared": "Manual image removed. The original artwork was checked again.",
+      "cancelled": "Image selection cancelled. The existing image is kept.",
+      "cleared": "Manual image removed. The original artwork was checked again.",
       "busy": "Finish the active operation before changing the image."
     },
     "mtool": {
@@ -840,8 +855,15 @@
       },
       "providerRequirement": "Registered limits: minimum {min}, maximum {max} · current: {current} · replacement: {target}",
       "requirementScope": "This checks version metadata, not API authentication or translation success.",
-      "role": { "primary": "Primary engine", "fallback": "Fallback engine" },
-      "requirement": { "met": "Meets requirement", "unmet": "Does not meet requirement", "unknown": "Unconfirmed" },
+      "role": {
+        "primary": "Primary engine",
+        "fallback": "Fallback engine"
+      },
+      "requirement": {
+        "met": "Meets requirement",
+        "unmet": "Does not meet requirement",
+        "unknown": "Unconfirmed"
+      },
       "reason": {
         "schemaUnavailable": "No configuration schema is registered for this translator.",
         "readUnavailable": "The settings or version inputs could not be read safely. Refresh and review the game files."
@@ -911,6 +933,29 @@
       "removed": "Removed. Folder restored to what it was.",
       "removedKept": "Removed. {count} hand-edited file(s) were left alone.",
       "emptyLibrary": "No games yet — add a folder and scan."
+    },
+    "gaming": {
+      "enterMode": "Gaming mode",
+      "exitMode": "Window mode",
+      "modeShortcut": "Toggle gaming mode (F11)",
+      "navigationHint": "Arrows/stick: move · A: select/change option · B: back · F11: window mode",
+      "settingsTitle": "Gaming mode and launcher integration",
+      "engineFilter": "Engine",
+      "statusFilter": "Status",
+      "failed": "The request could not be completed. Refresh the status and try again.",
+      "shortcutFolder": "Choose a folder for the gaming shortcut",
+      "error": {
+        "invalidArguments": "Unsupported launch options. Review the registration details.",
+        "launchFailed": "The game could not start. Check its detail and security status.",
+        "unsafeLaunchTarget": "The executable or folder path could not be verified. Check its original installation folder.",
+        "launchTargetChanged": "The executable or a parent folder changed during inspection. Check it and try again.",
+        "invalidGame": "The registered game is unavailable. Check the library again.",
+        "alreadyRunning": "The launcher is already starting or tracking this game process.",
+        "sessionLimit": "The active game tracking limit has been reached.",
+        "gameRunning": "Finish the game tracked by this launcher before changing game files or activating a version.",
+        "installedRequired": "Registration details require a packaged Windows installation or portable application.",
+        "shortcutFailed": "The shortcut could not be created. Check for an existing file or folder permissions."
+      }
     }
   },
   "cli": {

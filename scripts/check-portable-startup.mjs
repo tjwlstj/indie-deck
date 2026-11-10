@@ -70,7 +70,8 @@ async function run(label, tempDir) {
   for (const key of ['ELECTRON_RUN_AS_NODE', 'ELECTRON_NO_ASAR', 'NODE_OPTIONS', 'PORTABLE_EXECUTABLE_DIR', 'PORTABLE_EXECUTABLE_FILE']) delete env[key];
   Object.assign(env, { TEMP: tempDir, TMP: tempDir, INDIEDECK_HOME: home, INDIEDECK_SMOKE: '1',
     INDIEDECK_DISABLE_UPDATES: '1', INDIEDECK_SCREENSHOT: screenshot });
-  const child = spawn(executable, ['--enable-logging=file', '--log-file=' + chromiumLog], {
+  const args = label === 'normal' ? ['--fullscreen'] : ['--enable-logging=file', '--log-file=' + chromiumLog];
+  const child = spawn(executable, args, {
     cwd: project, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'],
   });
   let stdout = '', stderr = '', timedOut = false;
@@ -91,7 +92,7 @@ async function run(label, tempDir) {
   await fs.writeFile(path.join(evidence, label + '-stdout.log'), stdout);
   await fs.writeFile(path.join(evidence, label + '-stderr.log'), stderr);
   const png = await fs.readFile(screenshot).catch(() => Buffer.alloc(0));
-  const result = { label, code, timedOut, elapsedMs: Date.now() - start, tempDir, screenshot, screenshotBytes: png.length, chromiumLog };
+  const result = { label, code, timedOut, fullscreenRequested: label === 'normal', elapsedMs: Date.now() - start, tempDir, screenshot, screenshotBytes: png.length, chromiumLog };
   await fs.writeFile(path.join(evidence, label + '-result.json'), JSON.stringify(result, null, 2));
   if (code !== 0 || timedOut || png.length < 8 || png.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') {
     const lastChrome = await fs.readFile(chromiumLog, 'utf8').then(text => text.slice(-12000), () => '(Chromium file log unavailable)');

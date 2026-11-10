@@ -150,6 +150,21 @@ is patched in that separate operation; other settings and comments are retained.
 Recommendations are not proof of rendering in a particular game. Non-TMP and
 unknown-version games do not get a forced TMP installation action.
 
+**Gaming mode and external launchers.** F11 or the Gaming mode button opens a
+controller-friendly fullscreen library. Directional keys, a standard gamepad's
+D-pad/left stick, A/Enter and B/Escape navigate the current view and dialogs.
+Settings exposes Xbox/Steam registration details and native Windows shortcut
+export; game shortcuts use opaque IDs and the same launch/security path. Xbox
+home-app registration is not a verified feature. See
+[gaming integration](docs/gaming-integration.md) for official registration routes,
+resource policies and evidence limits.
+
+The launcher can minimize after a successful launch, pause optional hidden-window
+work and optionally restore when its directly launched child exits. Game CPU/GPU
+priority, affinity and system power settings remain OS-managed. Launch path and
+file identity checks stay required even with launch antivirus scanning disabled;
+tracked-game file changes and duplicate launches are blocked.
+
 **Game thumbnails.** The current source shows local cover images and can use
 Steam's official artwork when an installed game's Steam ID can be identified.
 The game detail page also offers explicit Steam and experimental GOG title

@@ -3,7 +3,7 @@ import electronUpdater from 'electron-updater';
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import { existsSync, mkdirSync } from 'node:fs';
-import { readFile, stat, writeFile } from 'node:fs/promises';
+import { readFile, stat, lstat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
@@ -87,6 +87,10 @@ import { gameProcessEnvironment } from './process-environment.ts';
 import { readLibraryPreferences, saveLibraryPreferences } from './library-preferences.ts';
 import { scanLaunchTarget } from './security-launch-policy.ts';
 import { createLaunchDiagnostics } from './launch-diagnostics.ts';
+import { inspectLaunchDirectory, inspectLaunchTarget, revalidateLaunchTarget } from './launch-target-guard.ts';
+import { createOwnedGameSessions, shouldDeferBackgroundWork } from './owned-game-sessions.ts';
+import { DEFAULT_GAMING_PREFERENCES, readGamingPreferences, saveGamingPreferences } from './gaming-preferences.ts';
+import { parseGamingEntryArgs, gamingRegistration, exportGamingShortcut, gamingSettingsUrl } from './gaming-entry.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // Entry-point app paths differ between `electron .`, `electron packages/desktop`
@@ -119,13 +123,56 @@ let mutationQueue: Promise<void> = Promise.resolve();
 let stateRevision = 0;
 const gameRevisions = new Map<string, number>();
 let libraryRoots: string[] = [];
+let gamingPreferences = { ...DEFAULT_GAMING_PREFERENCES };
+let gamingSettingsError = false;
+let gamingSequence = 0;
+let minimizedForGame = false;
+let rendererReady = false;
+let queuedEntry: { fullscreen: boolean; launchGameId?: string } | undefined;
+const ownedGames = createOwnedGameSessions({ onChange: () => {
+  publishGamingState();
+  if (!ownedGames.snapshot().sessions.length && minimizedForGame && gamingPreferences.restoreOnExit && mainWindow?.isMinimized()) {
+    minimizedForGame = false;
+    mainWindow.restore(); mainWindow.show();
+  }
+} });
+
+function gamingSnapshot() {
+  const sessions = ownedGames.snapshot().sessions;
+  return { sequence: gamingSequence, fullscreen: mainWindow?.isFullScreen() ?? false, ...gamingPreferences,
+    activeGameCount: sessions.length,
+    runningGameIds: sessions.map(entry => entry.gameId), settingsError: gamingSettingsError };
+}
+function publishGamingState() { gamingSequence += 1; send('gaming:state', gamingSnapshot()); }
+function focusLauncher() {
+  if (mainWindow?.isMinimized()) mainWindow.restore();
+  mainWindow?.show(); mainWindow?.focus();
+}
+function entryArguments(argv: string[]) {
+  return parseGamingEntryArgs(argv, { packaged: app.isPackaged, executable: process.execPath, appPath: app.getAppPath() });
+}
+async function acceptGamingEntry(argv: string[]) {
+  const entry = entryArguments(argv);
+  if (!entry.valid) { send('gaming:entry-error', { errorKey: 'ui.gaming.error.invalidArguments' }); return; }
+  if (!rendererReady) { queuedEntry = entry; return; }
+  await runGamingEntry(entry);
+}
+async function runGamingEntry(entry: { fullscreen: boolean; launchGameId?: string }) {
+  if (entry.fullscreen) mainWindow?.setFullScreen(true);
+  if (entry.launchGameId) {
+    try { await launchGame(entry.launchGameId); }
+    catch { focusLauncher(); send('gaming:entry-error', { errorKey: 'ui.gaming.error.launchFailed' }); }
+  }
+}
 
 const ownsInstance = app.requestSingleInstanceLock();
 if (!ownsInstance) app.quit();
-app.on('second-instance', () => {
-  if (mainWindow?.isMinimized()) mainWindow.restore();
-  mainWindow?.show();
-  mainWindow?.focus();
+app.on('second-instance', (_event, argv) => {
+  focusLauncher();
+  // Portable instances extract to different internal executable paths. argv[0]
+  // is not execution authority: normalize it to this process, then validate
+  // every application flag and resolve the opaque id against our own library.
+  void acceptGamingEntry([process.execPath, ...argv.slice(1)]);
 });
 
 function send(channel: string, payload: unknown): void {
@@ -345,6 +392,12 @@ function createWindow(): void {
   });
 
   mainWindow = window;
+  window.on('enter-full-screen', publishGamingState);
+  window.on('leave-full-screen', publishGamingState);
+  window.on('minimize', publishGamingState);
+  window.on('hide', publishGamingState);
+  window.on('show', publishGamingState);
+  window.on('restore', () => { minimizedForGame = false; publishGamingState(); });
   window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   window.webContents.session.setPermissionCheckHandler(() => false);
   window.webContents.session.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] }, (details, callback) => {
@@ -433,12 +486,13 @@ async function runSmokeTest(window: BrowserWindow): Promise<void> {
         engines: document.querySelectorAll('#engineFilters button').length,
         status: document.getElementById('status')?.textContent ?? '',
         counts: document.getElementById('counts')?.textContent ?? '',
+        gamingMode: document.body.dataset.gamingMode === 'true',
       })`,
-    )) as { ready: boolean; games: number; engines: number; status: string; counts: string };
+    )) as { ready: boolean; games: number; engines: number; status: string; counts: string; gamingMode: boolean };
 
     // Waits on a data attribute, not on English prose - the launcher is
     // translated, so the status line is not a stable signal.
-    if (report.ready && report.engines > 0) {
+    if (report.ready && report.engines > 0 && (!process.argv.includes('--fullscreen') || report.gamingMode && window.isFullScreen())) {
       const localeReports = availableLocales();
       if (localeReports.some((locale) => locale.keys === 0)) {
         console.error(`[smoke] packaged locale catalogue missing: ${localeReports.filter((locale) => locale.keys === 0).map((locale) => locale.code).join(', ')}`);
@@ -1405,6 +1459,54 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
   if (thumbnailShot) await writeFile(thumbnailShot, (await window.webContents.capturePage()).toPNG());
   console.log('[smoke] manual cover picker and native File drop → launcher-owned persistence/reload → reset fallback → ordinary game product link passed');
 
+  await evaluate(`document.getElementById('toggleGamingMode').click()`);
+  await waitFor(`document.body.dataset.gamingMode === 'true'`, 'native fullscreen gaming mode');
+  const oneClick = await evaluate<boolean>(`(() => {
+    const row = document.querySelector('#gameList .game'); let clicks = 0;
+    row.addEventListener('click', () => { clicks += 1; }, { once: true }); row.focus();
+    row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    return clicks === 1;
+  })()`);
+  if (!oneClick) throw new Error('Gaming-mode Enter did not activate one row.');
+  if (process.env['INDIEDECK_GAMING_SCREENSHOT']) await writeFile(process.env['INDIEDECK_GAMING_SCREENSHOT'], (await window.webContents.capturePage()).toPNG());
+  const gameChildren = () => (globalThis as typeof globalThis & {
+    __indiedeckGameSmokeChildren: Array<{ emit(event: string, code: number): void }>
+  }).__indiedeckGameSmokeChildren;
+  await evaluate(`window.indiedeck.game.launch('${coverGameId}')`);
+  for (let n = 0; n < 100 && !window.isMinimized(); n += 1) await new Promise(resolve => setTimeout(resolve, 50));
+  if (gameChildren().length !== 1 || !window.isMinimized()) throw new Error('Owned game spawn did not apply optional launcher minimization.');
+  const gates = await evaluate<boolean>(`(async () => {
+    const api = window.indiedeck;
+    const duplicate = await api.game.launch('${coverGameId}').then(() => false, () => true);
+    const write = await api.translatorConfig.write('${coverGameId}', 'xunity-autotranslator', []).then(() => false, () => true);
+    return duplicate && write && (await api.gaming.current()).activeGameCount === 1;
+  })()`);
+  if (!gates) throw new Error('Tracked game did not block duplicate launch and game-file writes.');
+  gameChildren()[0]!.emit('exit', 0);
+  if (ownedGames.snapshot().sessions.length || !window.isMinimized()) throw new Error('Child completion did not clear ownership or unexpectedly restored focus.');
+  window.restore();
+  app.emit('second-instance', {}, ['portable-extraction.exe', '--fullscreen', '--launch-game', coverGameId]);
+  for (let n = 0; n < 200 && gameChildren().length < 2; n += 1) await new Promise(resolve => setTimeout(resolve, 50));
+  if (gameChildren().length !== 2) throw new Error('Second-instance game shortcut did not use guarded launch.');
+  gameChildren()[1]!.emit('exit', 0); window.restore();
+  const beforeInvalidEntry = gameChildren().length;
+  app.emit('second-instance', {}, [process.execPath, '--launch-game', '../../untrusted.exe']);
+  await new Promise(resolve => setTimeout(resolve, 30));
+  if (gameChildren().length !== beforeInvalidEntry) throw new Error('Malformed launch arguments reached spawn.');
+  if (process.platform === 'win32') {
+    const shortcutDir = path.join(defaultDataDir(), 'gaming-shortcut-fixture'); mkdirSync(shortcutDir, { recursive: true });
+    const details = gamingRegistration(app.getPath('exe'), coverGameId);
+    const exported = await exportGamingShortcut(shortcutDir, details, shell);
+    if (shell.readShortcutLink(exported.path).args !== details.argumentLine) throw new Error('Native gaming shortcut arguments changed.');
+    let replaced = false; try { await exportGamingShortcut(shortcutDir, details, shell); replaced = true; } catch { /* Existing link preserved. */ }
+    if (replaced) throw new Error('An existing gaming shortcut was overwritten.');
+  }
+  await evaluate(`window.indiedeck.gaming.openSettings('xboxMode')`);
+  if (!storeCalls().some(call => call.url === 'ms-settings:gaming-fullscreen')) throw new Error('Xbox settings action did not use the official fixed URI.');
+  await evaluate(`window.indiedeck.gaming.setFullscreen(false)`);
+  await waitFor(`document.body.dataset.gamingMode !== 'true'`, 'native fullscreen exit');
+  console.log('[smoke] gaming mode and guarded owned-game lifecycle → single keyboard activation → duplicate/write gates → opaque second-instance shortcut → native lnk verified; synthetic children only, no Xbox/Steam registration or process priority change');
+
   // Installed-update IPC/UI contract with a mocked native updater supplied by
   // the disposable bootstrap. This does not prove a public N→N+1 installation.
   const updateCalls = (globalThis as typeof globalThis & {
@@ -1492,12 +1594,18 @@ function configureAutoUpdates(): void {
     onChange: (snapshot) => send('updates:status', snapshot),
   });
   if (mode === 'installed') {
-    const timer = setTimeout(() => {
+    const checkWhenQuiet = () => {
       // A manual check/download may already have completed (including a cached
       // download). Startup must not clear that user's verified install state.
       if (launcherUpdates.snapshot().status !== 'idle') return;
+      if (shouldDeferBackgroundWork(ownedGames.snapshot(), Boolean(mainWindow?.isVisible() && !mainWindow.isMinimized()))) {
+        mainWindow?.once('restore', checkWhenQuiet);
+        mainWindow?.once('show', checkWhenQuiet);
+        return;
+      }
       void launcherUpdates.check().catch(() => {});
-    }, 8_000);
+    };
+    const timer = setTimeout(checkWhenQuiet, 8_000);
     timer.unref();
   }
 }
@@ -1881,7 +1989,7 @@ function handle<T>(channel: string, fn: (...args: never[]) => Promise<T> | T): v
 
 function localiseTaskError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
-  return /^ui\.(maintenance|archives|update|stores|security)\.[a-zA-Z0-9.-]+$/.test(message) ? t(message) : message;
+  return /^ui\.(maintenance|archives|update|stores|security|gaming)\.[a-zA-Z0-9.-]+$/.test(message) ? t(message) : message;
 }
 
 const STORE_ACTIONS: StoreHandoffAction[] = ['site', 'library', 'login', 'client', 'downloadClient'];
@@ -2002,11 +2110,89 @@ function handleMutation<T>(channel: string, fn: (...args: never[]) => Promise<T>
   handle(channel, (...args: never[]) => {
     if (operations.isActive()) throw new Error(t('ui.operation.busy', undefined, 'Wait for the current file operation to finish.'));
     if (channel === 'library:scan' && pendingMutations > 0) throw new Error(t('ui.operation.busy'));
-    return enqueueMutation(() => fn(...args));
+    return enqueueMutation(() => {
+      if (['mods:toggle', 'mods:add', 'config:write'].includes(channel) && typeof args[0] === 'string' && ownedGames.has(args[0])) {
+        throw new Error('ui.gaming.error.gameRunning');
+      }
+      return fn(...args);
+    });
   });
 }
 
+/** IPC and gaming shortcuts share this exact launch path and security gate. */
+async function launchGame(gameId: string) {
+  if (pendingMutations > 0 || operations.isActive()) throw new Error(t('ui.operation.busy'));
+  requireGamePath(gameId);
+  const session = ownedGames.reserve(gameId);
+  try {
+    return await enqueueMutation(async () => {
+      const gamePath = requireGamePath(gameId);
+      await inspectLaunchDirectory(gamePath);
+      const profile = detectGame(registry, gamePath, { rejectLinks: true });
+      if (!profile?.executable) throw new Error('ui.gaming.error.unsafeLaunchTarget');
+      const target = await inspectLaunchTarget(gamePath, profile.executable);
+      await scanLaunchTarget((await loadConfig()).scanOnLaunch, () => security.scanBeforeUse(target.executable, gameId));
+      requireGamePath(gameId);
+      await revalidateLaunchTarget(target);
+      const token = launchDiagnostics.begin(gameId);
+      let failed = false;
+      const recordFailure = () => { if (!failed) { failed = true; launchDiagnostics.failed(gameId, token); } };
+      try {
+        const child = spawn(target.executable, { cwd: target.cwd, detached: true, stdio: 'ignore', shell: false, env: gameProcessEnvironment() });
+        child.once('exit', (code) => { launchDiagnostics.exited(gameId, token, code); ownedGames.finish(gameId, session); });
+        await new Promise<void>((resolve, reject) => {
+          child.once('spawn', resolve);
+          child.once('error', () => {
+            recordFailure(); ownedGames.finish(gameId, session);
+            reject(new Error('ui.gaming.error.launchFailed'));
+          });
+          child.unref();
+        });
+        if (ownedGames.started(gameId, session) && gamingPreferences.minimizeOnLaunch && mainWindow?.isVisible() && !mainWindow.isMinimized()) {
+          minimizedForGame = true; mainWindow.minimize();
+        }
+        return profile.executable;
+      } catch (error) { recordFailure(); throw error; }
+    });
+  } catch (error) { ownedGames.finish(gameId, session); throw error; }
+}
+
 function register(): void {
+  handle('gaming:current', () => gamingSnapshot());
+  handle('gaming:setFullscreen', (enabled: unknown) => {
+    if (typeof enabled !== 'boolean' || !mainWindow || mainWindow.isDestroyed()) throw new Error('ui.gaming.failed');
+    mainWindow.setFullScreen(enabled);
+    publishGamingState(); return gamingSnapshot();
+  });
+  handleMutation('gaming:configure', async (input: unknown) => {
+    try { gamingPreferences = await saveGamingPreferences(defaultDataDir(), input); gamingSettingsError = false; }
+    catch { gamingSettingsError = true; publishGamingState(); throw new Error('ui.gaming.failed'); }
+    publishGamingState(); return gamingSnapshot();
+  });
+  const registration = async (gameId?: unknown) => {
+    if (process.platform !== 'win32' || !app.isPackaged) throw new Error('ui.gaming.error.installedRequired');
+    if (gameId !== undefined) requireGamePath(gameId);
+    const executable = process.env['PORTABLE_EXECUTABLE_FILE'] || app.getPath('exe');
+    const info = await lstat(executable);
+    if (!info.isFile() || info.isSymbolicLink()) throw new Error('ui.gaming.error.installedRequired');
+    return gamingRegistration(executable, gameId);
+  };
+  handle('gaming:registration', (gameId?: unknown) => registration(gameId));
+  handleMutation('gaming:exportShortcut', async (gameId?: unknown) => {
+    const details = await registration(gameId);
+    const result = await dialog.showOpenDialog({ properties: ['openDirectory'], defaultPath: app.getPath('desktop'),
+      title: t('ui.gaming.shortcutFolder', undefined, 'Choose a folder for the gaming shortcut') });
+    if (result.canceled || !result.filePaths[0]) return { created: false, canceled: true };
+    if (gameId !== undefined) requireGamePath(gameId);
+    try { return await exportGamingShortcut(result.filePaths[0], details, shell); }
+    catch { throw new Error('ui.gaming.error.shortcutFailed'); }
+  });
+  handle('gaming:openSettings', async (action: unknown) => {
+    if (process.platform !== 'win32') throw new Error('ui.gaming.failed');
+    let target: string;
+    try { target = gamingSettingsUrl(action); } catch { throw new Error('ui.gaming.failed'); }
+    await shell.openExternal(target); return { opened: true };
+  });
   handle('security:current', () => security.current());
   handleMutation('security:setLaunchScan', async (enabled: unknown) => {
     if (typeof enabled !== 'boolean') throw new Error('ui.security.actionFailed');
@@ -2144,6 +2330,7 @@ function register(): void {
   });
   handle('archives:import', (candidateId: unknown, label: unknown, productId?: unknown) => importSelectedArchive(candidateId, label, productId));
   handleMutation('archives:activate', async (installationId: unknown) => {
+    if (ownedGames.snapshot().sessions.length) throw new Error('ui.gaming.error.gameRunning');
     if (typeof installationId !== 'string') throw new Error('ui.archives.reason.invalidInstallation');
     const catalog = await listGameInstallations(defaultDataDir());
     const installation = catalog.installations.find((entry) => entry.id === installationId);
@@ -2237,7 +2424,13 @@ function register(): void {
   handle('library:load', async () => {
     await mutationQueue;
     const index = await loadLibrary();
-    return libraryPayload(index, safeResolveOptions((await loadConfig()).defaults));
+    const payload = libraryPayload(index, safeResolveOptions((await loadConfig()).defaults));
+    rendererReady = true;
+    if (queuedEntry) {
+      const entry = queuedEntry; queuedEntry = undefined;
+      setImmediate(() => { void runGamingEntry(entry); });
+    }
+    return payload;
   });
 
   // These cannot wait for the mutation queue: reload and cancellation must
@@ -2376,6 +2569,7 @@ function register(): void {
     if (!input || typeof input !== 'object') throw new Error('Malformed operation request.');
     if (pendingMutations > 0 || operations.isActive()) throw new Error(t('ui.operation.busy'));
     requireGamePath(input.gameId);
+    if (ownedGames.has(input.gameId)) throw new Error('ui.gaming.error.gameRunning');
     const translatorKind = input.kind === 'remove-translator' || input.kind === 'reinstall-translator';
     const request: OperationRequest = {
       requestId: input.requestId, gameId: input.gameId, kind: input.kind,
@@ -2428,36 +2622,7 @@ function register(): void {
 
   // The executable is resolved main-side from the detected profile: the
   // renderer cannot name an arbitrary binary to spawn.
-  handle('game:launch', async (gameId: string) => {
-    if (pendingMutations > 0) throw new Error(t('ui.operation.busy', undefined, 'Wait for the current file operation to finish.'));
-    return enqueueMutation(async () => {
-    const gamePath = requireGamePath(gameId);
-    const profile = detectGame(registry, gamePath);
-    if (!profile?.executable) throw new Error('No launchable executable was detected in this folder.');
-    const target = path.join(gamePath, profile.executable);
-    if (!target.startsWith(gamePath + path.sep)) throw new Error('Refusing to launch outside the game folder.');
-    await scanLaunchTarget((await loadConfig()).scanOnLaunch, () => security.scanBeforeUse(target, gameId));
-    const token = launchDiagnostics.begin(gameId);
-    let failed = false;
-    const recordFailure = () => { if (!failed) { failed = true; launchDiagnostics.failed(gameId, token); } };
-    try {
-      const child = spawn(target, { cwd: gamePath, detached: true, stdio: 'ignore', shell: false, env: gameProcessEnvironment() });
-      child.once('exit', (code) => launchDiagnostics.exited(gameId, token, code));
-      await new Promise<void>((resolve, reject) => {
-        child.once('spawn', resolve);
-        child.once('error', () => {
-          recordFailure();
-          reject(new Error(t('ui.diagnostics.spawnFailed', undefined, 'The game process could not start.')));
-        });
-        child.unref();
-      });
-      return profile.executable;
-    } catch (error) {
-      recordFailure();
-      throw error;
-    }
-    });
-  });
+  handle('game:launch', (gameId: string) => launchGame(gameId));
 
   handle('config:read', async (gameId: string, translatorId: string) => {
     // Renderer reads are always redacted.  Main-side planning below may read
@@ -2515,6 +2680,8 @@ void app.whenReady().then(async () => {
     const config = await loadConfig();
     setLocale(config.locale);
     libraryRoots = config.roots;
+    try { gamingPreferences = await readGamingPreferences(defaultDataDir()); }
+    catch { gamingSettingsError = true; }
     registry = loadRegistry(app.isPackaged ? path.join(app.getAppPath(), 'registry') : undefined);
     const comparisonSchema = registry.configSchemas.get('xunity-autotranslator');
     if (comparisonSchema) comparisonHistory = new TranslationConfigHistory(defaultDataDir(), comparisonSchema);
@@ -2545,6 +2712,14 @@ void app.whenReady().then(async () => {
     console.error('[installations] recovery failed:', archiveRecoveryError);
   }
   register();
+  if (!queuedEntry) {
+    if (process.env['INDIEDECK_SMOKE']) {
+      const entry = entryArguments(process.argv);
+      // Packaged startup checks can verify fullscreen, but a smoke environment
+      // never authorizes a real game launch from process arguments.
+      if (entry.valid && !entry.launchGameId) queuedEntry = entry;
+    } else await acceptGamingEntry(process.argv);
+  }
   createWindow();
   void security.refresh().catch(() => {});
 

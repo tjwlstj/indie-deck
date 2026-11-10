@@ -65,7 +65,17 @@ const version = process.env.INDIEDECK_SMOKE_VERSION;
 // game process is started, and production main has no mock-spawn bypass.
 const originalSpawn = childProcess.spawn;
 globalThis.__indiedeckMToolSmokeCalls = [];
+globalThis.__indiedeckGameSmokeChildren = [];
 childProcess.spawn = (executable, args, options) => {
+  if (executable === process.env.INDIEDECK_SMOKE_GAME_EXE) {
+    // Only this exact synthetic PE is simulated; never start a real game.
+    const actual = options ?? args;
+    if (actual?.shell !== false || actual?.cwd !== path.dirname(executable)) throw new Error('Unsafe game spawn fixture.');
+    const child = new EventEmitter(); child.unref = () => child;
+    globalThis.__indiedeckGameSmokeChildren.push(child);
+    queueMicrotask(() => child.emit('spawn'));
+    return child;
+  }
   if (executable === process.env.INDIEDECK_SMOKE_MTOOL_EXE) {
     globalThis.__indiedeckMToolSmokeCalls.push({ executable, args: [...args], cwd: options.cwd, shell: options.shell });
     const child = new EventEmitter();

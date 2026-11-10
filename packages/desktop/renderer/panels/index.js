@@ -15,10 +15,12 @@ import { renderComparisonHistory, renderTranslatorMaintenance } from './maintena
 import { hasTranslatorMaintenance } from '../maintenance-model.js';
 import { renderGameSecurity } from './security.js';
 import { renderDiagnostics } from './diagnostics.js';
+import { renderGameGamingActions } from './gaming.js';
 
 export const SECTIONS = [
   { id: 'header', render: renderHeader },
   { id: 'facts', render: renderFacts },
+  { id: 'gaming', render: renderGameGamingActions },
   { id: 'security', render: renderGameSecurity },
   { id: 'diagnostics', render: renderDiagnostics },
   {
