@@ -1559,8 +1559,18 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
     await writeFile(classificationShot, (await window.webContents.capturePage()).toPNG());
   }
   await evaluate(`(() => { const select = document.getElementById('libraryPurchaseFilter'); select.value = 'all'; select.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await waitFor(`(async () => {
+    const prefs = await window.indiedeck.libraryPreferences.read();
+    return prefs.adultFilter === 'all' && prefs.purchaseFilter === 'all';
+  })()`, 'library filter saves before restart');
   await new Promise<void>(resolve => { window.webContents.once('did-finish-load', () => resolve()); window.webContents.reload(); });
-  await waitFor(`document.body.dataset.libraryState === 'ready' && !!document.querySelector('[data-game-id="${coverGameId}"] .thumbnail-list-hidden')`, 'library metadata after renderer reload');
+  await waitFor(`(async () => {
+    const { state } = await import('./store.js');
+    return document.body.dataset.libraryState === 'ready' && state.libraryPreferencesLoaded
+      && state.libraryPreferences.adultFilter === 'all' && state.libraryPreferences.purchaseFilter === 'all'
+      && document.querySelectorAll('#gameList .game').length === state.games.length
+      && !!document.querySelector('[data-game-id="${coverGameId}"] .thumbnail-list-hidden');
+  })()`, 'library metadata and filters after renderer reload');
   console.log('[smoke] read-only candidate preview → hidden list image without image nodes → explicit adult and purchase labels → combined filters → persisted renderer reload passed');
 
   await evaluate(`document.getElementById('toggleGamingMode').click()`);
