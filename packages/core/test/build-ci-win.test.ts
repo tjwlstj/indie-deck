@@ -17,6 +17,15 @@ test('a builder failure remains nonzero through earlier shutdown listeners', () 
 });
 
 const require = createRequire(import.meta.url);
+async function withBuilderDiagnostics<T>(run: () => Promise<T>): Promise<T> {
+  const { log } = require('builder-util/out/log.js');
+  const stream = log.stream;
+  // builder-util writes raw Unicode-prefixed chunks to stdout, which also
+  // carries node:test's V8 frames in an isolated worker. Keep these diagnostics
+  // on stderr to avoid the Node 22 framing failure (nodejs/node#64061).
+  log.stream = process.stderr;
+  try { return await run(); } finally { log.stream = stream; }
+}
 const version = '43.8.7';
 const filename = `electron-v${version}-win32-x64.zip`;
 const bytes = Buffer.from('synthetic electron fixture');
@@ -71,7 +80,7 @@ test('runtime-only CI mode creates only a Windows directory target with identica
   assert.throws(() => makeBuilderOptions({ ...input(), runtimeOnly: '--runtime-only' }));
 });
 
-test('real builder configuration preserves YAML and accepts the checksum option', async () => {
+test('real builder configuration preserves YAML and accepts the checksum option', () => withBuilderDiagnostics(async () => {
   const { getConfig, validateConfiguration } = require('app-builder-lib/out/util/config/config.js');
   const baseline = await getConfig(process.cwd(), undefined);
   const options = makeBuilderOptions(input());
@@ -80,9 +89,9 @@ test('real builder configuration preserves YAML and accepts the checksum option'
   assert.deepEqual(configured.electronDownload, { force: false, checksums: { [filename]: digest } });
   delete configured.electronDownload;
   assert.deepEqual(configured, baseline);
-});
+}));
 
-test('real builder download wiring validates injected bytes without requesting remote checksums', async () => {
+test('real builder download wiring validates injected bytes without requesting remote checksums', () => withBuilderDiagnostics(async () => {
   const out = path.resolve('out'); await fs.mkdir(out, { recursive: true });
   const fixture = await fs.mkdtemp(path.join(out, 'indiedeck-ci-builder-'));
   const calls: string[] = [];
@@ -102,4 +111,4 @@ test('real builder download wiring validates injected bytes without requesting r
     assert.ok(path.basename(fixture).startsWith('indiedeck-ci-builder-'));
     await fs.rm(fixture, { recursive: true, force: true });
   }
-});
+}));

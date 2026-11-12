@@ -15,7 +15,7 @@ $taskEvidence = Join-Path $PWD 'out\installer-readability'
 New-Item -ItemType Directory -Path $taskFixture | Out-Null
 New-Item -ItemType Directory -Path $taskEvidence -Force | Out-Null
 $taskInstaller = $null
-$taskResult = @{ passed = $false; version = $taskVersion; installationPerformed = $false; controls = @(); multiScaleTested = $false }
+$taskResult = @{ passed = $false; version = $taskVersion; installationPerformed = $false; controls = @(); multiScaleTested = $false; fontResolutionMethod = 'local font created from each actual wizard control LOGFONT' }
 Add-Type -AssemblyName System.Drawing
 Add-Type -TypeDefinition @'
 using System;
@@ -45,9 +45,11 @@ public static class IndieDeckInstallerNative {
  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
  [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr dc, uint flags);
  [DllImport("gdi32.dll",CharSet=CharSet.Unicode)] public static extern int GetObject(IntPtr h, int size, out LOGFONT font);
+ [DllImport("gdi32.dll",CharSet=CharSet.Unicode)] public static extern IntPtr CreateFontIndirect(ref LOGFONT font);
  [DllImport("gdi32.dll")] public static extern IntPtr CreateCompatibleDC(IntPtr dc);
  [DllImport("gdi32.dll")] public static extern IntPtr SelectObject(IntPtr dc, IntPtr h);
  [DllImport("gdi32.dll",CharSet=CharSet.Unicode)] public static extern int GetTextFace(IntPtr dc, int size, StringBuilder face);
+ [DllImport("gdi32.dll")] public static extern bool DeleteObject(IntPtr h);
  [DllImport("gdi32.dll")] public static extern bool DeleteDC(IntPtr dc);
  [DllImport("kernel32.dll",CharSet=CharSet.Unicode)] public static extern IntPtr LoadLibraryEx(string name, IntPtr file, uint flags);
  [DllImport("kernel32.dll")] public static extern bool FreeLibrary(IntPtr module);
@@ -63,6 +65,29 @@ public static class IndieDeckInstallerNative {
   return found;
  }
  public static IntPtr[] Children(IntPtr parent) { var all=new List<IntPtr>(); EnumChildWindows(parent,(h,l)=>{all.Add(h);return all.Count<256;},IntPtr.Zero);return all.ToArray(); }
+ public static string ResolveLocalFont(ref LOGFONT requested) {
+  // GDI handles are process-private: never select the wizard's borrowed HFONT.
+  // https://learn.microsoft.com/en-us/windows/win32/sysinfo/gdi-objects
+  // Recreate its observed LOGFONT locally and require successful font mapping.
+  IntPtr dc=CreateCompatibleDC(IntPtr.Zero);
+  if(dc==IntPtr.Zero) throw new InvalidOperationException("Could not create the local font inspection DC.");
+  IntPtr local=IntPtr.Zero, prior=IntPtr.Zero; bool selected=false;
+  try {
+   local=CreateFontIndirect(ref requested);
+   if(local==IntPtr.Zero) throw new InvalidOperationException("Could not recreate the actual wizard control LOGFONT locally.");
+   prior=SelectObject(dc,local);
+   if(prior==IntPtr.Zero || prior==new IntPtr(-1)) throw new InvalidOperationException("Could not select the locally owned font for inspection.");
+   selected=true;
+   var face=new StringBuilder(64);
+   if(GetTextFace(dc,face.Capacity,face)<=0 || face.Length==0) throw new InvalidOperationException("Could not read the locally realized wizard font face.");
+   return face.ToString();
+  } finally {
+   if(selected) SelectObject(dc,prior);
+   // Deleting the DC also releases its font selection if restoration failed.
+   DeleteDC(dc);
+   if(local!=IntPtr.Zero) DeleteObject(local);
+  }
+ }
 }
 '@
 try {
@@ -115,17 +140,8 @@ try {
     if ($taskFontHandle -eq [IntPtr]::Zero) { continue }
     $taskFont = New-Object IndieDeckInstallerNative+LOGFONT
     if ([IndieDeckInstallerNative]::GetObject($taskFontHandle,[Runtime.InteropServices.Marshal]::SizeOf($taskFont),[ref]$taskFont) -le 0) { continue }
-    $taskDc = [IndieDeckInstallerNative]::CreateCompatibleDC([IntPtr]::Zero)
-    try {
-      $taskPrior = [IndieDeckInstallerNative]::SelectObject($taskDc,$taskFontHandle)
-      $taskFace = [Text.StringBuilder]::new(64); [void][IndieDeckInstallerNative]::GetTextFace($taskDc,$taskFace.Capacity,$taskFace)
-      [void][IndieDeckInstallerNative]::SelectObject($taskDc,$taskPrior)
-    } finally { [void][IndieDeckInstallerNative]::DeleteDC($taskDc) }
-    $taskResult.controls += @{ class=$taskClass.ToString(); declaredFace=$taskFont.FaceName; resolvedFace=$taskFace.ToString(); pixelHeight=[Math]::Abs($taskFont.Height); pointSize=[Math]::Round([Math]::Abs($taskFont.Height)*72.0/$taskResult.dpi,2) }
-  }
-  foreach ($taskRequiredClass in @('Button','Static')) {
-    $taskMatches = @($taskResult.controls | Where-Object { $_.class -eq $taskRequiredClass -and $_.resolvedFace -eq 'Malgun Gothic' -and [Math]::Abs($_.pointSize-10) -lt 0.6 })
-    if ($taskMatches.Count -eq 0) { throw "The wizard's $taskRequiredClass controls did not resolve to the expected 10 pt Malgun Gothic font." }
+    $taskFace = [IndieDeckInstallerNative]::ResolveLocalFont([ref]$taskFont)
+    $taskResult.controls += @{ class=$taskClass.ToString(); declaredFace=$taskFont.FaceName; resolvedFace=$taskFace; localFontSelectionVerified=$true; pixelHeight=[Math]::Abs($taskFont.Height); pointSize=[Math]::Round([Math]::Abs($taskFont.Height)*72.0/$taskResult.dpi,2) }
   }
   $taskRect = New-Object IndieDeckInstallerNative+RECT
   [void][IndieDeckInstallerNative]::GetWindowRect($taskWindow,[ref]$taskRect)
@@ -139,6 +155,13 @@ try {
     finally { $taskGraphics.ReleaseHdc($taskHdc) }
     if ($taskResult.printWindowSucceeded) { $taskBitmap.Save((Join-Path $taskEvidence 'wizard.png'),[Drawing.Imaging.ImageFormat]::Png) }
   } finally { $taskGraphics.Dispose(); $taskBitmap.Dispose() }
+  foreach ($taskRequiredClass in @('Button','Static')) {
+    $taskMatches = @($taskResult.controls | Where-Object { $_.class -eq $taskRequiredClass -and $_.resolvedFace -eq 'Malgun Gothic' -and [Math]::Abs($_.pointSize-10) -lt 0.6 })
+    if ($taskMatches.Count -eq 0) {
+      $taskObservedFaces = @($taskResult.controls | Where-Object { $_.class -eq $taskRequiredClass } | ForEach-Object { $_.resolvedFace } | Select-Object -Unique) -join ', '
+      throw "The wizard's $taskRequiredClass controls did not resolve to the expected 10 pt Malgun Gothic font. Local font mapper returned [$taskObservedFaces]; the requested font may be unavailable on this runner."
+    }
+  }
   $taskResult.passed=$true
   Write-Output '[installer-readability] PASS: compiled DPI manifest and actual wizard font verified; no installation performed.'
 } catch {

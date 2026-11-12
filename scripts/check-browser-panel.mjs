@@ -53,7 +53,7 @@ async function main() {
         unexpected.push(url.origin); await route.abort(); return;
       }
       const product = url.pathname.startsWith('/app/');
-      await route.fulfill({ status: 200, contentType: 'text/html', body: `<!doctype html><html lang="ko"><head>
+      await route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: `<!doctype html><html lang="ko"><head><meta charset="utf-8">
         <title>${product ? 'IndieDeck CI 게임' : 'Private fixture'}</title>
         <meta property="og:image" content="https://cdn.cloudflare.steamstatic.com/steam/apps/440/header.jpg">
         </head><body><h1>${product ? '격리된 상품 페이지' : '격리된 비공개 경로'}</h1></body></html>` });
@@ -116,6 +116,7 @@ async function main() {
     const downloaded = await downloadEvent, file = await downloaded.path();
     const text = await fs.readFile(file, 'utf8'); assert.ok(Buffer.byteLength(text) <= 8192);
     const link = JSON.parse(text); assert.equal(link.provider, 'steam'); assert.equal(link.productId, '440');
+    assert.equal(link.title, 'IndieDeck CI 게임');
     assert.equal(link.kind, 'indiedeck-store-link'); assert.equal(link.schemaVersion, 1);
     assert.doesNotMatch(text, /tracking|fixture\?/, 'URL tracking information cannot be exported.');
     result.checks.push('Collapse/reopen persistence and explicit public-metadata file export passed.');

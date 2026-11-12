@@ -212,8 +212,9 @@ On Windows 10 or 11 x64, download the current version from
   it then opens the assisted NSIS update wizard and is configured to relaunch
   after the wizard finishes. This is not an unattended or install-on-exit update.
   The Setup wizard uses Malgun Gothic 10pt with system DPI awareness for clearer
-  Korean text. Hosted Windows checks inspect the compiled manifest and the
-  actual wizard's resolved font; mixed-monitor scaling remains a manual check.
+  Korean text. Hosted Windows checks inspect the compiled manifest, actual
+  control font descriptors and local font resolution; mixed-monitor scaling
+  remains a manual check.
 - **`IndieDeck-Portable-…-x64.exe`** — a single-file launcher that does not
   install. Portable builds are updated manually by replacing the executable;
   the settings card opens the fixed official latest-release page instead of
