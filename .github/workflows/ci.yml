@@ -144,6 +144,16 @@ jobs:
           sudo chown root:root "$sandbox_path"
           sudo chmod 4755 "$sandbox_path"
 
+          # Ubuntu restricts downloaded developer builds' user namespaces.
+          # Allow only this CI browser binary, keeping the Chromium sandbox on
+          # and leaving the host's global AppArmor/sysctl policy intact.
+          # https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md
+          test -x "$browser_dir/chrome"
+          printf '%s\n' 'abi <abi/4.0>,' 'include <tunables/global>' \
+            "profile indiedeck-ci-chromium \"$browser_dir/chrome\" flags=(unconfined) {" \
+            '  userns,' '}' | sudo tee /etc/apparmor.d/indiedeck-ci-chromium > /dev/null
+          sudo apparmor_parser -r /etc/apparmor.d/indiedeck-ci-chromium
+
       - name: Real Chromium automatic-panel integration
         if: runner.os == 'Linux' && matrix.node == '24.x'
         env:
