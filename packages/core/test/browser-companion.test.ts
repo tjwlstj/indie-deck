@@ -7,6 +7,7 @@ import {
 } from '../../../extensions/browser-companion/store-link.js';
 import { capturePageArtwork, currentProductArtwork, currentTab, MESSAGES, mountPopup, saveConnectionFile } from '../../../extensions/browser-companion/popup-controller.js';
 import { normalizeArtworkUrl } from '../../../extensions/browser-companion/artwork.js';
+import { OPTIONAL_SITE_PATTERNS } from '../../../extensions/browser-companion/auto-panel-settings.js';
 
 const root = new URL('../../../extensions/browser-companion/', import.meta.url);
 const fixtures = [
@@ -159,13 +160,30 @@ test('an export in progress rejects a second click and reports save requests wit
   assert.equal(document.elements.saveLink.disabled, false);
 });
 
-test('browser manifests limit page access to activeTab plus user-triggered scripting without host or background privileges', () => {
-  const launcherVersion = JSON.parse(fs.readFileSync(new URL('../../../package.json', import.meta.url), 'utf8')).version;
+test('in-page context never queries another tab and rejects exports after a private navigation', async () => {
+  const document = popupDocument(); let current = true, files = 0, copies = 0;
+  const metadata = metadataFromProductUrl(fixtures[0][0], 'Public fixture');
+  await mountPopup({ document, api: { tabs: { query: () => { throw new Error('In-page contexts must not query tabs'); } } },
+    productContext: { metadata, isCurrent: () => current, readArtwork: () => [] },
+    saveFile: async () => { files += 1; }, writeClipboard: async () => { copies += 1; } });
+  assert.equal(document.elements.productTitle.value, 'Public fixture');
+  current = false;
+  await document.elements.saveLink.click(); await document.elements.copyLink.click();
+  assert.equal(files, 0); assert.equal(copies, 0);
+  assert.equal(document.elements.status.textContent, MESSAGES.ko.copyFailed);
+});
+
+test('browser manifests keep automatic site access optional and scope background/module resources to supported sites', () => {
+  const extensionVersion = JSON.parse(fs.readFileSync(new URL('manifest.json', root), 'utf8')).version;
+  assert.match(extensionVersion, /^\d+\.\d+\.\d+$/);
   for (const name of ['manifest.json', 'manifest.firefox.json']) {
     const manifest = JSON.parse(fs.readFileSync(new URL(name, root), 'utf8'));
-    assert.equal(manifest.manifest_version, 3); assert.equal(manifest.version, launcherVersion);
-    assert.deepEqual(manifest.permissions, ['activeTab', 'scripting']);
-    for (const key of ['host_permissions', 'optional_permissions', 'background', 'content_scripts', 'externally_connectable']) assert.equal(key in manifest, false);
+    assert.equal(manifest.manifest_version, 3); assert.equal(manifest.version, extensionVersion);
+    assert.deepEqual(manifest.permissions, ['activeTab', 'scripting', 'storage']);
+    for (const key of ['host_permissions', 'optional_permissions', 'content_scripts', 'externally_connectable']) assert.equal(key in manifest, false);
+    assert.deepEqual(manifest.optional_host_permissions, OPTIONAL_SITE_PATTERNS);
+    assert.deepEqual(manifest.web_accessible_resources, [{ resources: ['page-panel.js', 'popup-controller.js', 'store-link.js', 'artwork.js', 'auto-panel-settings.js', 'browser-api.js'], matches: OPTIONAL_SITE_PATTERNS }]);
+    assert.deepEqual(manifest.background, name === 'manifest.firefox.json' ? { scripts: ['background.js'], type: 'module' } : { service_worker: 'background.js', type: 'module' });
     assert.equal(manifest.action.default_popup, 'popup.html');
     assert.match(manifest.content_security_policy.extension_pages, /connect-src 'none'/);
     assert.match(manifest.content_security_policy.extension_pages, /img-src 'none'/);
@@ -174,7 +192,7 @@ test('browser manifests limit page access to activeTab plus user-triggered scrip
       assert.deepEqual(manifest.browser_specific_settings.gecko.data_collection_permissions.required, ['browsingActivity', 'websiteContent']);
     }
   }
-  for (const name of ['popup.html', 'popup.css', 'popup.js', 'popup-controller.js', 'store-link.js', 'artwork.js']) {
+  for (const name of ['popup.html', 'popup.css', 'popup.js', 'popup-controller.js', 'store-link.js', 'artwork.js', 'browser-api.js', 'auto-panel-settings.js', 'background.js', 'panel-loader.js', 'page-panel.js']) {
     assert.equal(fs.statSync(new URL(name, root)).isFile(), true);
   }
 });

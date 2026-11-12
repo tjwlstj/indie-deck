@@ -1,6 +1,7 @@
 # 개인 브라우저·스토어·공식 런처 연계
 
-기본 연계 조사일: 2026-11-02. 대표 이미지 확장 검토·소스 갱신: 2026-11-10.
+기본 연계 조사일: 2026-11-02. 대표 이미지 확장 검토: 2026-11-10.
+설치 편의성과 선택적 자동 패널 갱신: 2026-11-12.
 초기 연결 기능은 v0.1.7에서 시작했으며, 현재 배포 버전은
 [GitHub 릴리즈](https://github.com/tjwlstj/indie-deck/releases/latest)를 따른다.
 상태는 **CURRENT: 브라우저/런처 인계와 상품 링크**,
@@ -30,18 +31,33 @@
 
 ## 개인 브라우저 확장 프로그램
 
-현재 확장 프로그램은 사용자가 상품 페이지에서 누를 때 해당 탭의 URL·제목을 보고,
-지원하는 공개 상품 주소를 작은 연결 파일로 저장하거나 복사하도록 요청한다.
+확장 프로그램은 상품 페이지에서 사용자가 누르면 해당 탭의 URL·제목을 보고,
+지원하는 공개 상품 주소를 연결 파일로 저장하거나 복사하도록 요청한다.
 대표 이미지 읽기를 별도로 누르면 `activeTab`과 `scripting`으로 해당 탭의 최상위
-문서에서 `og:image`·`twitter:image` 메타데이터만 제한적으로 읽는다. 지속적인
-content script, background 수집, 본문·폼·쿠키·비밀번호·브라우저 기록 접근,
+문서에서 `og:image`·`twitter:image` 메타데이터만 제한적으로 읽는다.
+사이트별 자동 패널은 기본 꺼짐이다. 사용자가 현재 지원 사이트의 선택적 호스트 권한을
+허용하면 그 사이트만 content script를 등록한다. 공개 상품 경로인지 먼저 검사한 뒤
+UI를 표시하며 비공개 페이지의 제목·본문·폼은 읽지 않는다. background는 설치·시작·
+권한·설정 변경 이벤트에만 등록 상태를 맞춘다. 탭·방문 기록 순회, 계정 정보 수집,
 다운로드 감시, Native Messaging과 localhost 서버는 사용하지 않는다.
+
+팝업은 너비 600px로 넓혔으며 자동 패널에는 접기·숨기기·다시 열기와 사이트별 끄기를
+제공한다. 접힘 상태와 허용 사이트 설정은 `storage`에 저장한다. 파일 저장·이미지 읽기는
+자동 패널에서도 별도 클릭이 필요하다. 전체 자동 표시 끄기는 등록을 해제하며 브라우저의
+기존 사이트 권한 취소는 확장 관리에서 수행한다.
+
+런처 v0.1.20부터 확장 버전은 독립된 0.2.0이며 내보내기 위치는
+`browser-companion/current/{chromium,firefox}`로 고정된다. 시작할 때 소유권과 해시가
+검증된 파일만 갱신한다. 기존 숫자 버전 폴더 사용자는 한 번 고정 폴더로 옮기며,
+이후에는 같은 폴더와 확장 팝업의 업데이트 적용 / 새로고침 버튼을 사용한다.
+개인 브라우저 프로필을 수정하거나 실행 중인 확장을 강제로 재시작하지 않는다.
 
 [Chrome activeTab 설명](https://developer.chrome.com/docs/extensions/develop/concepts/activeTab)은
 사용자의 확장 프로그램 실행을 계기로 현재 탭에 임시 접근을 허용하는 방식을 설명한다.
 이미지 메타데이터 읽기는 [Chrome scripting](https://developer.chrome.com/docs/extensions/reference/api/scripting)과
 [Firefox executeScript](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/scripting/executeScript)의
-일회성 함수 주입을 사용하며, 모든 사이트에 대한 상시 host 권한은 추가하지 않는다.
+일회성 함수 주입을 사용한다. 자동 패널은 [선택적 호스트 권한](https://developer.chrome.com/docs/extensions/develop/concepts/declare-permissions)을
+현재 사이트에 대해 요청하며 `<all_urls>` 권한은 추가하지 않는다.
 읽은 문서의 상품 식별자를 다시 확인하므로 탭이 다른 상품으로 이동한 응답을 이전
 상품의 이미지로 채택하지 않는다. 다운로드 버튼의 서명 URL, 계정 페이지의 비공개
 정보, HTML 전체는 파일에 넣지 않는다. 확장에서 원격 이미지를 요청하지 않는다.
@@ -123,7 +139,7 @@ content script, background 수집, 본문·폼·쿠키·비밀번호·브라우�
   바탕으로 동일한 popup 방식의 호환을 목표로 한다. 실제 Whale 프로필 설치 결과를
   확인했다고 주장하지 않는다.
 - Firefox: 별도 manifest를 제공하며 최소 버전은 140이다. 브라우저 API 권한은
-  `activeTab`·`scripting`이며, 선택한 상품 정보와 선택적 이미지 주소의 로컬 파일 내보내기도 확장 밖으로의
+  `activeTab`·`scripting`·`storage`이며, 선택한 상품 정보와 선택적 이미지 주소의 로컬 파일 내보내기도 확장 밖으로의
   데이터 전달이므로 [Firefox 내장 데이터 동의 선언](https://extensionworkshop.com/documentation/develop/firefox-builtin-data-consent/)
   에 `browsingActivity`와 `websiteContent`를 명시한다. 이는 백그라운드 방문 기록
   수집이나 원격 telemetry 기능이라는 뜻은 아니다. 실제 프로필 설치·동의 화면은

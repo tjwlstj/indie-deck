@@ -211,6 +211,9 @@ On Windows 10 or 11 x64, download the current version from
   restart while a game-file change is pending or Windows is ending the session;
   it then opens the assisted NSIS update wizard and is configured to relaunch
   after the wizard finishes. This is not an unattended or install-on-exit update.
+  The Setup wizard uses Malgun Gothic 10pt with system DPI awareness for clearer
+  Korean text. Hosted Windows checks inspect the compiled manifest and the
+  actual wizard's resolved font; mixed-monitor scaling remains a manual check.
 - **`IndieDeck-Portable-…-x64.exe`** — a single-file launcher that does not
   install. Portable builds are updated manually by replacing the executable;
   the settings card opens the fixed official latest-release page instead of
@@ -221,6 +224,10 @@ The current Windows releases are not code-signed, so Windows SmartScreen may sho
 "unknown publisher" warning. Verify the download against `SHA256SUMS.txt` on
 the same release before running it. The project does not currently provide
 32-bit or ARM64 Windows builds.
+
+The [Browser Companion guide](extensions/browser-companion/README.md) explains
+the stable extension folder, its independent version and explicit reload button,
+and optional larger product panels with per-site access and hide controls.
 
 ### Source and CLI
 

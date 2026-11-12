@@ -64,9 +64,24 @@ jobs:
           INDIEDECK_HOME: ${{ runner.temp }}/indiedeck-ci
         run: npx electron packages/desktop
 
-      - name: Build unpacked runtime for gaming startup
+      - name: Build Windows distributions for startup and installer checks
         if: runner.os == 'Windows' && matrix.node == '24.x'
-        run: node scripts/build-ci-win.mjs --runtime-only
+        run: node scripts/build-ci-win.mjs
+
+      - name: Inspect installer wizard readability
+        if: runner.os == 'Windows' && matrix.node == '24.x'
+        env:
+          INDIEDECK_INSTALLER_READABILITY_CI: '1'
+        run: node scripts/check-installer-readability.mjs
+
+      - name: Save installer readability evidence
+        if: always() && runner.os == 'Windows' && matrix.node == '24.x'
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-readability
+          path: out/installer-readability/
+          retention-days: 1
+          if-no-files-found: ignore
 
       - name: Verify packaged fullscreen startup
         if: runner.os == 'Windows' && matrix.node == '24.x'
@@ -115,6 +130,34 @@ jobs:
       - name: Comparison history across app restarts
         if: runner.os == 'Windows' && matrix.node == '24.x'
         run: npm run desktop:history
+
+      - name: Prepare isolated Chromium extension tests
+        if: runner.os == 'Linux' && matrix.node == '24.x'
+        shell: bash
+        run: |
+          node node_modules/playwright-core/cli.js install --with-deps chromium
+          sudo apt-get install -y fonts-noto-cjk
+          browser_dir="$(node --input-type=module -e "import { chromium } from 'playwright-core'; import path from 'node:path'; console.log(path.dirname(chromium.executablePath()));")"
+          sandbox_path="$browser_dir/chrome-sandbox"
+          if [ ! -f "$sandbox_path" ]; then sandbox_path="$browser_dir/chrome_sandbox"; fi
+          test -f "$sandbox_path"
+          sudo chown root:root "$sandbox_path"
+          sudo chmod 4755 "$sandbox_path"
+
+      - name: Real Chromium automatic-panel integration
+        if: runner.os == 'Linux' && matrix.node == '24.x'
+        env:
+          INDIEDECK_BROWSER_PANEL_CI: '1'
+        run: node scripts/check-browser-panel.mjs
+
+      - name: Save browser panel evidence
+        if: always() && runner.os == 'Linux' && matrix.node == '24.x'
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-panel
+          path: out/browser-panel/
+          retention-days: 1
+          if-no-files-found: ignore
 
   registry-freshness:
     # Advisory only: an upstream release does not break the build, it just means

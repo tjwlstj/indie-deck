@@ -5,6 +5,28 @@ Versioning while the project is pre-1.0.
 
 ## [Unreleased]
 
+## [0.1.20] - 2026-11-12
+
+### Changed
+
+- Set the Windows Setup wizard to Malgun Gothic 10pt and declare system DPI
+  awareness so Windows can render the installer text without DPI virtualization.
+- Export Browser Companion to a stable `browser-companion/current` path and
+  refresh verified launcher-owned files on startup. Extension version 0.2.0 is
+  independent of the launcher; its popup offers an explicit reload action.
+- Expand the companion popup to 600px and add a larger optional product-page
+  panel with persistent collapse/hide controls and site/global disable actions.
+
+### Security and validation
+
+- Auto panels are off by default, request only the selected supported origin,
+  validate public product routes before reading page metadata and stop exports
+  after same-document navigation. Image capture and file export remain explicit.
+- Stage and journal extension updates, recover interrupted moves and preserve
+  modified, extra or linked files instead of overwriting uncertain ownership.
+- Add hosted-only installer font/DPI inspection and isolated real Chromium
+  panel tests alongside existing packaged startup and security checks.
+
 ## [0.1.19] - 2026-11-10
 
 ### Added

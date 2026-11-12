@@ -379,8 +379,8 @@ export function renderStoreSettings() {
   const steps = el('ol', 'store-steps');
   for (const key of ['extensionStep', 'exportStep', 'importStep']) steps.append(el('li', null, t(`ui.stores.${key}`)));
   companion.append(steps);
-  // The exporter opens the version directory, which is not itself an
-  // extension: each browser must select the correct child explicitly.
+  // Stable managed location: each browser selects its child once, then can
+  // Reload that same extension after a bundled code update.
   const korean = currentLocale().toLowerCase().startsWith('ko');
   const guide = el('details', 'store-extension-guide');
   guide.open = true;
@@ -405,12 +405,22 @@ export function renderStoreSettings() {
     instructions.append(el('li', null, t(`ui.stores.installGuide.${browser}`, undefined, fallback)));
   }
   guide.append(instructions);
+  guide.append(el('p', 'store-help', t('ui.stores.stableCompanionHint', undefined, korean
+    ? '고정된 current/chromium 폴더를 한 번 불러오면 런처 업데이트 뒤에도 같은 경로를 사용해요. 확장 코드가 바뀌면 브라우저 확장 관리에서 새로고침을 눌러 주세요. 구버전의 숫자 버전 폴더를 사용했다면 이번에 한 번만 경로를 바꿔 주세요.'
+    : 'Load the stable current/chromium folder once. Launcher upgrades keep that path; Reload it in your browser extension manager when extension code changes. If you used a numbered version folder, switch once to the stable folder.')));
+  guide.append(el('p', 'store-help', t('ui.stores.autoPanelHint', undefined, korean
+    ? '지원 상품 페이지에서 확장 버튼을 열고 이 사이트 자동 패널을 켜면 큰 패널이 자동으로 나타나요. 사이트 접근 권한은 브라우저에서 한 번 허용해야 하며, 패널에서 접거나 숨길 수 있어요.'
+    : 'On a supported product page, open the extension and enable automatic panels for that site. Approve the browser site-access request once, then collapse or hide the larger panel as needed.')));
   companion.append(guide);
+  if (state.storeConnections?.companionPrepared === false) companion.append(el('p', 'store-error', t('ui.stores.companionRefreshFailed', undefined, korean
+    ? '확장 파일 자동 갱신을 완료하지 못했어요. 기존 파일은 보존했어요. 폴더 열기를 다시 시도해 주세요.'
+    : 'The extension files could not be refreshed automatically. Existing files were preserved. Try opening the extension folder again.')));
   const companionActions = el('div', 'store-actions');
   const openCompanion = el('button', 'ghost store-companion-open', t('ui.stores.openCompanion'));
   openCompanion.disabled = mutationBlocked();
   openCompanion.addEventListener('click', () => void performStoreAction(async () => {
     await api.stores.openCompanion();
+    await refreshStoreConnections();
     setStatus(t('ui.stores.companionOpened'), 'ok');
   }));
   const pick = el('button', 'ghost store-pick', t('ui.stores.pick'));

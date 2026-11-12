@@ -130,6 +130,20 @@ jobs:
       - name: Offline Korean and English desktop flows
         run: npm run desktop:flow
 
+      - name: Inspect installer wizard readability
+        env:
+          INDIEDECK_INSTALLER_READABILITY_CI: '1'
+        run: node scripts/check-installer-readability.mjs
+
+      - name: Save installer readability evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-installer-readability
+          path: out/installer-readability/
+          retention-days: 1
+          if-no-files-found: ignore
+
       - name: Comparison history across app restarts
         run: npm run desktop:history
 

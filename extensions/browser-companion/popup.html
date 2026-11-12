@@ -10,6 +10,18 @@
   <main>
     <h1 data-i18n="heading">IndieDeck 상품 연결</h1>
     <p class="intro" data-i18n="intro"></p>
+    <section id="autoPanelSettings" class="auto-panel-settings" aria-label="Automatic product panels">
+      <h2 id="autoPanelHeading">자동 상품 패널</h2>
+      <p id="autoPanelStatus" role="status" aria-live="polite"></p>
+      <div class="panel-setting-actions">
+        <button id="enableAutoPanel" type="button" disabled></button>
+        <button id="hideAutoPanel" type="button" disabled></button>
+        <button id="disableAutoPanel" type="button" disabled></button>
+        <button id="disableAllAutoPanels" type="button" disabled></button>
+      </div>
+      <p id="autoPanelScope" class="instructions"></p>
+      <p id="autoPanelRefresh" class="instructions"></p>
+    </section>
     <p id="status" role="status" aria-live="polite"></p>
     <section id="preview" hidden aria-label="Product information">
       <dl>
@@ -33,6 +45,7 @@
     </section>
     <p class="privacy" data-i18n="privacy"></p>
     <p class="scope" data-i18n="scope"></p>
+    <button id="reloadCompanion" class="reload-companion" type="button" disabled>확장 업데이트 적용 / 새로고침</button>
   </main>
   <script type="module" src="popup.js"></script>
 </body>

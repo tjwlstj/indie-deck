@@ -1,4 +1,4 @@
-import { cleanDisplayTitle, LINK_FILENAME, metadataFromProductUrl, productPageForMetadata, serializeStoreLink } from './store-link.js';
+import { cleanDisplayTitle, LINK_FILENAME, metadataFromProductUrl, productPageForMetadata, serializeStoreLink, validateStoreLink } from './store-link.js';
 import { normalizeArtworkUrl } from './artwork.js';
 
 export const MESSAGES = {
@@ -112,7 +112,7 @@ export async function currentProductArtwork(api, tab, metadata, promiseApi = fal
 }
 
 /** Mounting inspects metadata only. A download requires a second explicit click. */
-export async function mountPopup({ document, api, promiseApi = false, language = 'ko', saveFile = saveConnectionFile, writeClipboard = copyConnectionMetadata }) {
+export async function mountPopup({ document, api, promiseApi = false, language = 'ko', saveFile = saveConnectionFile, writeClipboard = copyConnectionMetadata, productContext }) {
   const locale = language.toLowerCase().startsWith('ko') ? 'ko' : 'en', messages = MESSAGES[locale];
   document.documentElement.lang = locale;
   for (const node of document.querySelectorAll('[data-i18n]')) node.textContent = messages[node.dataset.i18n] ?? '';
@@ -128,8 +128,14 @@ export async function mountPopup({ document, api, promiseApi = false, language =
   button.disabled = true; preview.hidden = true; status.textContent = messages.loading;
   let metadata, tab;
   try {
-    tab = await currentTab(api, promiseApi);
-    metadata = metadataFromProductUrl(tab?.url, tab?.title);
+    if (productContext) {
+      if (productContext.isCurrent?.() !== true) throw new Error('Product page changed');
+      metadata = validateStoreLink(productContext.metadata);
+      if (metadata.schemaVersion !== 1) throw new Error('Unsupported product context');
+    } else {
+      tab = await currentTab(api, promiseApi);
+      metadata = metadataFromProductUrl(tab?.url, tab?.title);
+    }
     if (!metadata) { status.textContent = messages.unsupported; return { supported: false }; }
   } catch {
     status.textContent = messages.unavailable; return { supported: false };
@@ -140,10 +146,12 @@ export async function mountPopup({ document, api, promiseApi = false, language =
   page.textContent = productPageForMetadata(metadata); page.href = productPageForMetadata(metadata);
   title.value = metadata.title ?? ''; preview.hidden = false; button.disabled = false; status.textContent = messages.ready;
   if (copy) copy.disabled = false;
-  const canCapture = Boolean(api?.scripting?.executeScript && Number.isSafeInteger(tab?.id) && tab.id >= 0);
+  const directCapture = typeof productContext?.readArtwork === 'function';
+  const canCapture = directCapture || Boolean(api?.scripting?.executeScript && Number.isSafeInteger(tab?.id) && tab.id >= 0);
   if (findArtwork) findArtwork.disabled = !canCapture;
   let saving = false, artworkOptions = [];
   const reviewedPayload = () => {
+    if (productContext && productContext.isCurrent?.() !== true) throw new Error('Product page changed');
     const displayTitle = cleanDisplayTitle(title.value);
     const url = includeArtwork?.checked && artworkOptions.includes(artworkChoice?.value) ? artworkChoice.value : null;
     return { schemaVersion: url ? 2 : 1, kind: 'indiedeck-store-link', provider: metadata.provider, productId: metadata.productId,
@@ -162,7 +170,12 @@ export async function mountPopup({ document, api, promiseApi = false, language =
     if (includeArtwork) includeArtwork.checked = false;
     artworkChoice?.replaceChildren();
     try {
-      artworkOptions = await currentProductArtwork(api, tab, metadata, promiseApi);
+      if (directCapture) {
+        if (productContext.isCurrent?.() !== true) throw new Error('Product page changed');
+        const found = await productContext.readArtwork();
+        if (productContext.isCurrent?.() !== true || !Array.isArray(found)) throw new Error('Product page changed');
+        artworkOptions = [...new Set(found.slice(0, 8).map(value => normalizeArtworkUrl(metadata.provider, metadata.productId, value)).filter(Boolean))];
+      } else artworkOptions = await currentProductArtwork(api, tab, metadata, promiseApi);
       for (let index = 0; index < artworkOptions.length; index += 1) {
         const option = document.createElement('option'); option.value = artworkOptions[index];
         option.textContent = `${messages.artworkNumber} ${index + 1} · ${new URL(option.value).hostname}`;

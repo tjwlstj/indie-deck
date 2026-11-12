@@ -231,6 +231,7 @@ const lastOptionComparisonsByGame = new Map<string, TranslationConfigHistoryReco
 const securityResultsByGame = new Map<string, SecurityScanResult>();
 const archiveCandidates = new Map<string, { path: string; inspection: GameArchiveInspection }>();
 const storeLinkCandidates = new Map<string, StoreLinkCandidate>();
+let companionPrepared = false;
 const storeArtworkPreviews = createStoreArtworkPreviews();
 const thumbnailSearchResults = new Map<string, Set<string>>();
 const thumbnailSearchGeneration = new Map<string, number>();
@@ -531,7 +532,8 @@ async function runSmokeTest(window: BrowserWindow): Promise<void> {
 
       const companion = await exportBrowserCompanion(bundleRoot, defaultDataDir(), app.getVersion());
       const companionManifest = JSON.parse(await readFile(path.join(companion, 'chromium', 'manifest.json'), 'utf8'));
-      if (companionManifest.version !== app.getVersion()) throw new Error('Packaged companion version disagrees with the launcher.');
+      const bundledCompanion = JSON.parse(await readFile(path.join(bundleRoot, 'extensions', 'browser-companion', 'manifest.json'), 'utf8'));
+      if (companionManifest.version !== bundledCompanion.version) throw new Error('Exported companion disagrees with its bundled independent version.');
       console.log('[smoke] bundled browser companion exported and version verified; no browser profile was changed');
 
       if (process.env['INDIEDECK_SMOKE_FLOW'] === '1') {
@@ -1344,7 +1346,7 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
   if (!rejectedStoreRequests || storeCalls().length !== callsBeforeInjection) throw new Error('A forged store request reached an external application.');
   await evaluate(`document.querySelector('.store-companion-open').click()`);
   await waitFor(`(async () => !(await import('./store.js')).state.storeBusy)()`, 'bundled companion folder preparation');
-  if (!storeCalls().some((call) => call.kind === 'folder' && call.folder === path.join(defaultDataDir(), 'browser-companion', app.getVersion()))) throw new Error('Companion folder was not exported to the fixed managed path.');
+  if (!storeCalls().some((call) => call.kind === 'folder' && call.folder === path.join(defaultDataDir(), 'browser-companion', 'current'))) throw new Error('Companion folder was not exported to the fixed managed path.');
   await new Promise<void>((resolve) => {
     window.webContents.once('did-finish-load', () => resolve()); window.webContents.reload();
   });
@@ -2153,9 +2155,9 @@ async function storeConnectionsPayload() {
     const snapshot = await readStoreConnections(defaultDataDir());
     return { snapshot: { ...snapshot, links: snapshot.links.map((link) => ({
       ...link, url: canonicalStoreProductUrl(link), actions: storeActions(link.provider, link),
-    })) }, providers, products, games };
+    })) }, providers, products, games, companionPrepared };
   } catch (error) {
-    return { snapshot: null, providers, products, games, error: localiseTaskError(error) };
+    return { snapshot: null, providers, products, games, companionPrepared, error: localiseTaskError(error) };
   }
 }
 
@@ -2453,6 +2455,7 @@ function register(): void {
   });
   handleMutation('stores:openCompanion', async () => {
     const folder = await exportBrowserCompanion(bundleRoot, defaultDataDir(), app.getVersion());
+    companionPrepared = true;
     const error = await shell.openPath(folder);
     if (error) throw new Error('ui.stores.error.companionOpenFailed');
     return { opened: true };
@@ -2894,6 +2897,13 @@ void app.whenReady().then(async () => {
     archiveRecoveryError = localiseTaskError(error);
     console.error('[installations] recovery failed:', archiveRecoveryError);
   }
+  // Keep the user-installed unpacked extension's path stable across launcher
+  // upgrades. Only verified launcher-owned assets are refreshed; browser code
+  // activation/reloading remains under the browser's own controls.
+  try {
+    await enqueueMutation(() => exportBrowserCompanion(bundleRoot, defaultDataDir(), app.getVersion()));
+    companionPrepared = true;
+  } catch { console.error('[companion] managed extension refresh failed; existing files were preserved'); }
   register();
   if (!queuedEntry) {
     if (process.env['INDIEDECK_SMOKE']) {
