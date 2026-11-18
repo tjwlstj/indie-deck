@@ -133,12 +133,22 @@ jobs:
         if: runner.os == 'Windows' && matrix.node == '24.x'
         run: npm run desktop:history
 
-      - name: Prepare isolated Chromium extension tests
+      - name: Install Chromium system libraries and Korean fonts
+        if: runner.os == 'Linux' && matrix.node == '24.x'
+        timeout-minutes: 8
+        run: |
+          node node_modules/playwright-core/cli.js install-deps chromium
+          sudo apt-get install -y fonts-noto-cjk
+
+      - name: Download Chromium for the extension tests
+        if: runner.os == 'Linux' && matrix.node == '24.x'
+        timeout-minutes: 8
+        run: node node_modules/playwright-core/cli.js install --no-shell chromium
+
+      - name: Configure Chromium sandbox for extension tests
         if: runner.os == 'Linux' && matrix.node == '24.x'
         shell: bash
         run: |
-          node node_modules/playwright-core/cli.js install --with-deps chromium
-          sudo apt-get install -y fonts-noto-cjk
           browser_dir="$(node --input-type=module -e "import { chromium } from 'playwright-core'; import path from 'node:path'; console.log(path.dirname(chromium.executablePath()));")"
           sandbox_path="$browser_dir/chrome-sandbox"
           if [ ! -f "$sandbox_path" ]; then sandbox_path="$browser_dir/chrome_sandbox"; fi
