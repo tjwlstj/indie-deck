@@ -146,6 +146,33 @@ function renderLibraryControls() {
     purchase.disabled = disabled; purchase.value = preferences.purchaseFilter;
     purchase.onchange = () => { void updatePreferences({ purchaseFilter: purchase.value }); };
   }
+  const toggle = $('toggleLibraryFilters');
+  if (toggle) {
+    const panel = $('libraryMoreFilters');
+    toggle.onclick = () => {
+      panel.hidden = !panel.hidden;
+      toggle.setAttribute('aria-expanded', String(!panel.hidden));
+    };
+    const filters = [];
+    if (state.query.trim()) filters.push(state.query.trim());
+    if (state.engineFilter !== 'all') filters.push(gamingEngineFilter.selectedOptions[0]?.textContent || state.engineFilter);
+    if (state.statusFilter !== 'all') filters.push(gamingStatusFilter.selectedOptions[0]?.textContent || state.statusFilter);
+    if (preferences.favoritesOnly) filters.push(favorite.textContent);
+    if (preferences.duplicatesOnly) filters.push(duplicate.textContent);
+    if (preferences.adultFilter !== 'all') filters.push($('libraryAdultFilter').selectedOptions[0]?.textContent);
+    if (preferences.purchaseFilter !== 'all') filters.push(purchase.selectedOptions[0]?.textContent);
+    const summary = $('libraryActiveFilters');
+    summary.textContent = filters.join(' · ');
+    summary.hidden = filters.length === 0;
+    const clear = $('clearLibraryFilters');
+    clear.hidden = summary.hidden;
+    clear.disabled = disabled;
+    clear.onclick = () => {
+      state.query = ''; state.engineFilter = 'all'; state.statusFilter = 'all';
+      $('search').value = '';
+      void updatePreferences({ favoritesOnly: false, duplicatesOnly: false, adultFilter: 'all', purchaseFilter: 'all' });
+    };
+  }
   $('libraryPreferencesStatus').textContent = state.libraryPreferencesError
     ? t('ui.library.preferencesUnavailable', undefined, 'Could not load or save library preferences. Existing data was kept.') : '';
 }
@@ -219,12 +246,18 @@ export function renderSidebar(onSelectGame) {
   void onSelectGame;
 }
 
-export function renderGameList(onSelectGame) {
+export function renderGameList(onSelectGame, onHiddenSelection) {
   renderLibraryControls();
   const container = $('gameList');
   releaseThumbnails(container);
   clear(container);
   const games = visibleGames();
+  if (state.selected && !games.some(game => game.id === state.selected)) {
+    state.selected = null;
+    state.detail = null;
+    state.selectionRequestToken += 1;
+    onHiddenSelection?.();
+  }
 
   if (state.games.length === 0) {
     const emptyCard = el('div', 'empty-library');

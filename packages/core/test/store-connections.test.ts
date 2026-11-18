@@ -46,6 +46,7 @@ test('browser companion metadata passes desktop validation without carrying quer
     'https://www.gog.com/en/game/example_game#private-fragment',
     'https://creator.itch.io/example-game?download=private-fixture',
     'https://creator.booth.pm/items/1234567?token=private-fixture',
+    'https://booth.pm/ko/items/6449698',
     'https://www.dlsite.com/home/work/=/product_id/RJ123456.html?token=private-fixture',
   ]) {
     const metadata = metadataFromProductUrl(url, 'Example title');

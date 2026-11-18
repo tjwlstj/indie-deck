@@ -20,8 +20,10 @@ function providers() { return state.storeConnections?.providers ?? []; }
 function providerName(id) { return providers().find((provider) => provider.id === id)?.name || id; }
 function links() { return state.storeConnections?.snapshot?.links ?? []; }
 function writeBlocked() { return mutationBlocked() || Boolean(state.storeReadError) || state.storeReadPending; }
-function defaultStoreTarget() {
-  return games().some((game) => game.id === state.storeTargetGameId) ? `game:${state.storeTargetGameId}` : '';
+function defaultStoreTarget(candidate) {
+  if (games().some((game) => game.id === state.storeTargetGameId)) return `game:${state.storeTargetGameId}`;
+  const existing = links().find(link => link.provider === candidate.provider && link.productId === candidate.productId);
+  return existing?.gameId ? `game:${existing.gameId}` : existing?.managedProductId ?? '';
 }
 
 function artworkText(key, ko, en) {
@@ -152,7 +154,7 @@ async function pickStoreLink() {
     if (result.candidate) {
       clearArtworkPreview();
       state.storeCandidate = result.candidate;
-      state.storeProductId = defaultStoreTarget();
+      state.storeProductId = defaultStoreTarget(result.candidate);
       state.storeCandidateTitle = result.candidate.title || '';
       setStatus(t('ui.stores.reviewCandidate'));
     }
@@ -172,7 +174,7 @@ async function importStoreLink(file) {
       clearArtworkPreview();
       state.storeCandidate = result.candidate;
       state.storeCandidateTitle = result.candidate.title || '';
-      state.storeProductId = defaultStoreTarget();
+      state.storeProductId = defaultStoreTarget(result.candidate);
       state.storeImportText = '';
       setStatus(t('ui.stores.reviewCandidate'));
     }

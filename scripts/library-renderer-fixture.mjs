@@ -101,4 +101,45 @@ if (phase === 'write') {
   assert.equal(findClass(other, 'favorite-toggle').getAttribute('aria-pressed'), 'true');
   await waitFor(() => pending.length === 1); await Promise.all(pending);
 }
+
+if (phase === 'write') {
+  const { hideConfigPanel, maySelectConfigGame, renderConfigSection } = await import('../packages/desktop/renderer/panels/config.js');
+  const detail = new Element();
+  const findId = (node, id) => node.id === id ? node : node.children.map(child => findId(child, id)).find(Boolean);
+  document.getElementById = id => nodes.get(id) ?? findId(detail, id);
+  state.selected = idA;
+  state.translatorConfigs.set(idA, {
+    categories: [{ id: 'basic', label: 'Basic' }],
+    config: { translatorId: 'fixture', translatorName: 'Fixture', detected: {}, location: { path: 'fixture.ini', exists: true },
+      coverage: {}, warnings: [], unknown: [], providers: [], values: [
+        { id: 'fixture.secret', category: 'basic', label: 'Fixture', type: 'secret', value: '' },
+      ] },
+  });
+  renderConfigSection(detail);
+  const input = document.getElementById('cfg-setting-fixture.secret');
+  input.value = 'fixture-unsaved-secret';
+  input.handlers.input[0]();
+  assert.equal(document.getElementById('cfgFooter').hidden, false);
+  window.confirm = message => { assert.ok(!message.includes(input.value)); return false; };
+  assert.equal(maySelectConfigGame(idB), false, 'declining to discard keeps the original game');
+
+  // The adult filter must hide this unclassified game even during editing.
+  state.libraryPreferences = { ...state.libraryPreferences, adultFilter: 'only' };
+  renderGameList(() => {}, () => { hideConfigPanel(); detail.replaceChildren(); });
+  assert.equal(state.selected, null);
+  assert.equal(detail.children.length, 0);
+  assert.equal(rows().length, 0);
+  assert.equal(maySelectConfigGame(idB), false, 'a hidden form keeps the same discard protection');
+  state.libraryPreferences = { ...state.libraryPreferences, adultFilter: 'all' };
+  assert.equal(maySelectConfigGame(idA), true);
+  state.selected = idA;
+  renderConfigSection(detail);
+  assert.equal(document.getElementById('cfg-setting-fixture.secret').value, input.value);
+  window.confirm = () => true;
+  assert.equal(maySelectConfigGame(idB), true);
+  detail.replaceChildren();
+  renderConfigSection(detail);
+  assert.equal(document.getElementById('cfg-setting-fixture.secret').value, '');
+  assert.equal(document.getElementById('cfgFooter').hidden, true);
+}
 console.log(`[library-renderer] ${phase} passed using an isolated fake bridge`);

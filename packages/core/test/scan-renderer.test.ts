@@ -94,7 +94,9 @@ test('all saved scan depths 0 through 12 round-trip without replacing an existin
 test('scan subscription and cancellation binding precede queued boot reads and no longer use legacy scanProgress', () => {
   const app = fs.readFileSync(new URL('../../desktop/renderer/app.js', import.meta.url), 'utf8');
   const boot = app.slice(app.indexOf('async function boot()'));
-  assert.ok(boot.indexOf('bindScanEvents();') < boot.indexOf('await refreshMToolStatus();'));
+  const bindScan = boot.indexOf('bindScanEvents();');
+  assert.ok(bindScan >= 0 && bindScan < boot.indexOf('void refreshMToolStatus()'));
+  assert.doesNotMatch(boot, /await refreshMToolStatus\(/);
   assert.ok(boot.indexOf('recoverScanStatus()') < boot.indexOf('await refreshLibraryView(false);'));
   const bind = app.slice(app.indexOf('function bindScanEvents()'), app.indexOf('function setTransientTask'));
   assert.match(bind, /api\.on\.scanStatus\(acceptScanStatus\)/);

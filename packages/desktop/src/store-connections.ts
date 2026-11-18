@@ -121,7 +121,7 @@ export function parseStoreLinkText(input: unknown): StoreLinkCandidate {
       match = /^\/([a-z0-9][a-z0-9_-]{0,159})\/?$/.exec(url.pathname); p = 'itch'; if (match) id = `${itch[1]}/${match[1]}`;
     } else if (url.hostname === 'booth.pm' || /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.booth\.pm$/.test(url.hostname)) {
       match = /^\/(?:([a-z]{2})\/)?items\/([1-9][0-9]{0,11})\/?$/.exec(url.pathname);
-      if (match && (!match[1] || ['ja', 'en'].includes(match[1]))) { p = 'booth'; id = match[2]; }
+      if (match && (!match[1] || ['ja', 'en', 'ko'].includes(match[1]))) { p = 'booth'; id = match[2]; }
     } else if (url.hostname === 'www.dlsite.com' || url.hostname === 'dlsite.com') {
       match = /^\/(home|maniax|pro|soft|books)\/work\/=\/product_id\/((?:RJ|VJ|BJ)[0-9]{6,12})\.html\/?$/.exec(url.pathname);
       if (match) { p = 'dlsite'; id = `${match[1]}:${match[2]}`; }

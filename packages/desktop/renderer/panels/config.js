@@ -36,6 +36,25 @@ export function resetConfigPanel() {
   config.outcome = null;
 }
 
+export function maySelectConfigGame(nextGameId) {
+  if (config.gameId === nextGameId) return true;
+  if (config.busy) {
+    setStatus(t('ui.config.waitBeforeSwitch', undefined, 'Wait for the current translation settings request to finish.'));
+    return false;
+  }
+  if (config.pending.size && !window.confirm(t('ui.config.discardOnSwitch', { count: config.pending.size },
+    'Discard {count} unsaved translation change(s) and open the other game?'))) return false;
+  resetConfigPanel();
+  return true;
+}
+
+export function hideConfigPanel() {
+  if (!config.pending.size) { resetConfigPanel(); return; }
+  // Filtering hides the detail immediately. Retain only this active form in
+  // memory so reselecting its game resumes editing without caching credentials.
+  setStatus(t('ui.config.hiddenUnsaved', undefined, 'Translation edits are still open. Show this game again to resume editing.'));
+}
+
 function currentValue(id, fallback) {
   return config.pending.has(id) ? config.pending.get(id) : fallback;
 }
@@ -113,14 +132,11 @@ function control(id, type, value, original, options = {}) {
   if (type === 'font-bundle') {
     const entries = [{ value: '', label: t('ui.config.none', undefined, '(none)') }];
     for (const bundle of config.data.fontBundles ?? []) entries.push({ value: bundle, label: bundle });
+    if (value && !entries.some(option => option.value === value)) {
+      entries.push({ value, label: t('ui.config.inFileNotInFolder', { value }, '{value} (in file, not in folder)') });
+    }
     const node = select(entries, value, (next) => stage(id, next, original));
     node.disabled = config.busy || mutationBlocked();
-    if (value && ![...node.options].some((o) => o.value === value)) {
-      const custom = el('option', null, t('ui.config.inFileNotInFolder', { value }, '{value} (in file, not in folder)'));
-      custom.value = value;
-      node.append(custom);
-      node.value = value;
-    }
     return node;
   }
 
@@ -417,7 +433,14 @@ async function apply(previewOnly) {
     }
 
     const { plan, result } = await api.translatorConfig.write(gameId, translatorId, changes);
-    if (applyToken !== config.applyToken || state.selected !== gameId || config.gameId !== gameId || !$('cfgLog')) return;
+    if (applyToken !== config.applyToken || config.gameId !== gameId) return;
+    if (state.selected !== gameId || !$('cfgLog')) {
+      if (result) {
+        state.translatorConfigs.delete(gameId);
+        resetConfigPanel();
+      }
+      return;
+    }
     config.outcome = { kind: 'error', text: planText(plan) };
     renderOutcome();
     if (!result) {

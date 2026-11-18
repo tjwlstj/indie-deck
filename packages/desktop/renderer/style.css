@@ -864,6 +864,10 @@ body.gaming-mode { font-size: 16px; }
   border-bottom: 1px solid var(--line);
 }
 
+.launch-choice { margin: 12px 0; }
+.launch-choice summary { width: fit-content; cursor: pointer; }
+.launch-choice .plan-sub { overflow-wrap: anywhere; }
+
 .detail-sticky-inner h1 {
   margin-bottom: 2px;
 }
@@ -1303,6 +1307,7 @@ select {
 .thumbnail-preview-close { display: block; margin: 0 0 8px auto; }
 .thumbnail-preview-image { display: block; width: 100%; max-height: min(46vh, 380px); object-fit: contain; }
 .thumbnail-preview-status { color: var(--text-dim); font-size: 12px; }
+.library-filter-summary { color: var(--text-dim); font-size: 12px; overflow-wrap: anywhere; }
 .library-extra-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; width: 100%; }
 .library-extra-control { display: flex; align-items: center; gap: 6px; max-width: 100%; }
 .library-extra-controls label { color: var(--text-dim); font-size: 11px; }

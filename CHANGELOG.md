@@ -5,6 +5,22 @@ Versioning while the project is pre-1.0.
 
 ## [Unreleased]
 
+## [0.1.21] - 2026-11-18
+
+### Library and settings
+
+- Keep a known game in the library when its drive is offline during an individual refresh.
+- Save launcher configuration atomically, retain the previous valid file, and offer recovery with the original damaged bytes preserved.
+- Prefer game executables over installation tools. The game details let you select an executable inside the game folder or restore automatic detection.
+- Keep unsaved translation edits when a filter hides the game and ask before discarding them on a game switch. Identify configured font bundles missing from the game folder.
+- Collapse extra display controls, show active library filters and clear them together. Excluding a selected game also clears its details.
+- Start the library while the optional MTool status check runs. Limit repeated ZIP progress updates and keep the reviewed product unchanged when a new archive selection is cancelled.
+- Preserve existing game associations when reviewing an imported store link and accept Korean BOOTH product pages in the launcher and Browser Companion 0.2.1.
+
+### Build dependencies
+
+- Replace the affected transitive glob dependency in the pinned node-gyp build tool with a local matcher limited to its two build-directory lookups.
+
 ## [0.1.20] - 2026-11-12
 
 ### Changed

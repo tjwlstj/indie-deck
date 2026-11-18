@@ -65,7 +65,7 @@ export function metadataFromProductUrl(input, title) {
   }
   if (url.hostname === 'booth.pm' || /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.booth\.pm$/.test(url.hostname)) {
     found = /^\/(?:([a-z]{2})\/)?items\/([1-9][0-9]{0,11})\/?$/.exec(route);
-    return found && (!found[1] || ['ja', 'en'].includes(found[1])) ? record('booth', found[2], title) : null;
+    return found && (!found[1] || ['ja', 'en', 'ko'].includes(found[1])) ? record('booth', found[2], title) : null;
   }
   if (url.hostname === 'www.dlsite.com' || url.hostname === 'dlsite.com') {
     found = /^\/(home|maniax|pro|soft|books)\/work\/=\/product_id\/((?:RJ|VJ|BJ)[0-9]{6,12})\.html\/?$/.exec(route);

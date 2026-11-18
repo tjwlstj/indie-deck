@@ -10,8 +10,11 @@ import {
   libraryPath,
   libraryStats,
   loadConfig,
+  LauncherConfigRecoveryError,
+  recoverLauncherConfig,
   loadLibrary,
   refreshLibraryGame,
+  saveConfig,
   saveLibrary,
 } from '../src/library/index.ts';
 import { loadRegistry } from '../src/registry/index.ts';
@@ -67,7 +70,7 @@ test('legacy library indexes load at revision zero', async () => {
   assert.deepEqual(loaded.roots, ['D:/Games']);
 });
 
-test('missing and damaged configs have independent roots and defaults across isolated data folders', async () => {
+test('a damaged config blocks writes and needs explicit recovery without changing separate data folders', async () => {
   const firstData = testDir('config-isolation-first'), secondData = testDir('config-isolation-second');
   const firstRoot = testDir('config-isolation-games');
   await addRoot(firstRoot, firstData);
@@ -79,11 +82,57 @@ test('missing and damaged configs have independent roots and defaults across iso
   assert.deepEqual(second.roots, []); assert.equal(second.defaults.targetLanguage, 'en');
   const damagedData = testDir('config-isolation-damaged');
   fs.writeFileSync(configPath(damagedData), '{ damaged JSON');
-  const damaged = await loadConfig(damagedData);
-  damaged.roots.push(firstRoot); damaged.defaults.targetLanguage = 'ja';
+  const error = await loadConfig(damagedData).catch(reason => reason);
+  assert.ok(error instanceof LauncherConfigRecoveryError);
+  assert.equal(error.backupFingerprint, null);
+  await assert.rejects(addRoot(firstRoot, damagedData), LauncherConfigRecoveryError);
+  await assert.rejects(saveConfig(first, damagedData), LauncherConfigRecoveryError);
+  assert.equal(fs.readFileSync(configPath(damagedData), 'utf8'), '{ damaged JSON');
+  const backupFile = configPath(damagedData) + '.bak';
+  fs.writeFileSync(backupFile, JSON.stringify({ locale: 'ko' }));
+  await assert.rejects(recoverLauncherConfig(error, damagedData), 'a newly available backup needs a fresh choice');
+  fs.unlinkSync(backupFile);
+  const recovered = await recoverLauncherConfig(error, damagedData);
+  assert.deepEqual(recovered.roots, []);
+  const preserved = fs.readdirSync(damagedData).filter(file => file.startsWith('config.damaged-'));
+  assert.equal(preserved.length, 1);
+  assert.equal(fs.readFileSync(path.join(damagedData, preserved[0]!), 'utf8'), '{ damaged JSON');
+  assert.deepEqual(await loadConfig(damagedData), recovered);
   const next = await loadConfig(secondData);
   assert.deepEqual(next.roots, []); assert.equal(next.defaults.targetLanguage, 'en');
   assert.deepEqual((await loadConfig(firstData)).roots, [firstRoot], 'unsaved caller edits do not leak into persisted or default roots');
+});
+
+test('backup recovery restores valid settings while a stale recovery request cannot replace changed settings', async () => {
+  const data = testDir('backup-recovery');
+  const config = { ...await loadConfig(data), roots: [testDir('backup-game-root')], locale: 'ko' };
+  await saveConfig(config, data);
+  await saveConfig({ ...config, locale: 'en' }, data);
+  const file = configPath(data);
+  fs.writeFileSync(file, 'corrupt');
+  const first = await loadConfig(data).catch(reason => reason);
+  assert.ok(first instanceof LauncherConfigRecoveryError && first.backupFingerprint);
+  fs.writeFileSync(file, 'truncated');
+  await assert.rejects(recoverLauncherConfig(first, data));
+  assert.equal(fs.readFileSync(file, 'utf8'), 'truncated');
+  const second = await loadConfig(data).catch(reason => reason);
+  assert.ok(second instanceof LauncherConfigRecoveryError);
+  assert.equal((await recoverLauncherConfig(second, data)).locale, 'ko');
+  assert.deepEqual((await loadConfig(data)).roots, config.roots);
+  assert.ok(!fs.readdirSync(data).some(name => name.endsWith('.tmp')));
+});
+
+test('an offline root is retained by targeted refresh and the same game can be refreshed after reconnect', async () => {
+  const root = testDir('offline-refresh-root'), data = testDir('offline-refresh-data');
+  const folder = makeUnityGame(root, 'Reconnected'), profile = detectGame(reg, folder)!;
+  const before = await saveLibrary({ games: [profile], scannedAt: '', roots: [root] }, data);
+  fs.renameSync(root, root + '-disconnected');
+  await assert.rejects(refreshLibraryGame(reg, folder, { dataDir: data }), /drive|드라이브/);
+  assert.deepEqual(await loadLibrary(data), before);
+  fs.renameSync(root + '-disconnected', root);
+  assert.equal((await refreshLibraryGame(reg, folder, { dataDir: data })).profile?.path, folder);
+  fs.renameSync(folder, folder + '-removed');
+  assert.equal((await refreshLibraryGame(reg, folder, { dataDir: data })).profile, null, 'confirmed missing child under a readable root');
 });
 
 test('saveLibrary atomically replaces the file and advances from the newest revision', async () => {

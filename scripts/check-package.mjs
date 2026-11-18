@@ -187,6 +187,7 @@ const currentRuntime = [
   ['node_modules/@indiedeck/core/dist/resolve/index.js', 'packages/core/dist/resolve/index.js'],
   ['node_modules/@indiedeck/core/dist/install/apply.js', 'packages/core/dist/install/apply.js'],
   ['node_modules/@indiedeck/core/dist/health/index.js', 'packages/core/dist/health/index.js'],
+  ['node_modules/@indiedeck/core/dist/library/config.js', 'packages/core/dist/library/config.js'],
   ['node_modules/@indiedeck/core/dist/library/index.js', 'packages/core/dist/library/index.js'],
   ['locales/en.json', 'locales/en.json'],
   ['locales/ko.json', 'locales/ko.json'],

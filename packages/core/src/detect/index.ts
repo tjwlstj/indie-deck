@@ -11,6 +11,7 @@ import { runProbes, unityDataDir, type ProbeContext } from './probes.ts';
 const HELPER_EXE = [
   /^UnityCrashHandler(32|64)?\.exe$/i,
   /^unins\d*\.exe$/i,
+  /^(?:setup|install(?:er)?|uninstall(?:er)?|update(?:r)?)(?:[-_. ](?:x86|x64|win32|win64|\d+(?:[.-]\d+)*))?\.exe$/i,
   /^(vc_redist|dxwebsetup|DXSETUP|dotnetfx)/i,
   /^notification_helper\.exe$/i,
   /^MTool_Game\.exe$/i,
@@ -43,11 +44,12 @@ export interface DetectOptions {
   onProbeLimit?: (engineId: string) => void;
 }
 
+export function isGameExecutableName(name: string): boolean {
+  return !/[\\/]/.test(name) && /\.exe$/i.test(name) && !HELPER_EXE.some(pattern => pattern.test(name));
+}
+
 export function listExecutables(probe: FsProbe): string[] {
-  return probe
-    .namesIn('')
-    .filter((n) => n.toLowerCase().endsWith('.exe') && probe.hasFile(n))
-    .filter((n) => !HELPER_EXE.some((re) => re.test(n)));
+  return probe.namesIn('').filter(name => isGameExecutableName(name) && probe.hasFile(name));
 }
 
 export function pickPrimaryExecutable(probe: FsProbe, exes: string[], folderName: string): string | undefined {
@@ -55,20 +57,23 @@ export function pickPrimaryExecutable(probe: FsProbe, exes: string[], folderName
   if (exes.length === 1) return exes[0];
 
   // A Unity game names its payload folder after the executable.
-  const dataDir = probe.namesIn('').find((n) => /_Data$/i.test(n) && probe.hasDir(n));
-  if (dataDir) {
-    const stem = dataDir.replace(/_Data$/i, '').toLowerCase();
-    const paired = exes.find((e) => e.replace(/\.exe$/i, '').toLowerCase() === stem);
-    if (paired) return paired;
-  }
+  const dataStems = new Set(probe.namesIn('')
+    .filter(name => /_Data$/i.test(name) && probe.hasDir(name))
+    .map(name => name.slice(0, -5).toLowerCase()));
+  const paired = exes.filter(name => dataStems.has(name.slice(0, -4).toLowerCase()));
+  const candidates = paired.length ? paired : exes;
+  if (candidates.length === 1) return candidates[0];
 
-  const byFolder = exes.find((e) => e.replace(/\.exe$/i, '').toLowerCase() === folderName.toLowerCase());
-  if (byFolder) return byFolder;
+  const folder = folderName.toLowerCase();
+  const unversioned = folder.replace(/[ _.-]+v?\d+(?:\.\d+)+(?:[ _.-]*(?:x64|x86))?$/, '');
+  const byTitle = candidates.find(name => name.slice(0, -4).toLowerCase() === folder) ??
+    (unversioned !== folder && candidates.find(name => name.slice(0, -4).toLowerCase() === unversioned));
+  if (byTitle) return byTitle;
 
-  const gameish = exes.find((e) => /^(game|start|launch|play)/i.test(e));
+  const gameish = candidates.find((e) => /^(game|start|launch|play)/i.test(e));
   if (gameish) return gameish;
 
-  return [...exes].sort((a, b) => (probe.stat(b)?.size ?? 0) - (probe.stat(a)?.size ?? 0))[0];
+  return [...candidates].sort((a, b) => (probe.stat(b)?.size ?? 0) - (probe.stat(a)?.size ?? 0))[0];
 }
 
 function resolveMarker(marker: string, captures: Record<string, string>, dataDir?: string): string {
@@ -231,6 +236,11 @@ export function detectGame(reg: Registry, gamePath: string, options: DetectOptio
 
   const engineDef = reg.engines.find((e) => e.id === best.engineId)!;
   const primaryExe = pickPrimaryExecutable(probe, exes, folderName);
+  if (engineDef.id === 'unity' && primaryExe) {
+    const pairedName = primaryExe.slice(0, -4).toLowerCase() + '_data';
+    const paired = probe.namesIn('').find(name => name.toLowerCase() === pairedName && probe.hasDir(name));
+    if (paired) best.captures['dataDir'] = paired;
+  }
 
   const ctx: ProbeContext = {
     probe,
@@ -425,7 +435,7 @@ function* walkLibrary(reg: Registry, roots: string[], options: ScanOptions): Gen
         // binaries happen to be placed there. Directly registered game roots
         // retain depth-zero support.
         const executableNames = entries.filter((entry) => entry.isFile() && !entry.isSymbolicLink() &&
-          /\.exe$/i.test(entry.name) && !HELPER_EXE.some((helper) => helper.test(entry.name))).map((entry) => entry.name);
+          isGameExecutableName(entry.name)).map((entry) => entry.name);
         if (directory !== path.parse(directory).root && executableNames.length > 0) {
           progress.candidates += 1;
           let limited = false;

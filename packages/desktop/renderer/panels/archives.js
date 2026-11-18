@@ -46,10 +46,16 @@ function importCompletionLabel(result) {
 }
 
 function acceptProgress(progress) {
-  const next = reduceArchiveProgress(state.archiveProgress, progress);
-  if (next === state.archiveProgress) return;
+  const previous = state.archiveProgress;
+  const next = reduceArchiveProgress(previous, progress);
+  if (next === previous) return;
   progressEpoch += 1;
   state.archiveProgress = next;
+  if (next.status === 'running' && previous?.status === 'running' && next.id === previous.id && next.phase === previous.phase) {
+    const card = $('archiveSettingsBody')?.querySelector('.archive-progress');
+    if (card) card.replaceWith(progressCard(next));
+    return;
+  }
   if (next.status === 'complete') {
     mergeImportResult(next.result);
     state.archiveCandidate = null;
@@ -111,6 +117,7 @@ async function pickArchive() {
           ? t(result.candidate.reasonKey)
           : t('ui.archive.manualOnly', undefined, 'This archive format is recognized; extract it yourself and add its folder.'));
     } else setStatus(t('ui.app.ready', undefined, 'Ready'));
+    return result.candidate;
   } catch (error) {
     setStatus(error.message, 'err');
   } finally {
@@ -296,8 +303,8 @@ export function renderManagedVersions(panel, profile) {
   update.addEventListener('click', () => {
     if (archiveInstallationBlocked()) return;
     window.dispatchEvent(new CustomEvent('indiedeck:open-settings', { detail: { section: 'archiveSettings' } }));
-    void pickArchive().then(() => {
-      if (state.archiveCandidate?.canImport && (state.archiveCatalog?.products ?? []).some((product) => product.id === current.product.id)) {
+    void pickArchive().then((picked) => {
+      if (picked?.canImport && state.archiveCandidate?.id === picked.id && (state.archiveCatalog?.products ?? []).some((product) => product.id === current.product.id)) {
         state.archiveProductId = current.product.id;
         state.archiveProductConfirmed = false;
         emit('all');

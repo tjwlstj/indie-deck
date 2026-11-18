@@ -8,7 +8,7 @@ function fill(card, context) {
   card.replaceChildren();
   card.append(el('p', 'plan-sub', t('ui.diagnostics.intro', undefined,
     'Observes games started by this launcher in the current session. Exit codes alone do not establish a crash or cause.')));
-  if (!context.profile.executable) {
+  if (!context.profile.executable && !context.launchChoice) {
     card.append(el('p', 'security-warning', t('ui.diagnostics.noExe', undefined, 'No executable was identified.')),
       el('p', 'plan-sub', t('ui.diagnostics.noExeAdvice', undefined, 'Check the registered folder and the official launcher.')));
   }

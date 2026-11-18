@@ -25,12 +25,12 @@ const fileEqual = (a: FileIdentity, b: FileIdentity) => directoryEqual(a, b) && 
   a.mtimeMs === b.mtimeMs && a.ctimeMs === b.ctimeMs && a.nlink === b.nlink && a.mode === b.mode;
 const key = (value: string) => process.platform === 'win32' ? value.toLowerCase() : value;
 
-function relativeExecutable(value: unknown): string {
+export function relativeExecutable(value: unknown): string {
   if (typeof value !== 'string' || value.length < 5 || value.length > 32767 || /[\u0000-\u001f\u007f]/u.test(value)) return unsafe();
   const relative = value.replace(/\\/g, '/');
   const parts = relative.split('/');
   if (!/\.exe$/i.test(relative) || relative.startsWith('/') || /^[a-z]:/i.test(relative) ||
-      parts.some(part => !part || part === '.' || part === '..' || /[:]/.test(part) || /[. ]$/.test(part) ||
+      parts.some(part => !part || part === '.' || part === '..' || /[:*?"<>|]/.test(part) || /[. ]$/.test(part) ||
         /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part))) unsafe();
   return parts.join(path.sep);
 }

@@ -229,7 +229,7 @@ export function renderHeader(panel, ctx) {
   inner.append(el('div', 'path', profile.path));
 
   const actions = el('div', 'actions');
-  if (profile.executable) {
+  if ((ctx.launchChoice || profile.executable) && !ctx.launchChoiceUnreadable) {
     const play = el('button', 'primary', `▶  ${t('ui.detail.play', undefined, 'Play')}`);
     play.disabled = mutationBlocked();
     if (mutationBlocked()) {
@@ -269,6 +269,7 @@ export function renderHeader(panel, ctx) {
   sticky.append(inner);
   panel.append(sticky);
 
+  renderLaunchChoice(panel, ctx);
   renderManagedVersions(panel, profile);
   renderGameStoreLinks(panel, profile);
 
@@ -277,6 +278,44 @@ export function renderHeader(panel, ctx) {
   coverSection.append(cover);
   appendThumbnailControls(coverSection, profile, cover);
   panel.append(coverSection);
+}
+
+function renderLaunchChoice(panel, { profile, launchChoice, launchChoiceUnreadable }) {
+  const details = el('details', 'launch-choice');
+  details.open = Boolean(launchChoiceUnreadable || (!launchChoice && !profile.executable));
+  details.append(el('summary', null, t('ui.gaming.launchExecutable', undefined, 'Launch executable')));
+  const target = launchChoice || profile.executable;
+  const label = launchChoiceUnreadable
+    ? t('ui.gaming.error.unreadableExecutableChoice', undefined, 'Reset your saved choice to pick a new file.')
+    : target ? t(launchChoice ? 'ui.gaming.selectedExecutable' : 'ui.gaming.automaticExecutable',
+      { file: target }, launchChoice ? 'Selected file: {file}' : 'Detected file: {file}')
+      : t('ui.gaming.noExecutable', undefined, 'No executable detected.');
+  details.append(el('p', 'plan-sub', label));
+  const actions = el('div', 'actions');
+  const pick = el('button', 'ghost', t('ui.gaming.pickExecutable', undefined, 'Choose executable'));
+  const reset = el('button', 'ghost', t('ui.gaming.resetExecutable', undefined, 'Use automatic detection'));
+  let pending = false;
+  const sync = () => {
+    pick.disabled = pending || mutationBlocked() || launchChoiceUnreadable;
+    reset.disabled = pending || mutationBlocked();
+  };
+  const apply = async (request) => {
+    if (pending || mutationBlocked() || profile.id !== state.selected) return;
+    pending = true;
+    sync();
+    try {
+      const changed = await request(profile.id);
+      if (changed && profile.id === state.selected) window.dispatchEvent(new CustomEvent('indiedeck:refresh-detail'));
+    } catch (err) { setStatus(err.message, 'err'); }
+    finally { pending = false; sync(); }
+  };
+  pick.addEventListener('click', () => void apply(api.game.pickExecutable));
+  reset.addEventListener('click', () => void apply(api.game.resetExecutable));
+  sync();
+  actions.append(pick);
+  if (launchChoice || launchChoiceUnreadable) actions.append(reset);
+  details.append(actions);
+  panel.append(details);
 }
 
 /* ---------------------------------------------------------------- facts */
@@ -318,7 +357,7 @@ export function renderFacts(panel, ctx) {
 
   add(
     t('ui.detail.executable', undefined, 'Executable'),
-    profile.executable ? `${profile.executable}  (${profile.arch})` : undefined,
+    ctx.launchChoice || (profile.executable ? `${profile.executable}  (${profile.arch})` : undefined),
   );
   add(
     t('ui.detail.loaders', undefined, 'Loaders'),

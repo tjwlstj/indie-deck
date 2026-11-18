@@ -7,9 +7,9 @@
 
 import { $, setStatus } from './dom.js';
 import { applyStaticTranslations, t } from './i18n.js';
-import { renderGameList, renderSidebar } from './panels/library.js';
+import { renderGameList as drawGameList, renderSidebar } from './panels/library.js';
 import { SECTIONS } from './panels/index.js';
-import { resetConfigPanel } from './panels/config.js';
+import { hideConfigPanel, maySelectConfigGame, resetConfigPanel } from './panels/config.js';
 import { operationCard } from './panels/detail.js';
 import { refreshMToolStatus, syncMToolIntegrationControls } from './panels/mtool.js';
 import { archiveProgressLabel, bindArchiveEvents, recoverArchiveProgress, refreshArchiveRecords } from './panels/archives.js';
@@ -60,6 +60,14 @@ let gamingMode = null;
 const handledOutcomes = new Map();
 
 /* --------------------------------------------------------------- render */
+
+function renderGameList(onSelect) {
+  drawGameList(onSelect, () => {
+    detailLoadingGameId = null;
+    hideConfigPanel();
+    renderDetail();
+  });
+}
 
 function renderDetail() {
   const panel = $('detail');
@@ -258,7 +266,7 @@ window.addEventListener('indiedeck:security-state', (event) => {
 async function selectGame(gameId, options = {}) {
   const changed = state.selected !== gameId;
   if (changed) {
-    resetConfigPanel();
+    if (!maySelectConfigGame(gameId)) return;
     // Do not leave the previous game's mutating actions live while the next
     // detail request is in flight.
     state.detail = null;
@@ -268,6 +276,7 @@ async function selectGame(gameId, options = {}) {
   const selectionToken = ++state.selectionRequestToken;
   if (!options.keepScroll) $('detail').scrollTop = 0;
   renderGameList(selectGame);
+  if (state.selected !== gameId) return;
 
   setStatus(t('ui.status.reading', undefined, 'Reading game folder…'));
   if (changed) renderDetail();
@@ -715,7 +724,8 @@ async function boot() {
   state.registry = await api.registry();
   state.config = await api.config.get();
   void refreshStoreConnections();
-  await refreshMToolStatus();
+  // An optional tool may live on a sleeping external disk.
+  void refreshMToolStatus().catch(() => {});
 
   applyStaticTranslations();
   renderAbout();

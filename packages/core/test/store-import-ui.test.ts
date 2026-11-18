@@ -25,7 +25,7 @@ test('store review supports direct-game presets, edited labels, paste and one-fi
   const gameId = '1234567890abcdef', body = new Element(), status = new Element(), events: any[] = [], saves: unknown[][] = [], imports: unknown[] = [];
   body.id = 'storeSettingsBody'; status.id = 'status';
   let revision = 1, previews = 0;
-  const payload = () => ({ snapshot: { schemaVersion: 1, revision, links: [] }, products: [],
+  const payload = () => ({ snapshot: { schemaVersion: 1, revision, links: saves.length ? [{ id: 'existing-link', provider: 'steam', productId: '440', gameId }] : [] }, products: [],
     providers: [{ id: 'steam', name: 'Steam', actions: [] }], games: [{ id: gameId, title: 'Demo', path: 'C:/fixture/Demo' }] });
   const candidate = { id: 'issued', provider: 'steam', productId: '440', url: 'https://store.steampowered.com/app/440/', title: 'Page title' };
   (globalThis as any).document = { getElementById: (id: string) => id === 'status' ? status : find(body, node => node.id === id),
@@ -67,6 +67,7 @@ test('store review supports direct-game presets, edited labels, paste and one-fi
     assert.equal(imports.length, 0);
     drop().event('drop', event([file]));
     await waitFor(() => imports.length === 1 && !store.storeBusy);
+    assert.equal(find(body, node => node.id === 'storeLinkProduct')?.value, `game:${gameId}`, 're-import keeps the existing game association');
     assert.equal(imports[0], file); assert.equal(saves.length, 1, 'drop must stop at review');
   } finally { unsubscribe(); delete (globalThis as any).window; delete (globalThis as any).document; }
 });

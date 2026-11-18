@@ -107,6 +107,8 @@ contextBridge.exposeInMainWorld('indiedeck', {
     detail: (gameId, options) => call('game:detail', gameId, options ?? {}),
     refresh: (gameId) => call('game:refresh', gameId),
     launch: (gameId) => call('game:launch', gameId),
+    pickExecutable: (gameId) => call('game:pickExecutable', gameId),
+    resetExecutable: (gameId) => call('game:resetExecutable', gameId),
     openFolder: (gameId) => call('shell:openGameFolder', gameId),
   },
 

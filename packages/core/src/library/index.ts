@@ -2,27 +2,14 @@ import crypto from 'node:crypto';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import type { GameProfile, Registry } from '../types.ts';
-import { scanLibraryAsync, detectGame, normalizeScanDepth, throwIfScanCancelled, type ScanOptions } from '../detect/index.ts';
+import { scanLibraryAsync, detectGame, throwIfScanCancelled, type ScanOptions } from '../detect/index.ts';
 import { defaultDataDir } from '../install/download.ts';
 import { t } from '../i18n/index.ts';
 import { isNativeLoader } from '../registry/index.ts';
 import { ensureDir, pathExists } from '../util/fsx.ts';
 
-export interface LauncherConfig {
-  roots: string[];
-  /** UI language: a locale code, or `system` to follow the environment. */
-  locale: string;
-  defaults: {
-    targetLanguage: string;
-    sourceLanguage: string;
-    endpoint: string;
-  };
-  scanDepth: number;
-  /** Only a literal false disables the per-launch executable scan. */
-  scanOnLaunch?: boolean;
-  /** Undefined probes the Windows default; null explicitly disables MTool. */
-  externalTools?: { mtoolRoot?: string | null };
-}
+import { loadConfig, saveConfig, type LauncherConfig } from './config.ts';
+export { configPath, loadConfig, saveConfig, recoverLauncherConfig, LauncherConfigRecoveryError, type LauncherConfig } from './config.ts';
 
 export interface LibraryIndex {
   games: GameProfile[];
@@ -34,54 +21,8 @@ export interface LibraryIndex {
 
 type LibrarySaveInput = Omit<LibraryIndex, 'revision'> & { revision?: number };
 
-const DEFAULT_CONFIG: LauncherConfig = {
-  roots: [],
-  locale: 'system',
-  defaults: { targetLanguage: 'en', sourceLanguage: 'ja', endpoint: 'GoogleTranslate' },
-  scanDepth: normalizeScanDepth(undefined),
-  scanOnLaunch: true,
-};
-
-export function configPath(dataDir = defaultDataDir()): string {
-  return path.join(dataDir, 'config.json');
-}
-
 export function libraryPath(dataDir = defaultDataDir()): string {
   return path.join(dataDir, 'library.json');
-}
-
-export async function loadConfig(dataDir = defaultDataDir()): Promise<LauncherConfig> {
-  const file = configPath(dataDir);
-  if (!(await pathExists(file))) return structuredClone(DEFAULT_CONFIG);
-  try {
-    const parsed = JSON.parse(await fsp.readFile(file, 'utf8')) as Partial<LauncherConfig>;
-    const externalTools = parsed.externalTools;
-    const mtoolRoot = externalTools && typeof externalTools === 'object' &&
-      (externalTools.mtoolRoot === null ||
-        (typeof externalTools.mtoolRoot === 'string' && externalTools.mtoolRoot.length > 0 &&
-          externalTools.mtoolRoot.length <= 32768 && !externalTools.mtoolRoot.includes('\0')))
-      ? externalTools.mtoolRoot : undefined;
-    return {
-      ...DEFAULT_CONFIG,
-      ...parsed,
-      defaults: { ...DEFAULT_CONFIG.defaults, ...(parsed.defaults ?? {}) },
-      roots: parsed.roots ?? [],
-      // Preserve valid existing depths (including 2); only new/malformed
-      // configurations use the broader default. No silent user-setting migration.
-      scanDepth: normalizeScanDepth(parsed.scanDepth),
-      scanOnLaunch: parsed.scanOnLaunch !== false,
-      // A malformed persisted value cannot become a privileged tool target.
-      // Omit it rather than coercing objects/numbers into filesystem paths.
-      externalTools: mtoolRoot === undefined ? undefined : { mtoolRoot },
-    };
-  } catch {
-    return structuredClone(DEFAULT_CONFIG);
-  }
-}
-
-export async function saveConfig(config: LauncherConfig, dataDir = defaultDataDir()): Promise<void> {
-  await ensureDir(dataDir);
-  await fsp.writeFile(configPath(dataDir), JSON.stringify({ ...config, scanDepth: normalizeScanDepth(config.scanDepth), scanOnLaunch: config.scanOnLaunch !== false }, null, 2), 'utf8');
 }
 
 export async function addRoot(root: string, dataDir = defaultDataDir()): Promise<LauncherConfig> {
@@ -250,6 +191,32 @@ export async function refreshLibraryGame(
   const detectOptions: { deep: boolean; measureSize?: boolean } = { deep: options.deep ?? true };
   if (options.measureSize !== undefined) detectOptions.measureSize = options.measureSize;
   const profile = detectGame(reg, resolved, detectOptions) ?? null;
+
+  if (!profile && previous.games.some(game => path.resolve(game.path).toLowerCase() === key)) {
+    // Detection treats unreadable folders as unrecognised. Before dropping a
+    // known game, distinguish a deleted child from an inaccessible scan root.
+    const containingRoots = previous.roots.filter(root => {
+      const relative = path.relative(path.resolve(root).toLowerCase(), key);
+      return relative === '' || (!path.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`));
+    });
+    const root = containingRoots.sort((a, b) => path.resolve(b).length - path.resolve(a).length)[0];
+    try {
+      if (root) {
+        const dir = await fsp.opendir(root);
+        await dir.close();
+      }
+      if (!root || path.resolve(root).toLowerCase() !== key) {
+        try {
+          const dir = await fsp.opendir(resolved);
+          await dir.close();
+        } catch (error) {
+          if (!root || (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        }
+      }
+    } catch {
+      throw new Error(t('core.error.game-offline', undefined, 'Cannot access the game folder or drive. Your library entry was kept. Reconnect the drive and refresh.'));
+    }
+  }
 
   let replaced = false;
   const games: GameProfile[] = [];

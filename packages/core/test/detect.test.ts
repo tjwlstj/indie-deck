@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
-import { detectGame, scanLibrary } from '../src/detect/index.ts';
+import { detectGame, isGameExecutableName, scanLibrary } from '../src/detect/index.ts';
 import { loadRegistry } from '../src/registry/index.ts';
 import { peArchFromBuffer } from '../src/util/pe.ts';
 
@@ -35,6 +35,21 @@ test('reads the machine type out of a PE header', () => {
   assert.equal(peArchFromBuffer(fakeExe(0x8664)), 'x64');
   assert.equal(peArchFromBuffer(fakeExe(0x014c)), 'x86');
   assert.equal(peArchFromBuffer(Buffer.from('not an exe')), 'unknown');
+});
+
+test('versioned game folders prefer a matching title and exclude installation utilities', () => {
+  const root = makeGame('Starlight_v1.2', {
+    'Starlight.exe': fakeExe(0x8664),
+    'GameLauncher.exe': Buffer.alloc(700),
+    'Setup.exe': Buffer.alloc(1000),
+    'Update.exe': Buffer.alloc(800),
+    'renpy/__init__.py': '# stub', 'game/script.rpa': 'fixture',
+  });
+  assert.equal(detectGame(reg, root)?.executable, 'Starlight.exe');
+  for (const name of ['Setup.exe', 'Update.exe', 'Installer-x64.EXE', 'Uninstaller.exe', 'unins000.exe']) {
+    assert.equal(isGameExecutableName(name), false, name);
+  }
+  assert.equal(isGameExecutableName('Setup Story.exe'), true);
 });
 
 test('detects a Mono Unity game and its version', () => {
@@ -72,6 +87,17 @@ test('detects an IL2CPP Unity game, including a Unity China build string', () =>
   assert.equal(profile.unity?.version, '2021.3.23f1c1');
   assert.equal(profile.unity?.usesTextMeshPro, true);
   assert.equal(profile.unity?.usesNewInputSystem, true);
+});
+
+test('an unrelated _Data folder does not hide the Unity executable and its matching payload', () => {
+  const root = makeGame('MultiData', {
+    'A_Data/note.txt': 'fixture', 'Starlight_Data/Managed/Assembly-CSharp.dll': 'fixture',
+    'Starlight.exe': fakeExe(0x8664), 'LaunchConfig.exe': Buffer.alloc(1000), 'UnityPlayer.dll': 'fixture',
+  });
+  const profile = detectGame(reg, root);
+  assert.equal(profile?.executable, 'Starlight.exe');
+  assert.equal(profile?.unity?.backend, 'mono');
+  assert.equal(profile?.unity?.dataDir, 'Starlight_Data');
 });
 
 test("detects Ren'Py and reads its version", () => {

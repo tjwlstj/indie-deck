@@ -29,6 +29,8 @@ jobs:
         run: npm audit --audit-level=moderate
       - run: npm run build
       - run: npm test
+        env:
+          INDIEDECK_NATIVE_REBUILD_CI: ${{ runner.os == 'Windows' && matrix.node == '24.x' && '1' || '0' }}
       - name: Registry self-check
         run: node packages/cli/dist/index.js registry check
 

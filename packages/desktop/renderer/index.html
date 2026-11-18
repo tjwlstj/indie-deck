@@ -97,8 +97,11 @@
             <option value="duplicates" data-i18n="ui.library.duplicatesFirst">Same-name candidates first</option>
           </select>
           <button id="libraryFavoritesOnly" class="ghost" aria-pressed="false" data-i18n="ui.library.favoritesOnly">Favorites only</button>
-          <button id="libraryDuplicatesOnly" class="ghost" aria-pressed="false" data-i18n="ui.library.duplicatesOnly">Same-name candidates</button>
-          <div class="library-extra-controls">
+          <button id="toggleLibraryFilters" class="ghost" type="button" aria-controls="libraryMoreFilters" aria-expanded="false" data-i18n="ui.library.filterOptions">Filters and display</button>
+          <span id="libraryActiveFilters" class="library-filter-summary" hidden></span>
+          <button id="clearLibraryFilters" class="ghost" type="button" data-i18n="ui.library.clearFilters" hidden>Clear filters</button>
+          <div id="libraryMoreFilters" class="library-extra-controls" hidden>
+            <button id="libraryDuplicatesOnly" class="ghost" aria-pressed="false" data-i18n="ui.library.duplicatesOnly">Same-name candidates</button>
             <div class="library-extra-control">
             <label for="libraryPreviewMode" data-i18n="ui.library.previewMode">Image previews</label>
             <select id="libraryPreviewMode">

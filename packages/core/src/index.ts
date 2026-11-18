@@ -55,6 +55,7 @@ export {
   ScanCancelledError,
   ScanLimitError,
   listExecutables,
+  isGameExecutableName,
   pickPrimaryExecutable,
   detectInstalledLoaders,
   detectInstalledTranslators,
@@ -176,6 +177,8 @@ export {
 
 export {
   loadConfig,
+  LauncherConfigRecoveryError,
+  recoverLauncherConfig,
   saveConfig,
   addRoot,
   removeRoot,

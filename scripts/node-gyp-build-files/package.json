@@ -1,0 +1,8 @@
+{
+  "name": "@indiedeck/node-gyp-build-files",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local fixed-pattern file discovery for node-gyp 12.4.0's Windows build step",
+  "license": "MIT",
+  "main": "index.cjs"
+}

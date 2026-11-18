@@ -1,6 +1,6 @@
 {
   "name": "indie-deck",
-  "version": "0.1.20",
+  "version": "0.1.21",
   "private": true,
   "description": "Unified launcher for Unity and other indie games: engine classification, per-engine translator auto-install with version compatibility management, and mod management.",
   "author": "tjwlstj",
@@ -37,10 +37,13 @@
     "release:check": "node scripts/check-release.mjs"
   },
   "dependencies": {
-    "@indiedeck/core": "0.1.20",
+    "@indiedeck/core": "0.1.21",
     "electron-updater": "6.8.9"
   },
   "overrides": {
+    "node-gyp@12.4.0": {
+      "tinyglobby": "file:./scripts/node-gyp-build-files"
+    },
     "minimatch@>=7.0.0 <11.0.1": "11.0.5"
   },
   "devDependencies": {

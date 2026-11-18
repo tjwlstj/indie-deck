@@ -83,7 +83,8 @@ test('library labels and visibility controls keep hidden artwork inert and prese
     engineName: 'Unity', engineId: 'unity', arch: 'unknown', installedTranslators: [] }));
   store.games = games; store.libraryPreferences = defaultLibraryPreferences(); store.libraryPreferencesLoaded = false; store.libraryPreferencesError = false;
   store.storeConnections = { snapshot: { schemaVersion: 1, revision: 1, links: [{ provider: 'steam', gameId: a }, { provider: 'steam', gameId: a }] } };
-  const render = () => renderGameList(() => { selections += 1; });
+  let hiddenDetails = 0;
+  const render = () => renderGameList(() => { selections += 1; }, () => { hiddenDetails += 1; });
   const unsubscribe = subscribe(scope => { if (scope === 'library' || scope === 'all') render(); });
   const rows = () => get('gameList').children.filter(node => node.className.split(/\s+/).includes('game'));
   const row = (id: string) => rows().find(node => node.dataset.gameId === id)!;
@@ -115,7 +116,12 @@ test('library labels and visibility controls keep hidden artwork inert and prese
       selectFilter('libraryPurchaseFilter', 'steam'); assert.deepEqual(visibleGames().map((game: any) => game.id), [b]);
       selectFilter('libraryPurchaseFilter', 'all');
       selectFilter('libraryAdultFilter', 'only'); assert.deepEqual(visibleGames().map((game: any) => game.id), [a]);
+      store.selected = a;
+      store.detail = { profile: { id: a } };
+      const token = store.selectionRequestToken;
       selectFilter('libraryAdultFilter', 'exclude'); assert.deepEqual(visibleGames().map((game: any) => game.id), [b, c]);
+      assert.equal(store.selected, null); assert.equal(store.detail, null);
+      assert.equal(hiddenDetails, 1); assert.equal(store.selectionRequestToken, token + 1);
       selectFilter('libraryAdultFilter', 'unclassified'); assert.deepEqual(visibleGames().map((game: any) => game.id), [c]);
       selectFilter('libraryAdultFilter', 'all');
       get('libraryFavoritesOnly').click(); assert.deepEqual(visibleGames().map((game: any) => game.id), [b]);

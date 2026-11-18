@@ -18,6 +18,8 @@ import {
   localiseProfile,
   listMods,
   loadConfig,
+  LauncherConfigRecoveryError,
+  recoverLauncherConfig,
   normalizeScanDepth,
   ScanCancelledError,
   ScanLimitError,
@@ -88,9 +90,10 @@ import { gameProcessEnvironment } from './process-environment.ts';
 import { readLibraryPreferences, saveLibraryPreferences } from './library-preferences.ts';
 import { scanLaunchTarget } from './security-launch-policy.ts';
 import { createLaunchDiagnostics } from './launch-diagnostics.ts';
-import { inspectLaunchDirectory, inspectLaunchTarget, revalidateLaunchTarget } from './launch-target-guard.ts';
+import { inspectLaunchDirectory, revalidateLaunchTarget } from './launch-target-guard.ts';
 import { createOwnedGameSessions, shouldDeferBackgroundWork } from './owned-game-sessions.ts';
-import { DEFAULT_GAMING_PREFERENCES, readGamingPreferences, saveGamingPreferences } from './gaming-preferences.ts';
+import { DEFAULT_GAMING_PREFERENCES, readGamingPreferences, saveGamingPreferences,
+  clearLaunchChoice, readLaunchChoice, resolveGameLaunchTarget, saveLaunchChoice } from './gaming-preferences.ts';
 import { parseGamingEntryArgs, gamingRegistration, exportGamingShortcut, gamingSettingsUrl } from './gaming-entry.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -249,6 +252,7 @@ interface ArchiveTask {
 }
 let archiveTask: ArchiveTask | null = null;
 let archiveSequence = 0;
+let archiveProgressSentAt = 0;
 let archiveRecoveryError: string | undefined;
 
 function idFor(gamePath: string): string {
@@ -1546,10 +1550,14 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
       && !!row.querySelector('.library-adult-badge') && row.querySelectorAll('.library-purchase-badge').length === 2;
   })()`);
   if (!hiddenListImage) throw new Error('A hidden list thumbnail still created an image or lost explicit labels.');
+  await evaluate(`document.querySelector('#gameList .game[data-game-id="${coverGameId}"]').click()`);
+  await waitFor(`(async () => (await import('./store.js')).state.detail?.profile?.id === '${coverGameId}')()`, 'selected adult game details before exclusion');
+  await evaluate(`document.getElementById('toggleLibraryFilters').click()`);
+  await waitFor(`!document.getElementById('libraryMoreFilters').hidden`, 'expanded library filter controls');
   await evaluate(`(() => { const select = document.getElementById('libraryAdultFilter'); select.value = 'only'; select.dispatchEvent(new Event('change', { bubbles: true })); })()`);
   await waitFor(`document.querySelectorAll('#gameList .game').length === 1 && !!document.querySelector('[data-game-id="${coverGameId}"]')`, 'adult-only library filter');
   await evaluate(`(() => { const select = document.getElementById('libraryAdultFilter'); select.value = 'exclude'; select.dispatchEvent(new Event('change', { bubbles: true })); })()`);
-  await waitFor(`!document.querySelector('[data-game-id="${coverGameId}"]') && document.querySelectorAll('#gameList .game').length > 0`, 'explicit adult exclusion filter');
+  await waitFor(`!document.querySelector('[data-game-id="${coverGameId}"]') && document.querySelectorAll('#gameList .game').length > 0 && !!document.querySelector('#detail .empty')`, 'explicit adult exclusion clears the selected detail');
   await evaluate(`(() => {
     const adult = document.getElementById('libraryAdultFilter'); adult.value = 'all'; adult.dispatchEvent(new Event('change', { bubbles: true }));
     const purchase = document.getElementById('libraryPurchaseFilter'); purchase.value = 'dlsite'; purchase.dispatchEvent(new Event('change', { bubbles: true }));
@@ -1560,7 +1568,9 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
     await evaluate(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
     await writeFile(classificationShot, (await window.webContents.capturePage()).toPNG());
   }
-  await evaluate(`(() => { const select = document.getElementById('libraryPurchaseFilter'); select.value = 'all'; select.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await evaluate(`document.getElementById('toggleLibraryFilters').click()`);
+  await waitFor(`document.getElementById('libraryMoreFilters').hidden && document.getElementById('libraryActiveFilters').textContent.includes('DLsite')`, 'active purchase filter visible when collapsed');
+  await evaluate(`document.getElementById('clearLibraryFilters').click()`);
   await waitFor(`(async () => {
     const prefs = await window.indiedeck.libraryPreferences.read();
     return prefs.adultFilter === 'all' && prefs.purchaseFilter === 'all';
@@ -1818,6 +1828,10 @@ async function translatorConfigPayload(profile: GameProfile, requested?: string)
 
 async function gameDetailPayload(gameId: string, options: ResolveOptions, detected?: GameProfile) {
   const profile = localiseProfile(registry, detected ?? requireDetectedGame(gameId));
+  let launchChoice: string | null = null;
+  let launchChoiceUnreadable = false;
+  try { launchChoice = await readLaunchChoice(defaultDataDir(), gameId); }
+  catch { launchChoiceUnreadable = true; }
   const history = comparisonHistory ? await comparisonHistory.get(gameId) : { state: 'unavailable' as const, record: undefined };
   const fallback = lastOptionComparisonsByGame.get(gameId);
   const historyRecord = fallback ?? history.record;
@@ -1852,6 +1866,7 @@ async function gameDetailPayload(gameId: string, options: ResolveOptions, detect
     }));
   return {
     profile: withId(profile),
+    launchChoice, launchChoiceUnreadable,
     launchDiagnostic: launchDiagnostics.get(gameId),
     gameRevision: gameRevisions.get(gameId) ?? 0,
     plans,
@@ -1932,8 +1947,9 @@ function enqueueMToolLaunch(gameId?: string) {
 }
 
 function requireDetectedGame(gameId: string): GameProfile {
-  const profile = detectGame(registry, requireGamePath(gameId), { deep: true });
-  if (!profile) throw new Error('No known engine detected here any more - the folder may have changed.');
+  const gamePath = requireGamePath(gameId);
+  const profile = detectGame(registry, gamePath, { deep: true });
+  if (!profile) throw new Error(existsSync(gamePath) ? t('core.error.no-engine', { path: gamePath }) : t('core.error.game-offline'));
   return profile;
 }
 
@@ -2197,7 +2213,11 @@ async function archiveRecords() {
 
 function publishArchiveTask(update: Partial<ArchiveTask>): void {
   if (!archiveTask) return;
+  const previousPhase = archiveTask.phase;
   archiveTask = { ...archiveTask, ...update, sequence: ++archiveSequence };
+  const now = performance.now();
+  if (archiveTask.status === 'running' && archiveTask.phase === previousPhase && now - archiveProgressSentAt < 125) return;
+  archiveProgressSentAt = now;
   send('archives:progress', structuredClone(archiveTask));
 }
 
@@ -2216,6 +2236,7 @@ function importSelectedArchive(candidateId: unknown, label: unknown, productId?:
   archiveTask = { id: candidateId, sequence: ++archiveSequence, status: 'running', phase: 'inspect',
     completedFiles: 0, totalFiles: candidate.inspection.fileCount ?? 0,
     completedBytes: 0, totalBytes: candidate.inspection.unpackedBytes ?? 0 };
+  archiveProgressSentAt = performance.now();
   send('archives:progress', structuredClone(archiveTask));
   return enqueueMutation(async () => {
     try {
@@ -2268,8 +2289,8 @@ async function launchGame(gameId: string) {
       const gamePath = requireGamePath(gameId);
       await inspectLaunchDirectory(gamePath);
       const profile = detectGame(registry, gamePath, { rejectLinks: true });
-      if (!profile?.executable) throw new Error('ui.gaming.error.unsafeLaunchTarget');
-      const target = await inspectLaunchTarget(gamePath, profile.executable);
+      if (!profile) throw new Error('ui.gaming.error.unsafeLaunchTarget');
+      const target = await resolveGameLaunchTarget(defaultDataDir(), gameId, gamePath, profile.executable);
       await scanLaunchTarget((await loadConfig()).scanOnLaunch, () => security.scanBeforeUse(target.executable, gameId));
       requireGamePath(gameId);
       await revalidateLaunchTarget(target);
@@ -2290,7 +2311,7 @@ async function launchGame(gameId: string) {
         if (ownedGames.started(gameId, session) && gamingPreferences.minimizeOnLaunch && mainWindow?.isVisible() && !mainWindow.isMinimized()) {
           minimizedForGame = true; mainWindow.minimize();
         }
-        return profile.executable;
+        return target.relativeExecutable;
       } catch (error) { recordFailure(); throw error; }
     });
   } catch (error) { ownedGames.finish(gameId, session); throw error; }
@@ -2806,8 +2827,26 @@ function register(): void {
     return listMods(registry, profile);
   });
 
-  // The executable is resolved main-side from the detected profile: the
-  // renderer cannot name an arbitrary binary to spawn.
+  // Only the main process can choose the target, from the picker or engine detection.
+  handleMutation('game:pickExecutable', async (gameId: string) => {
+    const root = requireGamePath(gameId);
+    await inspectLaunchDirectory(root);
+    const picked = await dialog.showOpenDialog({
+      defaultPath: root, title: t('ui.gaming.pickExecutable'), properties: ['openFile'],
+      filters: [{ name: 'Windows (*.exe)', extensions: ['exe'] }],
+    });
+    if (picked.canceled || !picked.filePaths[0]) return false;
+    if (requireGamePath(gameId) !== root) throw new Error('ui.gaming.error.invalidGame');
+    await saveLaunchChoice(defaultDataDir(), gameId, root, picked.filePaths[0]);
+    markGameChanged(gameId);
+    return true;
+  });
+  handleMutation('game:resetExecutable', async (gameId: string) => {
+    requireGamePath(gameId);
+    await clearLaunchChoice(defaultDataDir(), gameId);
+    markGameChanged(gameId);
+    return true;
+  });
   handle('game:launch', (gameId: string) => launchGame(gameId));
 
   handle('config:read', async (gameId: string, translatorId: string) => {
@@ -2857,13 +2896,31 @@ function register(): void {
   });
 }
 
+async function readStartupConfig(): Promise<LauncherConfig | null> {
+  try { return await loadConfig(); }
+  catch (error) {
+    if (!(error instanceof LauncherConfigRecoveryError)) throw error;
+    const hasBackup = error.backupFingerprint !== null;
+    const choice = await dialog.showMessageBox({
+      type: 'warning', title: t('core.error.config-title'),
+      message: t('core.error.config-prompt'),
+      detail: t(hasBackup ? 'core.error.config-backup-help' : 'core.error.config-reset-help'),
+      buttons: [t(hasBackup ? 'core.error.config-restore' : 'core.error.config-reset'), t('core.error.config-exit')],
+      defaultId: hasBackup ? 0 : 1, cancelId: 1, noLink: true,
+    });
+    return choice.response === 0 ? recoverLauncherConfig(error) : null;
+  }
+}
+
 void app.whenReady().then(async () => {
   if (!ownsInstance) return;
   try {
     // Language before anything else: the registry load itself can throw a
     // translated error.
     if (app.isPackaged) loadCatalogs(path.join(app.getAppPath(), 'locales'));
-    const config = await loadConfig();
+    setLocale('system');
+    const config = await readStartupConfig();
+    if (!config) { app.quit(); return; }
     setLocale(config.locale);
     libraryRoots = config.roots;
     try { gamingPreferences = await readGamingPreferences(defaultDataDir()); }
@@ -2872,7 +2929,7 @@ void app.whenReady().then(async () => {
     const comparisonSchema = registry.configSchemas.get('xunity-autotranslator');
     if (comparisonSchema) comparisonHistory = new TranslationConfigHistory(defaultDataDir(), comparisonSchema);
   } catch (err) {
-    dialog.showErrorBox('Registry not found', (err as Error).message);
+    dialog.showErrorBox('IndieDeck', (err as Error).message);
     app.quit();
     return;
   }
