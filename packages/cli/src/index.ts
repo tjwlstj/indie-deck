@@ -73,10 +73,11 @@ const valueOptions = new Set([
   'translator', 'variant', 'set', 'loader', 'name',
 ]);
 
-export function parseArgs(argv: string[]): { command: string; args: string[]; flags: Flags } {
+function parseCommandLine(argv: string[]) {
   const flags: Flags = {};
   const args: string[] = [];
   let command = '';
+  let showVersion = false;
 
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i]!;
@@ -85,14 +86,16 @@ export function parseArgs(argv: string[]): { command: string; args: string[]; fl
       const key = rawKey!;
       // After plan/install, --version takes a translator pin. Elsewhere it is a global switch.
       const translatorVersion = key === 'version' && (command === 'plan' || command === 'install');
+      if (key === 'version' && !translatorVersion && inlineValue !== '') {
+        showVersion = true;
+        continue;
+      }
       const takesValue = valueOptions.has(key) || translatorVersion;
       const next = argv[i + 1];
       let value: string | boolean = inlineValue ?? (translatorVersion ? '' : true);
       if (inlineValue === undefined && takesValue && next !== undefined && !next.startsWith('-')) {
         value = next;
         i += 1;
-      } else if (key === 'version' && !translatorVersion && inlineValue) {
-        value = true;
       }
       // Repeating a switch leaves it enabled; repeated values such as --set accumulate.
       const existing = flags[key];
@@ -102,18 +105,26 @@ export function parseArgs(argv: string[]): { command: string; args: string[]; fl
       continue;
     }
     if (token.startsWith('-') && token.length > 1) {
-      const short: Record<string, string> = { h: 'help', v: 'version', j: 'json' };
-      for (const ch of token.slice(1)) flags[short[ch] ?? ch] = true;
+      const short: Record<string, string> = { h: 'help', j: 'json' };
+      for (const ch of token.slice(1)) {
+        if (ch === 'v') showVersion = true;
+        else flags[short[ch] ?? ch] = true;
+      }
       continue;
     }
     if (!command) command = token;
     else args.push(token);
   }
-  return { command, args, flags };
+  if (showVersion) flags['version'] ??= true;
+  return { parsed: { command, args, flags }, showVersion };
+}
+
+export function parseArgs(argv: string[]): { command: string; args: string[]; flags: Flags } {
+  return parseCommandLine(argv).parsed;
 }
 
 export async function main(argv: string[]): Promise<number> {
-  const { command, args, flags } = parseArgs(argv);
+  const { parsed: { command, args, flags }, showVersion } = parseCommandLine(argv);
 
   if (flags['no-color'] === true || flags['json'] === true) setColorEnabled(false);
   else if (flags['color'] === true) setColorEnabled(true);
@@ -126,19 +137,19 @@ export async function main(argv: string[]): Promise<number> {
     setLocale(localeFlag);
   }
 
-  const version = flags['version'];
-  if (version === true) {
+  if (showVersion) {
     console.log(VERSION);
     return 0;
   }
+  if (!command || flags['help'] || command === 'help') {
+    console.log(renderHelp());
+    return 0;
+  }
+  const version = flags['version'];
   if ((command === 'plan' || command === 'install') && version !== undefined &&
       (typeof version !== 'string' || version.length === 0)) {
     console.error(t('cli.msg.translatorVersionExpected', undefined, '--version expects one translator version.'));
     return 2;
-  }
-  if (!command || flags['help'] || command === 'help') {
-    console.log(renderHelp());
-    return command && command !== 'help' ? 1 : 0;
   }
 
   const found = commandMap().get(command);

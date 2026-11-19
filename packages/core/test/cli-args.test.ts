@@ -56,6 +56,26 @@ test('the global version switch returns the CLI version', () => {
   assert.equal(cli('--version=legacy', 'install', 'unopened-test-game'), cliVersion);
 });
 
+test('explicit help succeeds before or after a command', () => {
+  const help = cli('--help');
+  assert.equal(cli('--help', 'stats'), help);
+  assert.equal(cli('stats', '--help'), help);
+  assert.equal(cli('install', '--version', '-h'), help);
+});
+
+test('global version takes precedence over a translator pin in either order', () => {
+  for (const args of [
+    ['-v', 'install', 'unopened-test-game', '--version=5.5.2'],
+    ['install', 'unopened-test-game', '--version=5.5.2', '-v'],
+    ['--version', 'plan', 'unopened-test-game', '--version=5.5.2'],
+    ['install', '--version=', '-v'],
+  ]) {
+    assert.equal(cli(...args), cliVersion);
+  }
+  assert.deepEqual(parseArgs(['-v']), { command: '', args: [], flags: { version: true } });
+  assert.equal(parseArgs(['-v', 'install', 'Game', '--version=5.5.2']).flags.version, '5.5.2');
+});
+
 test('missing or repeated translator versions fail before dispatch', () => {
   for (const args of [['--version', '--yes'], ['--version='], ['--version=5.5.2', '--version=5.6.1']]) {
     const result = runCli('--locale', 'en', 'install', 'unopened-test-game', ...args);
