@@ -1134,7 +1134,8 @@
       "configAt": "config: {path}",
       "scannedAt": "{count} games, scanned {when}",
       "never": "never",
-      "unknownCommand": "unknown command"
+      "unknownCommand": "unknown command",
+      "translatorVersionExpected": "--version expects one translator version."
     },
     "help": {
       "scan": "Scan roots for games and save the index",

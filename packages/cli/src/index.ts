@@ -68,6 +68,11 @@ function wrap(text: string, indent: string, limit = 62): string {
   return lines.join(`\n${indent}`);
 }
 
+const valueOptions = new Set([
+  'locale', 'depth', 'engine', 'backend', 'limit', 'lang', 'from', 'endpoint',
+  'translator', 'variant', 'set', 'loader', 'name',
+]);
+
 export function parseArgs(argv: string[]): { command: string; args: string[]; flags: Flags } {
   const flags: Flags = {};
   const args: string[] = [];
@@ -78,22 +83,20 @@ export function parseArgs(argv: string[]): { command: string; args: string[]; fl
     if (token.startsWith('--')) {
       const [rawKey, inlineValue] = token.slice(2).split(/=(.*)/s);
       const key = rawKey!;
-      let value: string | boolean;
-      if (inlineValue !== undefined) {
-        value = inlineValue;
-      } else {
-        const next = argv[i + 1];
-        if (next !== undefined && !next.startsWith('-')) {
-          value = next;
-          i += 1;
-        } else {
-          value = true;
-        }
+      // After plan/install, --version takes a translator pin. Elsewhere it is a global switch.
+      const translatorVersion = key === 'version' && (command === 'plan' || command === 'install');
+      const takesValue = valueOptions.has(key) || translatorVersion;
+      const next = argv[i + 1];
+      let value: string | boolean = inlineValue ?? (translatorVersion ? '' : true);
+      if (inlineValue === undefined && takesValue && next !== undefined && !next.startsWith('-')) {
+        value = next;
+        i += 1;
+      } else if (key === 'version' && !translatorVersion && inlineValue) {
+        value = true;
       }
-      // Repeating a flag accumulates rather than overwrites, so
-      // `--set a=1 --set b=2` keeps both.
+      // Repeating a switch leaves it enabled; repeated values such as --set accumulate.
       const existing = flags[key];
-      if (existing === undefined) flags[key] = value;
+      if (existing === undefined || (existing === true && value === true)) flags[key] = value;
       else if (Array.isArray(existing)) existing.push(value);
       else flags[key] = [existing, value];
       continue;
@@ -123,9 +126,15 @@ export async function main(argv: string[]): Promise<number> {
     setLocale(localeFlag);
   }
 
-  if (flags['version']) {
+  const version = flags['version'];
+  if (version === true) {
     console.log(VERSION);
     return 0;
+  }
+  if ((command === 'plan' || command === 'install') && version !== undefined &&
+      (typeof version !== 'string' || version.length === 0)) {
+    console.error(t('cli.msg.translatorVersionExpected', undefined, '--version expects one translator version.'));
+    return 2;
   }
   if (!command || flags['help'] || command === 'help') {
     console.log(renderHelp());
