@@ -246,12 +246,13 @@ export async function refreshLibraryGame(
 
 /** Finds a game by exact path, folder name, or case-insensitive substring. */
 export function findGames(index: LibraryIndex, query: string): GameProfile[] {
-  const q = query.toLowerCase();
+  const searchText = (text: string) => text.normalize('NFC').toLowerCase();
+  const q = searchText(query);
   const exact = index.games.filter((g) => g.path.toLowerCase() === path.resolve(query).toLowerCase());
   if (exact.length > 0) return exact;
-  const byName = index.games.filter((g) => g.name.toLowerCase() === q);
+  const byName = index.games.filter((g) => searchText(g.name) === q);
   if (byName.length > 0) return byName;
-  return index.games.filter((g) => g.name.toLowerCase().includes(q) || (g.title ?? '').toLowerCase().includes(q));
+  return index.games.filter((g) => searchText(g.name).includes(q) || searchText(g.title ?? '').includes(q));
 }
 
 /**

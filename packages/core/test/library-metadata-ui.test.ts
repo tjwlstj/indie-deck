@@ -127,6 +127,29 @@ test('library labels and visibility controls keep hidden artwork inert and prese
       get('libraryFavoritesOnly').click(); assert.deepEqual(visibleGames().map((game: any) => game.id), [b]);
       get('libraryFavoritesOnly').click(); assert.equal(visibleGames().length, 3);
     });
+    await context.test('library search matches composed and decomposed names and titles under active filters', t => {
+      const previous = { games: store.games, query: store.query, engineFilter: store.engineFilter };
+      t.after(() => { Object.assign(store, previous); });
+      const profiles = [
+        { ...games[0], name: '게임 별빛 Alpha'.normalize('NFD'), title: '새벽 Beta', path: '/games/별빛'.normalize('NFD') },
+        { ...games[1], name: '게임 별빛 Alpha', title: '새벽 Beta'.normalize('NFD'), path: '/games/별빛', engineId: 'godot' },
+      ];
+      const originals = structuredClone(profiles);
+      store.games = profiles;
+      const search = (query: string) => {
+        store.query = query;
+        return visibleGames().map((game: any) => game.id).sort();
+      };
+      for (const form of ['NFC', 'NFD'] as const) {
+        for (const query of ['  별빛 aL ', ' 새벽 bE ']) {
+          assert.deepEqual(search(query.normalize(form)), [a, b]);
+        }
+      }
+      store.engineFilter = 'unity';
+      assert.deepEqual(search('별빛'), [a]);
+      assert.deepEqual(search('달빛'), []);
+      assert.deepEqual(store.games, originals);
+    });
     await context.test('dialog saves explicit labels for exactly one game and preserves favorites and other game data', async () => {
       row(a).querySelector('.library-options')!.click();
       assert.equal(selections, 0); const dialog = get('gameLibraryOptions'); assert.equal(dialog.dataset.gameId, a); assert.equal(dialog.open, true);

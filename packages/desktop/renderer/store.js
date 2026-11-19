@@ -97,7 +97,7 @@ export function emit(scope = 'all') {
 }
 
 export function visibleGames() {
-  const query = state.query.trim().toLowerCase();
+  const query = state.query.trim().normalize('NFC').toLowerCase();
   const preferences = state.libraryPreferences;
   const favorites = new Set(preferences.favorites);
   const duplicates = duplicateNameCounts(state.games);
@@ -109,7 +109,7 @@ export function visibleGames() {
     if (state.statusFilter === 'translated' && game.installedTranslators.length === 0) return false;
     if (state.statusFilter === 'issues' && !state.audits.has(game.id)) return false;
     if (query) {
-      const haystack = `${game.name} ${game.title ?? ''} ${game.engineName}`.toLowerCase();
+      const haystack = `${game.name} ${game.title ?? ''} ${game.engineName}`.normalize('NFC').toLowerCase();
       if (!haystack.includes(query)) return false;
     }
     return true;
