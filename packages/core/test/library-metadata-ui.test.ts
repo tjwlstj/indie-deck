@@ -14,7 +14,12 @@ class Element {
   }, contains: (name: string) => this.className.split(/\s+/).includes(name), add: (name: string) => this.classList.toggle(name, true), remove: (name: string) => this.classList.toggle(name, false) };
   constructor(tag = 'div') { this.tagName = tag.toUpperCase(); }
   append(...children: Element[]) { for (const child of children) { child.parent = this; child.connect(this.isConnected); this.children.push(child); } }
-  connect(value: boolean) { this.isConnected = value; for (const child of this.children) child.connect(value); }
+  connect(value: boolean) {
+    this.isConnected = value;
+    const document = (globalThis as any).document;
+    if (!value && document?.activeElement === this) document.activeElement = document.body;
+    for (const child of this.children) child.connect(value);
+  }
   replaceChildren(...children: Element[]) { for (const child of this.children) child.connect(false); this.children = []; this.append(...children); }
   setAttribute(key: string, value: unknown) { this.attributes[key] = String(value); }
   getAttribute(key: string) { return this.attributes[key] ?? null; }
@@ -33,7 +38,9 @@ class Element {
   querySelectorAll(selector: string): Element[] { return descendants(this).filter(node => matches(node, selector)); }
   querySelector(selector: string) { return this.querySelectorAll(selector)[0] ?? null; }
   matches(selector: string) { return matches(this, selector); }
-  closest() { return null; }
+  closest(selector: string): Element | null {
+    return matches(this, selector) ? this : this.parent?.closest(selector) ?? null;
+  }
   remove() { if (this.parent) this.parent.children = this.parent.children.filter(child => child !== this); this.connect(false); }
   showModal() { this.open = true; }
   close() { this.open = false; this.event('close'); }
@@ -45,6 +52,8 @@ function descendants(node: Element): Element[] { return node.children.flatMap(ch
 function matches(node: Element, selector: string) {
   if (selector === '[data-thumbnail-game-id]') return Boolean(node.dataset.thumbnailGameId);
   if (selector === ':disabled') return node.disabled;
+  if (selector === 'button:not(:disabled)') return node.tagName === 'BUTTON' && !node.disabled;
+  if (selector === 'dialog[open]') return node.tagName === 'DIALOG' && node.open;
   if (selector.startsWith('.')) return node.className.split(/\s+/).includes(selector.slice(1));
   if (selector.startsWith('#')) return node.id === selector.slice(1);
   return node.tagName === selector.toUpperCase();
@@ -59,7 +68,7 @@ test('library labels and visibility controls keep hidden artwork inert and prese
   const a = '1111111111111111', b = '2222222222222222', c = '3333333333333333';
   const body = new Element('body'); body.connect(true);
   for (const id of ['gameList', 'counts', 'librarySort', 'libraryFavoritesOnly', 'libraryDuplicatesOnly',
-    'libraryPreferencesStatus', 'libraryPreviewMode', 'libraryAdultFilter', 'libraryPurchaseFilter']) {
+    'libraryPreferencesStatus', 'libraryPreviewMode', 'libraryAdultFilter', 'libraryPurchaseFilter', 'search', 'engineFilters', 'issueCount']) {
     const node = new Element(); node.id = id; body.append(node);
   }
   const observed: Element[] = [], saves: any[] = []; let selections = 0, thumbnailRequests = 0;
@@ -68,7 +77,7 @@ test('library labels and visibility controls keep hidden artwork inert and prese
   const get = (id: string) => descendants(body).find(node => node.id === id)!;
   (globalThis as any).document = { body, hidden: false, activeElement: body, hasFocus: () => true,
     getElementById: get, createElement: (tag: string) => new Element(tag), addEventListener() {}, removeEventListener() {},
-    querySelectorAll: (selector: string) => body.querySelectorAll(selector), querySelector: () => null };
+    querySelectorAll: (selector: string) => body.querySelectorAll(selector), querySelector: (selector: string) => body.querySelector(selector) };
   (globalThis as any).window = { addEventListener() {}, removeEventListener() {}, innerWidth: 1000, innerHeight: 800,
     setTimeout, clearTimeout, Event,
     indiedeck: { libraryPreferences: { read: () => read.promise,
@@ -77,7 +86,7 @@ test('library labels and visibility controls keep hidden artwork inert and prese
   (globalThis as any).IntersectionObserver = class { observe(node: Element) { observed.push(node); } unobserve() {} };
   const { state, subscribe, visibleGames } = await import('../../desktop/renderer/store.js');
   const { defaultLibraryPreferences } = await import('../../desktop/renderer/library-preferences.js');
-  const { renderGameList, openGameLibraryOptions } = await import('../../desktop/renderer/panels/library.js');
+  const { renderGameList, renderSidebar, openGameLibraryOptions } = await import('../../desktop/renderer/panels/library.js');
   const store: any = state;
   const games = [a, b, c].map((id, index) => ({ id, name: ['Adult fixture', 'General fixture', 'Unclassified fixture'][index],
     engineName: 'Unity', engineId: 'unity', arch: 'unknown', installedTranslators: [] }));
@@ -155,6 +164,48 @@ test('library labels and visibility controls keep hidden artwork inert and prese
       pending.resolve(defaultLibraryPreferences()); await waitFor(() => saves.length === before + 2);
       assert.equal(store.libraryPreferences.adultFilter, 'only'); assert.equal(store.libraryPreferences.purchaseFilter, 'gog');
       saveResponse = async value => value; selectFilter('libraryPurchaseFilter', 'all'); selectFilter('libraryAdultFilter', 'all');
+    });
+    await context.test('list rebuilds preserve keyboard actions by game and give removed rows a reachable fallback', async () => {
+      const original = structuredClone(store.libraryPreferences);
+      store.libraryPreferences = { ...original, sort: 'favorites', favorites: [b] };
+      const selectAndRender = (id: string) => { store.selected = id; render(); };
+      renderGameList(selectAndRender);
+      row(c).focus(); row(c).event('keydown', { key: 'Enter' });
+      assert.equal(document.activeElement, row(c));
+      const star = () => row(c).querySelector('.favorite-toggle')!;
+      const index = rows().indexOf(row(c));
+      star().focus(); star().click();
+      assert.ok(rows().indexOf(row(c)) < index);
+      assert.equal(document.activeElement, star());
+      for (const selector of ['.library-options', '.thumbnail-preview-toggle']) {
+        row(c).querySelector(selector)!.focus(); render();
+        assert.equal(document.activeElement, row(c).querySelector(selector));
+      }
+
+      store.libraryPreferences = { ...store.libraryPreferences, favoritesOnly: true };
+      render(); row(b).querySelector('.favorite-toggle')!.focus();
+      row(b).querySelector('.favorite-toggle')!.click();
+      assert.equal(document.activeElement, row(c), 'a replacement row never inherits a destructive or toggle action');
+      star().focus(); star().click();
+      assert.equal(rows().length, 0); assert.equal(document.activeElement, get('search'));
+      store.libraryPreferences = original; store.selected = null;
+      render(); assert.equal(document.activeElement, get('search'), 'a background render must not steal search focus');
+
+      const dialog = openGameLibraryOptions(games[0]);
+      get('cancelGameLibraryOptions').focus(); render();
+      assert.equal(document.activeElement, get('cancelGameLibraryOptions'));
+      dialog.close();
+      row(c).focus(); store.view = 'settings'; render();
+      assert.equal(document.activeElement, body, 'a hidden library must not receive focus');
+      store.view = 'library';
+    });
+    await context.test('sidebar rebuilds preserve the active engine button and fall back to all engines if removed', () => {
+      store.stats = { byEngine: [{ engineId: 'unity', engineName: 'Unity', count: 3 }] };
+      const renderFilters = () => renderSidebar(() => {});
+      const buttons = () => get('engineFilters').querySelectorAll('button');
+      renderFilters(); buttons()[1].focus(); renderFilters(); assert.equal(document.activeElement, buttons()[1]);
+      store.stats.byEngine = []; renderFilters(); assert.equal(document.activeElement, buttons()[0]);
+      get('search').focus(); renderFilters(); assert.equal(document.activeElement, get('search'));
     });
     await context.test('a failed save keeps the dialog draft and suppresses all list image creation', async () => {
       saveResponse = async () => { throw new Error('private failure'); };

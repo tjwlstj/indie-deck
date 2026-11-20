@@ -57,6 +57,7 @@ let savingScanSettings = false;
 let scanRequestToken = 0;
 let detailLoadingGameId = null;
 let gamingMode = null;
+let settingsOpener = null;
 const handledOutcomes = new Map();
 
 /* --------------------------------------------------------------- render */
@@ -117,6 +118,7 @@ function renderView() {
   document.body.dataset.view = state.view;
   $('libraryView').hidden = state.view !== 'library';
   $('settingsView').hidden = state.view !== 'settings';
+  $('openSettings').hidden = state.view === 'settings';
 }
 
 function operationLabel(operation) {
@@ -597,18 +599,45 @@ async function changeLocale(locale) {
   gamingMode?.render();
   renderGamingSettings();
   populateLocaleSelect();
+  const depthDraft = $('scanDepth').value;
   populateScanSettings();
+  if (depthDraft !== '' && validScanDepth(Number(depthDraft))) $('scanDepth').value = depthDraft;
   await refreshLibraryView(false);
   if (state.selected) await refreshDetail();
 }
 
-function openSettings() {
-  state.view = 'settings';
+function jumpToSettingsSection(id) {
+  const section = typeof id === 'string' ? $(id) : null;
+  if (!section?.matches('#settingsView .settings-section')) return false;
+  $('settingsSectionJump').value = id;
+  section.scrollIntoView({ block: 'start' });
+  const heading = section.querySelector('h2');
+  // A stable heading survives async panel refreshes. Keep it in the gamepad
+  // navigation set only while focused; Tab then reaches the section controls.
+  if (document.activeElement !== heading) {
+    heading.tabIndex = 0;
+    heading.addEventListener('blur', () => heading.removeAttribute('tabindex'), { once: true });
+    heading.focus({ preventScroll: true });
+  }
+  return true;
+}
+
+function populateSettingsForms() {
   renderAbout();
   renderRoots();
   populateLocaleSelect();
   populateScanSettings();
   populateDefaultsForm(state.registry.translators.find((x) => x.id === 'xunity-autotranslator')?.endpoints ?? []);
+}
+
+function openSettings(sectionId, opener = document.activeElement) {
+  if (state.view === 'settings') {
+    jumpToSettingsSection(sectionId);
+    return;
+  }
+  settingsOpener = opener;
+  state.view = 'settings';
+  populateSettingsForms();
   renderView();
   renderOperationChrome();
   renderGamingSettings();
@@ -617,12 +646,19 @@ function openSettings() {
   void refreshArchiveRecords().catch((err) => setStatus(err.message, 'err'));
   void refreshStoreConnections();
   void refreshLauncherUpdateStatus();
+  if (!jumpToSettingsSection(sectionId)) $('closeSettings').focus({ preventScroll: true });
 }
 
 function closeSettings() {
+  if (state.view !== 'settings') return;
   state.view = 'library';
   renderView();
   emit('all');
+  const opener = settingsOpener;
+  settingsOpener = null;
+  const target = opener && opener !== document.body && opener.isConnected && !opener.disabled && opener.getClientRects().length
+    ? opener : document.querySelector('#gameList .game.selected') ?? $('openSettings');
+  target.focus({ preventScroll: true });
 }
 
 async function saveDefaults() {
@@ -703,7 +739,7 @@ async function boot() {
   void refreshSecurityStatus().then(() => {
     if (getSecuritySnapshot()?.task?.status !== 'running') return;
     state.view = 'settings'; renderView();
-    $('securitySettings')?.scrollIntoView({ block: 'nearest' });
+    jumpToSettingsSection('securitySettings');
   });
   const recovery = recoverMaintenance().catch((err) => setStatus(err.message, 'err'));
   // current() does not wait for main's mutation queue, so a reload during an
@@ -712,7 +748,7 @@ async function boot() {
     if (!isArchiveActive(state.archiveProgress)) return;
     state.view = 'settings';
     renderView();
-    $('archiveSettings')?.scrollIntoView({ block: 'nearest' });
+    jumpToSettingsSection('archiveSettings');
   }).catch((err) => setStatus(err.message, 'err'));
 
   await loadLocale();
@@ -728,8 +764,8 @@ async function boot() {
   void refreshMToolStatus().catch(() => {});
 
   applyStaticTranslations();
-  renderAbout();
-  populateLocaleSelect();
+  if (state.view === 'settings') populateSettingsForms();
+  else { renderAbout(); populateLocaleSelect(); }
 
   gamingMode = bindGamingMode({ api: api.gaming, onError: () => setStatus(t('ui.gaming.failed', undefined, 'Could not change gaming mode.'), 'err'),
     onBack: (exitMode) => {
@@ -740,12 +776,12 @@ async function boot() {
       exitMode();
     } });
 
-  $('openSettings').addEventListener('click', openSettings);
+  $('openSettings').addEventListener('click', (event) => openSettings(undefined, event.currentTarget));
+  $('goToSettingsSection').addEventListener('click', () => jumpToSettingsSection($('settingsSectionJump').value));
   $('closeSettings').addEventListener('click', closeSettings);
   $('taskStatus').addEventListener('click', () => {
     if (state.archiveBusy || isArchiveActive(state.archiveProgress) || (!state.operation && state.archiveProgress)) {
-      openSettings();
-      $('archiveSettings')?.scrollIntoView({ block: 'nearest' });
+      openSettings('archiveSettings', $('taskStatus'));
       return;
     }
     const gameId = state.operation?.gameId;
@@ -764,15 +800,8 @@ async function boot() {
   $('saveScanSettings').addEventListener('click', () => void saveScanSettings());
 
   window.addEventListener('indiedeck:add-root', () => void pickRootAndScan());
-  window.addEventListener('indiedeck:open-settings', (event) => {
-    openSettings();
-    const section = event.detail?.section;
-    if (['mtoolSettings', 'archiveSettings', 'launcherUpdates', 'librarySettings', 'storeSettings', 'gamingSettings'].includes(section)) $(section)?.scrollIntoView({ block: 'nearest' });
-  });
-  $('importArchive').addEventListener('click', () => {
-    openSettings();
-    $('archiveSettings')?.scrollIntoView({ block: 'nearest' });
-  });
+  window.addEventListener('indiedeck:open-settings', (event) => openSettings(event.detail?.section));
+  $('importArchive').addEventListener('click', (event) => openSettings('archiveSettings', event.currentTarget));
   window.addEventListener('indiedeck:select-game', (event) => {
     const gameId = event.detail?.gameId;
     if (!gameId || !state.games.some((game) => game.id === gameId)) return;

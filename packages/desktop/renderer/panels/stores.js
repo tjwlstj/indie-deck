@@ -350,6 +350,9 @@ export function renderGameStoreLinks(panel, profile) {
 export function renderStoreSettings() {
   const body = $('storeSettingsBody');
   if (!body) return;
+  const previousGuide = body.querySelector?.('.store-extension-guide');
+  const guideExpanded = previousGuide?.open ?? true;
+  const restoreGuideFocus = Boolean(document.activeElement && document.activeElement === previousGuide?.firstElementChild);
   releaseThumbnailPreviews(body);
   body.replaceChildren();
   body.append(el('p', 'settings-hint', t('ui.stores.description')),
@@ -385,7 +388,7 @@ export function renderStoreSettings() {
   // Reload that same extension after a bundled code update.
   const korean = currentLocale().toLowerCase().startsWith('ko');
   const guide = el('details', 'store-extension-guide');
-  guide.open = true;
+  guide.open = guideExpanded;
   guide.append(el('summary', null, t('ui.stores.installGuideTitle', undefined,
     korean ? '브라우저별 설치 방법' : 'Installation by browser')));
   const instructions = el('ul', 'store-steps');
@@ -480,4 +483,5 @@ export function renderStoreSettings() {
     card.append(remove);
     body.append(card);
   }
+  if (restoreGuideFocus) guide.firstElementChild.focus({ preventScroll: true });
 }

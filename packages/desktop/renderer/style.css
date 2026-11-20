@@ -321,7 +321,7 @@ body.gaming-mode { font-size: 16px; }
 .gaming-mode .detail-sticky h1 { font-size: 26px; }
 .gaming-mode .list-toolbar { padding: 14px; gap: 10px; }
 .gaming-mode .favorite-toggle { min-width: 42px; font-size: 26px; }
-.gaming-mode .settings-body { max-width: 1080px; }
+.gaming-mode .settings-section { max-width: 1080px; }
 @media (max-width: 1050px) {
   .gaming-mode .shell { grid-template-columns: minmax(310px, .85fr) minmax(350px, 1fr); }
   .gaming-mode .game { grid-template-columns: 80px minmax(0, 1fr) auto auto auto; padding: 10px; }
@@ -1017,16 +1017,33 @@ select {
 
 .settings {
   flex: 1;
-  overflow-y: auto;
   min-height: 0;
-  padding: 18px 26px 40px;
+  display: flex;
+  flex-direction: column;
 }
 
 .settings-head {
   display: flex;
-  align-items: baseline;
-  gap: 18px;
-  margin-bottom: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  padding: 10px 26px;
+  border-bottom: 1px solid var(--line);
+}
+
+.settings-jump {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.settings-jump select {
+  max-width: min(52vw, 24em);
+}
+
+.settings-jump label {
+  color: var(--text-dim);
 }
 
 .settings-head h1 {
@@ -1035,15 +1052,25 @@ select {
 }
 
 .settings-body {
-  max-width: 620px;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 26px 40px;
+  scroll-padding-block-start: 8px;
 }
 
 .settings-section {
+  max-width: 620px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--bg-raised);
   padding: 14px 16px;
   margin-top: 16px;
+}
+
+.settings-jump select:focus-visible, .settings-section h2:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .settings-section h2 {

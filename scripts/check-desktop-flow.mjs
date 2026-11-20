@@ -201,6 +201,7 @@ try {
     '[smoke] read-only candidate preview → hidden list image',
     '[smoke] gaming mode and guarded owned-game lifecycle',
     '[smoke] browser companion metadata',
+    '[smoke] library keyboard focus and settings navigation',
     '[smoke] old/current options',
     '[smoke] mocked security gates',
   ];

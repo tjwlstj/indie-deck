@@ -137,10 +137,25 @@
       <header class="settings-head">
         <button id="closeSettings" class="ghost" data-i18n="ui.settings.back">← Back to library</button>
         <h1 data-i18n="ui.settings.title">Settings</h1>
+        <div class="settings-jump">
+          <label for="settingsSectionJump" data-i18n="ui.settings.jumpLabel">Jump to section</label>
+          <select id="settingsSectionJump">
+            <option value="generalSettings" data-i18n="ui.settings.general">General</option>
+            <option value="launcherUpdates" data-i18n="ui.update.title">Launcher updates</option>
+            <option value="gamingSettings" data-i18n="ui.gaming.settingsTitle">Gaming mode and launcher integration</option>
+            <option value="translationSettings" data-i18n="ui.settings.translationDefaults">Translation defaults</option>
+            <option value="librarySettings" data-i18n="ui.settings.library">Library</option>
+            <option value="securitySettings" data-i18n="ui.security.title">Security</option>
+            <option value="mtoolSettings" data-i18n="ui.mtool.settingsTitle">Local MTool integration</option>
+            <option value="storeSettings" data-i18n="ui.stores.title">Stores and browser integration</option>
+            <option value="archiveSettings" data-i18n="ui.archive.title">Game archives and versions</option>
+          </select>
+          <button type="button" id="goToSettingsSection" class="ghost" data-i18n="ui.settings.jumpAction">Go</button>
+        </div>
       </header>
 
       <div class="settings-body">
-        <section class="settings-section">
+        <section id="generalSettings" class="settings-section">
           <h2 data-i18n="ui.settings.general">General</h2>
           <div class="settings-row">
             <label for="uiLocale"><span data-i18n="ui.app.language">Language</span></label>
@@ -162,7 +177,7 @@
           <div id="gamingSettingsBody"></div>
         </section>
 
-        <section class="settings-section">
+        <section id="translationSettings" class="settings-section">
           <h2 data-i18n="ui.settings.translationDefaults">Translation defaults</h2>
           <p class="settings-hint" data-i18n="ui.settings.defaultsHint">
             Applied to newly computed plans after you press save.

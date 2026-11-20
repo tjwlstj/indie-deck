@@ -17,6 +17,11 @@ class Element {
   append(...nodes: Element[]) { this.children.push(...nodes); }
   replaceChildren(...nodes: Element[]) { this.children = nodes; }
   addEventListener(name: string, listener: () => void) { this.listeners[name] = listener; }
+  querySelector(selector: string) {
+    return all(this).find(node => '.' + node.className === selector) ?? null;
+  }
+  get firstElementChild() { return this.children[0] ?? null; }
+  focus() { (document as any).activeElement = this; }
   setAttribute() {}
 }
 const body = new Element('div');
@@ -47,6 +52,23 @@ test('extension guidance selects the correct paths and explains temporary Firefo
     assert.match(instructions[3], /about:debugging.*firefox\/manifest\.json/);
     assert.match(instructions[3], locale === 'ko' ? /다시 시작하면 다시/ : /after restarting Firefox/);
   }
+});
+
+test('a redraw preserves the guide disclosure and keeps keyboard focus on its summary', () => {
+  renderStoreSettings();
+  const guide = body.querySelector('.store-extension-guide')!;
+  guide.open = false;
+  guide.firstElementChild!.focus();
+  renderStoreSettings();
+  const next = body.querySelector('.store-extension-guide')!;
+  assert.equal(next.open, false);
+  assert.equal(document.activeElement, next.firstElementChild);
+  next.open = true;
+  const outside = new Element('button');
+  outside.focus();
+  renderStoreSettings();
+  assert.equal(body.querySelector('.store-extension-guide')!.open, true);
+  assert.equal(document.activeElement, outside);
 });
 
 test('the folder button uses the existing explicit companion handoff', async () => {

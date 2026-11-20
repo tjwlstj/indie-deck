@@ -5,6 +5,15 @@ Versioning while the project is pre-1.0.
 
 ## [Unreleased]
 
+## [0.1.22] - 2026-11-20
+
+### Library and settings navigation
+
+- Keep keyboard and gamepad focus on the same game or its controls after a list refresh or a favorite change.
+- Reach any of the nine settings sections from the settings header and return to the library from the bottom of the page.
+- Keep unsaved translation defaults and scan depth when navigating within an open settings view.
+- Preserve the expanded or collapsed browser installation guide when settings refresh during the session.
+
 ## [0.1.21] - 2026-11-18
 
 ### Library and settings

@@ -1359,9 +1359,58 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
     return document.body.dataset.libraryState === 'ready' && state.storeConnections?.snapshot?.links.length === 1
       && state.storeConnections.snapshot.links[0].url === 'https://store.steampowered.com/app/440/';
   })()`, 'store link reload persistence and canonical URL');
-  await evaluate(`document.getElementById('openSettings').click()`);
+  await waitFor(`!!document.querySelector('#gameList .game .favorite-toggle:not(:disabled)')`, 'library controls after reload');
+  const focusedGame = await evaluate<string>(`(() => {
+    const row = document.querySelector('#gameList .game');
+    row.focus(); return row.dataset.gameId;
+  })()`);
+  const focusRow = `#gameList .game[data-game-id="${focusedGame}"]`;
+  window.webContents.debugger.attach('1.3');
+  try {
+    const press = async (key: string, code: string, keyCode: number) => {
+      for (const type of ['rawKeyDown', 'keyUp']) {
+        await window.webContents.debugger.sendCommand('Input.dispatchKeyEvent', { type, key, code, windowsVirtualKeyCode: keyCode });
+      }
+    };
+    await press('Enter', 'Enter', 13);
+    await waitFor(`(async () => (await import('./store.js')).state.detail?.profile.id === '${focusedGame}'
+      && document.activeElement.matches('${focusRow}'))()`, 'keyboard-selected game retains row focus');
+    const expected = await evaluate<string>(`(() => {
+      const star = document.querySelector('${focusRow} .favorite-toggle');
+      star.focus(); return String(star.getAttribute('aria-pressed') !== 'true');
+    })()`);
+    await press(' ', 'Space', 32);
+    await waitFor(`document.activeElement.matches('${focusRow} .favorite-toggle[aria-pressed="${expected}"]')`,
+      'space toggles the favorite and retains focus on its new button');
+  } finally { window.webContents.debugger.detach(); }
+
+  await evaluate(`(() => { const opener = document.getElementById('openSettings'); opener.focus(); opener.click(); })()`);
   await waitFor(`!!document.querySelector('.store-link .store-remove:not(:disabled)')`, 'store list reload settled');
-  await evaluate(`document.getElementById('storeSettings').scrollIntoView({ block: 'start' })`);
+  const draftLanguage = await evaluate<string>(`(() => {
+    const target = document.getElementById('targetLanguage');
+    const draft = target.value === 'ko' ? 'en' : 'ko';
+    target.value = draft; target.dispatchEvent(new Event('change', { bubbles: true }));
+    const picker = document.getElementById('settingsSectionJump');
+    picker.value = 'storeSettings'; picker.dispatchEvent(new Event('change', { bubbles: true }));
+    document.getElementById('goToSettingsSection').click();
+    return draft;
+  })()`);
+  await waitFor(`(() => {
+    const heading = document.querySelector('#storeSettings h2'), back = document.getElementById('closeSettings').getBoundingClientRect();
+    const bounds = heading.getBoundingClientRect();
+    return document.activeElement === heading && back.top >= 0 && back.bottom <= bounds.top + 1 && bounds.bottom <= innerHeight;
+  })()`, 'store heading focused with the settings back button still visible');
+  await evaluate(`window.dispatchEvent(new CustomEvent('indiedeck:open-settings', { detail: { section: 'storeSettings' } }))`);
+  if (!(await evaluate<boolean>(`document.getElementById('targetLanguage').value === '${draftLanguage}'`))) {
+    throw new Error('Returning to an open settings section discarded the translation defaults draft.');
+  }
+  await waitFor(`!!document.querySelector('details.store-extension-guide[open]') && !!document.querySelector('.store-refresh:not(:disabled)')`,
+    'extension guide and store controls ready');
+  await evaluate(`document.querySelector('.store-extension-guide summary').click()`);
+  await waitFor(`!!document.querySelector('details.store-extension-guide:not([open])')`, 'guide explicitly collapsed');
+  await evaluate(`document.querySelector('.store-refresh').click()`);
+  await waitFor(`!!document.querySelector('.store-refresh:not(:disabled)') && !!document.querySelector('details.store-extension-guide:not([open])')`,
+    'collapsed browser guide survives the completed store refresh');
   await evaluate(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`);
   if (process.env['INDIEDECK_STORES_SCREENSHOT']) await writeFile(process.env['INDIEDECK_STORES_SCREENSHOT'], (await window.webContents.capturePage()).toPNG());
   await evaluate(`document.querySelector('.store-remove').click()`);
@@ -1370,6 +1419,11 @@ async function runOperationSmoke(window: BrowserWindow): Promise<void> {
   })()`, 'store reference removal');
   if (catalogBeforeStoreLink !== await readFile(path.join(defaultDataDir(), 'game-installations.json'), 'utf8')) throw new Error('Store references changed payload ownership or active installations.');
   console.log('[smoke] browser companion metadata → explicit managed-product reference → fixed browser/client handoff → reload/removal; no authentication claims or payload changes');
+
+  await evaluate(`document.getElementById('closeSettings').click()`);
+  await waitFor(`document.body.dataset.view === 'library' && document.activeElement.id === 'openSettings'`,
+    'settings back returns focus to its library opener');
+  console.log('[smoke] library keyboard focus and settings navigation retained the active row, favorite, language draft and collapsed guide');
 
   // Real scanner/UI/IPC against disposable empty folders. Delay is owned by
   // the offline bootstrap, not an application option or renderer authority.

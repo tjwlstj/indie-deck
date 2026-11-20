@@ -49,6 +49,9 @@ export function openGameLibraryOptions(game) {
     !state.games.some(entry => entry.id === game?.id)) return null;
   const previous = $('gameLibraryOptions');
   if (previous) { previous.close(); previous.remove(); }
+  const list = $('gameList');
+  const returnFocus = { id: game.id, action: '.library-options',
+    index: Math.max(0, [...list.children].findIndex(row => row.dataset.gameId === game.id)) };
   const dialog = el('dialog', 'library-options-dialog');
   dialog.id = 'gameLibraryOptions'; dialog.dataset.gameId = game.id;
   dialog.setAttribute('aria-labelledby', 'gameLibraryOptionsTitle');
@@ -96,7 +99,7 @@ export function openGameLibraryOptions(game) {
   dialog.addEventListener('cancel', event => { if (saving) event.preventDefault(); });
   dialog.addEventListener('close', () => {
     dialog.remove();
-    document.querySelector?.(`[data-game-id="${game.id}"] .library-options`)?.focus();
+    restoreListFocus(list, returnFocus);
   });
   actions.append(save, cancel);
   dialog.append(heading, hideLabel, adultLabel, stores, hint, status, actions);
@@ -210,8 +213,47 @@ function healthDot(game) {
   return audit.issues.some((i) => i.severity === 'warn' || i.severity === 'block') ? 'warn' : 'ok';
 }
 
+// Rebuilds happen after both keyboard actions and background events. Restore
+// only the control that was removed, and respect an intervening focus change.
+function restoreLibraryFocus(target, reveal = false) {
+  if (!target || state.view !== 'library' || $('libraryView')?.hidden || document.hidden ||
+      document.querySelector?.('dialog[open]') || (document.activeElement && document.activeElement !== document.body)) return;
+  target.focus({ preventScroll: true });
+  if (reveal) target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+
+const rowActions = ['.favorite-toggle', '.library-options', '.thumbnail-preview-toggle'];
+
+function captureListFocus(container) {
+  const active = document.activeElement;
+  if (!active || active.closest?.('#gameList') !== container) return null;
+  const row = active.closest('.game');
+  return {
+    id: row?.dataset.gameId,
+    index: row ? [...container.children].indexOf(row) : 0,
+    action: rowActions.find(selector => active.matches(selector)),
+  };
+}
+
+function restoreListFocus(container, focus) {
+  if (!focus) return;
+  const rows = [...container.querySelectorAll('.game')];
+  const sameGame = rows.find(row => row.dataset.gameId === focus.id);
+  const action = focus.action && sameGame?.querySelector(focus.action);
+  const neighbor = rows[Math.min(focus.index, rows.length - 1)];
+  const clearFilters = $('clearLibraryFilters');
+  const fallback = clearFilters && !clearFilters.hidden && !clearFilters.disabled ? clearFilters : $('search');
+  const target = action && !action.disabled ? action : sameGame ?? neighbor ?? container.querySelector('button:not(:disabled)') ?? fallback;
+  // A routine redraw must preserve the user's scroll position. Reveal focus
+  // when a sort moved its game or a filter removed it.
+  restoreLibraryFocus(target, !sameGame || sameGame !== neighbor);
+}
+
 export function renderSidebar(onSelectGame) {
-  const list = clear($('engineFilters'));
+  const list = $('engineFilters');
+  const active = document.activeElement;
+  const focusedEngine = active?.closest?.('#engineFilters') === list ? active.dataset.engineId : null;
+  clear(list);
 
   const rows = [{ id: 'all', name: t('ui.sidebar.allEngines', undefined, 'All engines'), count: state.games.length }];
   for (const entry of state.stats?.byEngine ?? []) {
@@ -221,6 +263,8 @@ export function renderSidebar(onSelectGame) {
   for (const row of rows) {
     const li = el('li');
     const button = el('button');
+    button.dataset.engineId = row.id;
+    button.setAttribute('aria-pressed', String(state.engineFilter === row.id));
     button.classList.toggle('active', state.engineFilter === row.id);
     button.append(el('span', null, row.name), el('span', 'count', String(row.count)));
     button.addEventListener('click', () => {
@@ -231,7 +275,13 @@ export function renderSidebar(onSelectGame) {
     list.append(li);
   }
 
+  if (focusedEngine) {
+    const buttons = [...list.querySelectorAll('button')];
+    restoreLibraryFocus(buttons.find(button => button.dataset.engineId === focusedEngine) || buttons[0]);
+  }
+
   for (const button of document.querySelectorAll('#statusFilters button')) {
+    button.setAttribute('aria-pressed', String(button.dataset.status === state.statusFilter));
     button.classList.toggle('active', button.dataset.status === state.statusFilter);
     button.onclick = () => {
       state.statusFilter = button.dataset.status;
@@ -249,6 +299,7 @@ export function renderSidebar(onSelectGame) {
 export function renderGameList(onSelectGame, onHiddenSelection) {
   renderLibraryControls();
   const container = $('gameList');
+  const focus = captureListFocus(container);
   releaseThumbnails(container);
   clear(container);
   const games = visibleGames();
@@ -268,6 +319,7 @@ export function renderGameList(onSelectGame, onHiddenSelection) {
     emptyCard.append(add);
     container.append(emptyCard);
     $('counts').textContent = '';
+    restoreListFocus(container, focus);
     return;
   }
 
@@ -376,5 +428,6 @@ export function renderGameList(onSelectGame, onHiddenSelection) {
     container.append(row);
   }
 
+  restoreListFocus(container, focus);
   $('counts').textContent = t('ui.app.counts', { shown: games.length, total: state.games.length }, '{shown} of {total} games');
 }
