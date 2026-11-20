@@ -7,6 +7,7 @@ import { detectGame } from '../src/detect/index.ts';
 import {
   addRoot,
   configPath,
+  findGames,
   libraryPath,
   libraryStats,
   loadConfig,
@@ -68,6 +69,23 @@ test('legacy library indexes load at revision zero', async () => {
   assert.equal(loaded.revision, 0);
   assert.equal(loaded.scannedAt, '2026-08-22T00:00:00.000Z');
   assert.deepEqual(loaded.roots, ['D:/Games']);
+});
+
+test('library lookup matches canonical names and titles while preserving exact paths and name priority', () => {
+  const root = testDir('search');
+  const profile = detectGame(reg, makeUnityGame(root, 'Fixture'))!;
+  const name = '별빛', decomposed = name.normalize('NFD');
+  const first = { ...profile, name: decomposed, path: path.join(root, decomposed) };
+  const second = { ...profile, name, path: path.join(root, name) };
+  const titleOnly = { ...profile, name: 'Game', title: `${decomposed} Dream` };
+  const index = { games: [first, second, titleOnly], scannedAt: '', revision: 0, roots: [root] };
+  const paths = (query: string) => findGames(index, query).map(game => game.path);
+  for (const query of [name, decomposed]) {
+    assert.deepEqual(paths(query), [first.path, second.path]);
+    assert.deepEqual(paths(`${query} dR`), [titleOnly.path]);
+  }
+  assert.deepEqual(paths(first.path), [first.path]);
+  assert.deepEqual(paths(second.path), [second.path]);
 });
 
 test('a damaged config blocks writes and needs explicit recovery without changing separate data folders', async () => {
