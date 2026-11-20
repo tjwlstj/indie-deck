@@ -68,49 +68,63 @@ function wrap(text: string, indent: string, limit = 62): string {
   return lines.join(`\n${indent}`);
 }
 
-export function parseArgs(argv: string[]): { command: string; args: string[]; flags: Flags } {
+const valueOptions = new Set([
+  'locale', 'depth', 'engine', 'backend', 'limit', 'lang', 'from', 'endpoint',
+  'translator', 'variant', 'set', 'loader', 'name',
+]);
+
+function parseCommandLine(argv: string[]) {
   const flags: Flags = {};
   const args: string[] = [];
   let command = '';
+  let showVersion = false;
 
   for (let i = 0; i < argv.length; i++) {
     const token = argv[i]!;
     if (token.startsWith('--')) {
       const [rawKey, inlineValue] = token.slice(2).split(/=(.*)/s);
       const key = rawKey!;
-      let value: string | boolean;
-      if (inlineValue !== undefined) {
-        value = inlineValue;
-      } else {
-        const next = argv[i + 1];
-        if (next !== undefined && !next.startsWith('-')) {
-          value = next;
-          i += 1;
-        } else {
-          value = true;
-        }
+      // After plan/install, --version takes a translator pin. Elsewhere it is a global switch.
+      const translatorVersion = key === 'version' && (command === 'plan' || command === 'install');
+      if (key === 'version' && !translatorVersion && inlineValue !== '') {
+        showVersion = true;
+        continue;
       }
-      // Repeating a flag accumulates rather than overwrites, so
-      // `--set a=1 --set b=2` keeps both.
+      const takesValue = valueOptions.has(key) || translatorVersion;
+      const next = argv[i + 1];
+      let value: string | boolean = inlineValue ?? (translatorVersion ? '' : true);
+      if (inlineValue === undefined && takesValue && next !== undefined && !next.startsWith('-')) {
+        value = next;
+        i += 1;
+      }
+      // Repeating a switch leaves it enabled; repeated values such as --set accumulate.
       const existing = flags[key];
-      if (existing === undefined) flags[key] = value;
+      if (existing === undefined || (existing === true && value === true)) flags[key] = value;
       else if (Array.isArray(existing)) existing.push(value);
       else flags[key] = [existing, value];
       continue;
     }
     if (token.startsWith('-') && token.length > 1) {
-      const short: Record<string, string> = { h: 'help', v: 'version', j: 'json' };
-      for (const ch of token.slice(1)) flags[short[ch] ?? ch] = true;
+      const short: Record<string, string> = { h: 'help', j: 'json' };
+      for (const ch of token.slice(1)) {
+        if (ch === 'v') showVersion = true;
+        else flags[short[ch] ?? ch] = true;
+      }
       continue;
     }
     if (!command) command = token;
     else args.push(token);
   }
-  return { command, args, flags };
+  if (showVersion) flags['version'] ??= true;
+  return { parsed: { command, args, flags }, showVersion };
+}
+
+export function parseArgs(argv: string[]): { command: string; args: string[]; flags: Flags } {
+  return parseCommandLine(argv).parsed;
 }
 
 export async function main(argv: string[]): Promise<number> {
-  const { command, args, flags } = parseArgs(argv);
+  const { parsed: { command, args, flags }, showVersion } = parseCommandLine(argv);
 
   if (flags['no-color'] === true || flags['json'] === true) setColorEnabled(false);
   else if (flags['color'] === true) setColorEnabled(true);
@@ -123,13 +137,19 @@ export async function main(argv: string[]): Promise<number> {
     setLocale(localeFlag);
   }
 
-  if (flags['version']) {
+  if (showVersion) {
     console.log(VERSION);
     return 0;
   }
   if (!command || flags['help'] || command === 'help') {
     console.log(renderHelp());
-    return command && command !== 'help' ? 1 : 0;
+    return 0;
+  }
+  const version = flags['version'];
+  if ((command === 'plan' || command === 'install') && version !== undefined &&
+      (typeof version !== 'string' || version.length === 0)) {
+    console.error(t('cli.msg.translatorVersionExpected', undefined, '--version expects one translator version.'));
+    return 2;
   }
 
   const found = commandMap().get(command);
